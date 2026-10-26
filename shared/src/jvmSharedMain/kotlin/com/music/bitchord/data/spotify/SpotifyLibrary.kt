@@ -56,6 +56,18 @@ object SpotifyLibrary {
     @Volatile
     var auth: Auth? = null
 
+    /** Live replacements for the persisted-query hashes, installed beside [auth] when the app
+     * reads them off the web player (the desktop does; the constants carry a build that sits
+     * behind a rebuild otherwise). A null field keeps that query's shipped constant. */
+    fun interface HashSource {
+        suspend fun hashes(force: Boolean): Hashes?
+    }
+
+    data class Hashes(val library: String?, val playlist: String?, val liked: String?)
+
+    @Volatile
+    var hashSource: HashSource? = null
+
     private const val GQL = "https://api-partner.spotify.com/pathfinder/v2/query"
     private const val LIBRARY = "973e511ca44261fda7eebac8b653155e7caee3675abb4fb110cc1b8c78b091c3"
     private const val PLAYLIST = "346811f856fb0b7e4f6c59f8ebea78dd081c6e2fb01b77c954b26259d5fc6763"
@@ -113,7 +125,7 @@ object SpotifyLibrary {
         collected
     }
 
-    private fun playlistPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyPlaylist>, Int, Int> {
+    private suspend fun playlistPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyPlaylist>, Int, Int> {
         val variables = buildJsonObject {
             putJsonArray("filters") { add("Playlists") }
             put("order", null as String?)
@@ -131,10 +143,10 @@ object SpotifyLibrary {
             put("folderUri", null as String?)
             put("includeFoldersWhenFlattening", false)
         }
-        return parsePlaylistPage(gql("libraryV3", LIBRARY, variables, headers))
+        return parsePlaylistPage(graphql("libraryV3", variables, headers))
     }
 
-    private fun trackPage(
+    private suspend fun trackPage(
         headers: Map<String, String>,
         playlistId: String,
         offset: Int,
@@ -145,7 +157,7 @@ object SpotifyLibrary {
             put("limit", 100)
             put("enableWatchFeedEntrypoint", false)
         }
-        return parseTrackPage(gql("fetchPlaylist", PLAYLIST, variables, headers))
+        return parseTrackPage(graphql("fetchPlaylist", variables, headers))
     }
 
     /**
@@ -161,16 +173,16 @@ object SpotifyLibrary {
             put("limit", 1)
             put("enableWatchFeedEntrypoint", false)
         }
-        val root = gql("fetchPlaylist", PLAYLIST, variables, authHeaders())
+        val root = graphql("fetchPlaylist", variables, authHeaders())
         largestSource(root.obj("data")?.obj("playlistV2")?.obj("images"))
     }
 
-    private fun likedPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyTrack>, Int, Int> {
+    private suspend fun likedPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyTrack>, Int, Int> {
         val variables = buildJsonObject {
             put("offset", offset)
             put("limit", 100)
         }
-        return parseLikedPage(gql("fetchLibraryTracks", LIKED, variables, headers))
+        return parseLikedPage(graphql("fetchLibraryTracks", variables, headers))
     }
 
     private suspend fun authHeaders(): Map<String, String> {
@@ -184,6 +196,26 @@ object SpotifyLibrary {
             put("Referer", "https://open.spotify.com/")
             put("User-Agent", USER_AGENT)
             tokens.clientToken?.let { put("Client-Token", it) }
+        }
+    }
+
+    /**
+     * One of the library's persisted queries, sent with the hash [HashSource] reports when a
+     * source is installed (the constants otherwise). Spotify rotates the hashes whenever it
+     * rebuilds the web player, and a stale one reads back as "PersistedQueryNotFound" — that
+     * answer rereads the source once and sends the query again before failing.
+     */
+    private suspend fun graphql(operation: String, variables: JsonObject, headers: Map<String, String>): JsonObject {
+        suspend fun hash(force: Boolean): String = when (operation) {
+            "libraryV3" -> hashSource?.hashes(force)?.library ?: LIBRARY
+            "fetchPlaylist" -> hashSource?.hashes(force)?.playlist ?: PLAYLIST
+            else -> hashSource?.hashes(force)?.liked ?: LIKED
+        }
+        try {
+            return gql(operation, hash(false), variables, headers)
+        } catch (failure: IllegalStateException) {
+            if (!failure.message.orEmpty().contains("PersistedQueryNotFound")) throw failure
+            return gql(operation, hash(true), variables, headers)
         }
     }
 

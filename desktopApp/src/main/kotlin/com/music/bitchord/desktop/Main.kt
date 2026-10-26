@@ -43,6 +43,12 @@ fun main() {
     SpotifyLibrary.auth = SpotifyLibrary.Auth {
         DesktopSpotifyToken.accessToken()?.let { SpotifyLibrary.Tokens(it, DesktopSpotifyToken.clientToken()) }
     }
+    // …and its query hashes read fresh off the same place, so a Spotify rebuild can't
+    // strand the calls on the constants a build shipped with.
+    SpotifyLibrary.hashSource = SpotifyLibrary.HashSource { force ->
+        runCatching { DesktopSpotifyBundle.webPlayer(force) }.getOrNull()?.hashes
+            ?.let { SpotifyLibrary.Hashes(it["libraryV3"], it["fetchPlaylist"], it["fetchLibraryTracks"]) }
+    }
     // Desktop follows its own language picker (zh-Hant / zh-Hans preserved).
     com.music.bitchord.data.innertube.Innertube.appLanguage = { DesktopStrings.resolvedTag() }
     // YouTube playback is the phone's StreamResolver over InnerTubeX, with BotGuard PoTokens

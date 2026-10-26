@@ -357,40 +357,53 @@ internal object DesktopSpotifyToken {
         cachedAccessToken?.let { if (now < accessTokenExpiresAtMs - 30_000) return it }
         if (now < retryAfterMs) return null
 
-        val secret = TOTP_SECRETS.maxByOrNull { it.key }
-        val code = secret?.let { totp(it.value, now / 1000) }
-        val query = buildList {
-            add("reason" to "init")
-            add("productType" to "web-player")
-            if (code != null && secret != null) {
-                add("totp" to code)
-                add("totpServer" to code)
-                add("totpVer" to secret.key.toString())
-            }
-        }.joinToString("&") { (name, value) -> "$name=${URLEncoder.encode(value, StandardCharsets.UTF_8)}" }
+        // Spotify retires versions of its TOTP secret as the web player rotates them (the
+        // shipped table sat at v12 while the live one was v61), so the current secret comes
+        // from [DesktopSpotifyBundle] — the table is its fallback — and an answer that says
+        // the version expired rereads the bundle once.
+        for (force in listOf(false, true)) {
+            val player = runCatching { DesktopSpotifyBundle.webPlayer(force) }.getOrNull()
+            val secret = player?.secret
+                ?: TOTP_SECRETS.maxByOrNull { it.key }?.let { DesktopSpotifyBundle.Secret(it.key, it.value) }
+                ?: return null
+            val code = totp(secret.codes, now / 1000)
+            val query = buildList {
+                add("reason" to "init")
+                add("productType" to "web-player")
+                if (code != null) {
+                    add("totp" to code)
+                    add("totpServer" to code)
+                    add("totpVer" to secret.version.toString())
+                }
+            }.joinToString("&") { (name, value) -> "$name=${URLEncoder.encode(value, StandardCharsets.UTF_8)}" }
 
-        val body = canvasGet(
-            "$TOKEN_URL?$query",
-            mapOf(
-                "Cookie" to "sp_dc=$cookie",
-                "Referer" to "https://open.spotify.com/",
-                "App-Platform" to "WebPlayer",
-            ),
-        )
-        val root = body?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
-        val token = root?.get("accessToken")?.jsonPrimitive?.contentOrNull
-        if (token.isNullOrBlank()) {
-            // Backed off rather than retried per track: if Spotify has changed the shape, asking on
-            // every skip fixes nothing and makes every canvas lookup pay for the round trip.
-            retryAfterMs = now + RETRY_MS
-            DesktopTrackLog.log("canvas: Spotify would not mint an access token")
-            return null
+            val body = canvasGet(
+                "$TOKEN_URL?$query",
+                mapOf(
+                    "Cookie" to "sp_dc=$cookie",
+                    "Referer" to "https://open.spotify.com/",
+                    "App-Platform" to "WebPlayer",
+                ),
+            )
+            val root = body?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+            // The web player reads this flag to learn its own secret has been retired; seen
+            // unfreshly, it is worth one forced reread before giving this mint up.
+            val parsed = root ?: continue
+            val expired = (parsed["totpVerExpired"] as? JsonPrimitive)?.takeUnless { it is JsonNull }
+            if (expired != null && !force) continue
+            val token = parsed["accessToken"]?.jsonPrimitive?.contentOrNull
+            if (token.isNullOrBlank()) continue
+            cachedAccessToken = token
+            accessTokenExpiresAtMs = parsed["accessTokenExpirationTimestampMs"]
+                ?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: (now + 3_600_000)
+            cachedClientId = parsed["clientId"]?.jsonPrimitive?.contentOrNull
+            return token
         }
-        cachedAccessToken = token
-        accessTokenExpiresAtMs = root["accessTokenExpirationTimestampMs"]
-            ?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: (now + 3_600_000)
-        cachedClientId = root["clientId"]?.jsonPrimitive?.contentOrNull
-        return token
+        // Backed off rather than retried per track: if Spotify has changed the shape, asking on
+        // every skip fixes nothing and makes every canvas lookup pay for the round trip.
+        retryAfterMs = now + RETRY_MS
+        DesktopTrackLog.log("canvas: Spotify would not mint an access token")
+        return null
     }
 
     /**
