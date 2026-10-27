@@ -183,5 +183,5 @@ const lockupCols = 'grid-cols-[46px_minmax(0,1fr)]';
 const lockupMenuCols = 'grid-cols-[46px_minmax(0,1fr)_auto]';
 
 function kindLabel(kind: MusicItem['kind']): string {
-  return { song: 'Song', video: 'Video', album: 'Album', playlist: 'Playlist', 'spotify-playlist': 'Spotify Playlist', artist: 'Artist', episode: 'Episode', podcast: 'Podcast', unknown: '' }[kind];
+  return { song: 'Song', video: 'Video', album: 'Album', playlist: 'Playlist', 'spotify-playlist': 'Spotify Playlist', 'saavn-song': 'JioSaavn', artist: 'Artist', episode: 'Episode', podcast: 'Podcast', unknown: '' }[kind];
 }

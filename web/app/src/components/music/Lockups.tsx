@@ -7,7 +7,7 @@ import { artistHref, hrefFor } from './links';
 import { playTrack, toTrack } from './play';
 import { TrackMenu } from './TrackMenu';
 
-const isPlayable = (item: MusicItem) => item.kind === 'song' || item.kind === 'video';
+const isPlayable = (item: MusicItem) => item.kind === 'song' || item.kind === 'video' || item.kind === 'saavn-song';
 
 /* Lockups (report §2). */
 const lockup = 'flex min-w-0 flex-col';

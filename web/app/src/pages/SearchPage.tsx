@@ -19,6 +19,7 @@ const KIND_LABEL: Record<MusicItem['kind'], string> = {
   album: 'Album',
   playlist: 'Playlist',
   'spotify-playlist': 'Spotify Playlist',
+  'saavn-song': 'JioSaavn',
   artist: 'Artist',
   episode: 'Episode',
   podcast: 'Podcast',
@@ -33,6 +34,7 @@ function shelvesFor(results: SearchResults): Shelf[] {
     shelf('Artists', results.artists, 'circle'),
     shelf('Albums', results.albums, 'square'),
     shelf('Songs', results.songs, 'tracks'),
+    shelf('JioSaavn', results.saavn, 'tracks'),
     shelf('Playlists', results.playlists, 'square'),
     shelf('Videos', results.videos, 'video'),
   ].filter((s): s is Shelf => !!s);

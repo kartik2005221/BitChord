@@ -18,7 +18,7 @@ import {
 } from './resolver';
 import { ShakaPlayerAdapter } from './ShakaPlayerAdapter';
 
-/** What the engine knows about the track it loaded. */
+/** The engine's verdict, whatever played it ("251 opus 140kbps via WEB_REMIX", "320kbps AAC via saavn"). */
 export interface LoadedTrack {
   videoId: string;
   title: string;
@@ -26,7 +26,8 @@ export interface LoadedTrack {
   durationSec: number;
   /** Largest first. */
   thumbnails: { url: string; width: number; height: number }[];
-  client: PlayerClientName;
+  /** A YouTube client name, or the fork's own source's ("saavn"). */
+  client: string;
   /** The audio format actually selected, e.g. "251 opus 140kbps". */
   format: string;
   /** The same, field by field, for stats for nerds. */

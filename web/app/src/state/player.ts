@@ -21,7 +21,8 @@ import {
   type QueueSource,
 } from '@/playback/queue/timeline';
 import { trackLog } from '@/playback/trackLog';
-import type { LoadedTrack, StreamStats, YouTubeEngine } from '@/playback/youtube/engine';
+import type { LoadedTrack, StreamStats } from '@/playback/youtube/engine';
+import type { AudioEngine } from '@/playback/engine';
 import type { AutomixGraph, AutoDJSnapshot } from '@/playback/automix';
 
 export interface NowPlaying {
@@ -138,7 +139,7 @@ function saveSettings(state: Settings) {
 // ---- Decks: two engines, so a crossfade can play the next track under this one ------------
 
 interface Deck {
-  engine: YouTubeEngine;
+  engine: AudioEngine;
   audio: HTMLAudioElement;
   /** The crossfade's share of the volume, 0–1. */
   gain: number;
@@ -176,16 +177,17 @@ export function getMixBeat(): { phase: number | null } | null {
 
 function getDecks(): Promise<Deck[]> {
   decksPromise ??= (async () => {
-    // Shaka, YouTube.js and googlevideo are the heavy part of the app; they
-    // load on the first play, not with the page (prompt §3).
-    const { YouTubeEngine } = await import('@/playback/youtube/engine');
+    // Shaka, YouTube.js and googlevideo are the heavy parts of the app; they
+    // load on the first play, not with the page (prompt §3). The routing
+    // engine is where a source joins the deck — YouTube's at first use.
+    const { RoutingEngine } = await import('@/playback/engine');
     decks = [0, 1].map((n) => {
       const audio = new Audio();
       audio.preload = 'auto';
       // Media from another origin is silent inside an AudioContext unless it
       // is fetched with CORS (prompt §6, the Web Audio caveat).
       audio.crossOrigin = 'anonymous';
-      const engine = new YouTubeEngine(audio);
+      const engine = new RoutingEngine(audio);
       const deck: Deck = { engine, audio, gain: 1 };
       engine.onFatal = (videoId, message) => {
         if (decks?.[active] !== deck) return;

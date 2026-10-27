@@ -78,9 +78,41 @@ export async function fetchCategories(): Promise<CategoryGroup[]> {
   return mapCategories(response.data);
 }
 
+/**
+ * The fork's JioSaavn rows for [query]: its own search, best-effort — the
+ * API is total (it answers [] on any miss, including the missing extension
+ * the rules need), so a dead JioSaavn is an empty shelf, never a failed search.
+ */
+async function saavnShelf(query: string): Promise<MusicItem[]> {
+  const { searchSaavnSongs, isExplicit, songArtist, songDurationSec, songImage } = await import('@/data/saavn/api');
+  const songs = await searchSaavnSongs(query);
+  return songs.map((song) => {
+    const artists = songArtist(song);
+    return {
+      kind: 'saavn-song',
+      id: `saavn:${song.id}`,
+      title: song.title,
+      subtitle: artists,
+      artists: artists
+        .split(', ')
+        .filter(Boolean)
+        .map((name) => ({ name, id: null })),
+      album: song.more_info.album ? { name: song.more_info.album, id: null } : null,
+      thumbnail: songImage(song),
+      wide: false,
+      durationSec: songDurationSec(song),
+      explicit: isExplicit(song),
+    };
+  });
+}
+
 export async function fetchSearch(query: string): Promise<SearchResults> {
   const yt = await getMusicClient();
-  return mapSearch(await yt.music.search(query));
+  const [search, saavn] = await Promise.all([
+    mapSearch(await yt.music.search(query)),
+    saavnShelf(query).catch(() => []),
+  ]);
+  return { ...search, saavn };
 }
 
 /** YouTube Music's Songs shelf for [query]: what an import or a match is chosen from. */

@@ -91,7 +91,8 @@ function TrackMenuItems({ track, onClose }: { track: Track; onClose: () => void 
       <MenuItem icon={<ListEnd size={15} />} onSelect={() => (onClose(), addToQueue([track]))}>
         Add to Queue
       </MenuItem>
-      {signedIn && <AccountItems track={track} onClose={onClose} onPlaylists={() => setView('playlists')} />}
+      {/* Favorite and Add to Playlist are YouTube Music's actions; a JioSaavn row has no account there. */}
+      {signedIn && !track.videoId.startsWith('saavn:') && <AccountItems track={track} onClose={onClose} onPlaylists={() => setView('playlists')} />}
     </>
   );
 }

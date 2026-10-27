@@ -297,7 +297,7 @@ export function mapArtist(id: string, artist: Pick<YTMusic.Artist, 'header' | 's
  * are grouped here, in the order YouTube ranked them.
  */
 export function mapSearch(search: { contents?: readonly unknown[] | null }): SearchResults {
-  const results: SearchResults = { top: [], songs: [], artists: [], albums: [], playlists: [], videos: [] };
+  const results: SearchResults = { top: [], songs: [], saavn: [], artists: [], albums: [], playlists: [], videos: [] };
   const seen = new Set<string>();
   const add = (item: MusicItem | null) => {
     if (!item || seen.has(item.id)) return;

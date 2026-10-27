@@ -4,7 +4,7 @@
  * a YouTube.js node directly.
  */
 
-export type ItemKind = 'song' | 'video' | 'album' | 'playlist' | 'spotify-playlist' | 'artist' | 'episode' | 'podcast' | 'unknown';
+export type ItemKind = 'song' | 'video' | 'album' | 'playlist' | 'spotify-playlist' | 'saavn-song' | 'artist' | 'episode' | 'podcast' | 'unknown';
 
 export interface ArtistRef {
   name: string;
@@ -21,7 +21,7 @@ export interface AlbumRef {
 /** Anything a shelf, grid or search result can hold. */
 export interface MusicItem {
   kind: ItemKind;
-  /** videoId for songs and videos; browse id for albums (MPREb_), playlists (VL…) and artists (UC…). */
+  /** videoId for songs and videos; browse id for albums (MPREb_), playlists (VL…), artists (UC…), the fork's JioSaavn rows (`saavn:<songId>`). */
   id: string;
   title: string;
   /** The second line exactly as YouTube words it ("Album • Radiohead", "Single • 2021"). */
@@ -139,6 +139,8 @@ export interface SearchResults {
   /** YouTube's top result card, plus the first of each kind, Apple-style. */
   top: MusicItem[];
   songs: MusicItem[];
+  /** The fork's JioSaavn rows: its own catalogue, played from its own CDN. */
+  saavn: MusicItem[];
   artists: MusicItem[];
   albums: MusicItem[];
   playlists: MusicItem[];

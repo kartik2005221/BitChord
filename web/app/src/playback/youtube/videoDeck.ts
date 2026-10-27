@@ -1,7 +1,7 @@
 import shaka from 'shaka-player/dist/shaka-player.compiled';
 import { getVideoElement, qualityLabel, setVideoQuality, useVideo, type VideoQuality } from '@/state/video';
 import { trackLog } from '../trackLog';
-import type { YouTubeEngine } from './engine';
+import type { AudioEngine } from '@/playback/engine';
 
 /**
  * A music video's picture, as Apple Music plays one: a second Shaka player,
@@ -33,7 +33,7 @@ const AUTO_START_BPS = 6_000_000;
 const AUTO_MAX_HEIGHT = 1080;
 
 let player: shaka.Player | null = null;
-let source: { engine: YouTubeEngine; audio: HTMLAudioElement } | null = null;
+let source: { engine: AudioEngine; audio: HTMLAudioElement } | null = null;
 /** The video whose manifest is loaded (or loading) in the picture player, and at which quality. */
 let loaded: string | null = null;
 let loadedQuality: VideoQuality | null = null;
@@ -88,7 +88,7 @@ function reportActive(target: shaka.Player) {
 }
 
 /** The deck in front changed track, or recovered it: show its picture, if it has one. */
-export function followVideo(engine: YouTubeEngine, audio: HTMLAudioElement): void {
+export function followVideo(engine: AudioEngine, audio: HTMLAudioElement): void {
   source = { engine, audio };
   listen(audio);
   void refresh();
