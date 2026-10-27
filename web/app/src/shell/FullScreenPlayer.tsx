@@ -15,6 +15,7 @@ import {
 } from '@/components/icons/Transport';
 import { ExplicitBadge } from '@/components/music/ExplicitBadge';
 import { FavoriteButton } from '@/components/music/FavoriteButton';
+import { HeadphonesIcon, HIGH_QUALITY_TEXT, isHighQualityStream } from '@/components/music/QualityBadge';
 import { TrackMenu } from '@/components/music/TrackMenu';
 import { albumHref } from '@/components/music/links';
 import { MotionArtwork } from '@/components/music/MotionArtwork';
@@ -47,6 +48,8 @@ function useBrowserFullScreen(): boolean {
 /** The seek line under the track's names: thicker on hover, with the times beneath its ends. */
 function Scrubber() {
   const { bar, elapsed, remaining, mixLabel, dragging, handlers } = useScrubber();
+  const stream = usePlayer((s) => s.nowPlaying?.stream ?? null);
+  const mixing = usePlayer((s) => s.mixing);
   return (
     <div className="group/scrub mt-3.5" data-dragging={dragging || undefined}>
       {/* A taller hit area than the line it carries. */}
@@ -64,6 +67,20 @@ function Scrubber() {
       </div>
       <div className="relative mt-0.5 flex justify-between type-[500_11px/14px] tabular-nums text-tertiary">
         <span ref={elapsed} />
+        {/* The quality badge in the phone's place — between the timestamps (PlayerControls.kt's
+            PlaybackQualityLabel), fading out while "Mixing" stands in for it. Its own span: the
+            pulse loop owns the mixLabel's opacity, so this one must not join it. */}
+        {isHighQualityStream(stream) && (
+          <span
+            className={`pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-1 text-secondary transition-opacity duration-300${
+              mixing ? ' opacity-0' : ''
+            }`}
+            aria-hidden="true"
+          >
+            <HeadphonesIcon size={11} />
+            {HIGH_QUALITY_TEXT}
+          </span>
+        )}
         <span ref={mixLabel} className="pointer-events-none absolute inset-x-0 text-center text-secondary opacity-0" aria-hidden="true">
           Mixing
         </span>

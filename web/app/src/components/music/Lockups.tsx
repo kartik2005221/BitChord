@@ -5,6 +5,7 @@ import { Artwork } from './Artwork';
 import { ExplicitBadge } from './ExplicitBadge';
 import { artistHref, hrefFor } from './links';
 import { playTrack, toTrack } from './play';
+import { RowQualityMark } from './QualityBadge';
 import { TrackMenu } from './TrackMenu';
 
 const isPlayable = (item: MusicItem) => item.kind === 'song' || item.kind === 'video' || item.kind === 'saavn-song';
@@ -157,6 +158,7 @@ export function TrackLockup({ item, onPlay }: { item: MusicItem; onPlay?: () => 
           {item.explicit && <ExplicitBadge />}
         </div>
         <div className="truncate type-callout text-secondary">
+          <RowQualityMark item={item} />
           <Byline item={item} />
         </div>
       </div>

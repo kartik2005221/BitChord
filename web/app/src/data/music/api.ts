@@ -109,6 +109,7 @@ async function saavnShelf(query: string): Promise<MusicItem[]> {
       wide: false,
       durationSec: songDurationSec(song),
       explicit: isExplicit(song),
+      quality: song.more_info['320kbps'] === 'true' ? '320' : null,
     };
   });
 }

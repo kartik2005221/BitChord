@@ -18,6 +18,9 @@ export interface AlbumRef {
   id: string | null;
 }
 
+/** The tier a source row says it can stream at, worded as Android's `Song.sourceQuality` is — '320' is what JioSaavn rows that declared their 320kbps rendition carry. */
+export type SourceQuality = '320';
+
 /** Anything a shelf, grid or search result can hold. */
 export interface MusicItem {
   kind: ItemKind;
@@ -34,6 +37,8 @@ export interface MusicItem {
   wide: boolean;
   durationSec: number | null;
   explicit: boolean;
+  /** The tier the row's source offered (Android's `Song.sourceQuality`); on the fork's rows, JioSaavn stating its 320kbps rendition. */
+  quality?: SourceQuality | null;
 }
 
 /** How a shelf lays out (report §2 shelf types). */

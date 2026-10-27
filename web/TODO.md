@@ -39,16 +39,23 @@ remaining work is the "Next" section below.
       single source of truth), the env reads are guarded, and both built
       bundles are booted in a process-less VM that answers a real bridge ping
       (8 tests). Real-Firefox harness: the crash before, clean load after.
+- [x] **The "High quality" mark, drawn as the phone and desktop draw it**:
+      between the seek bar's timestamps in the full-screen player when the
+      stream playing is at 256 kbps or more (the shared NerdStats rule —
+      YouTube web streams don't reach it), and on JioSaavn search rows before
+      the credits wherever the row declared its 320kbps rendition, with the
+      separator `SourceQualityBadge` and the rows use: badge, " · ", then the
+      names.
 
 ## Next
 
-- [ ] **JioSaavn parity with Android + desktop, visually and logically**:
-      Android keeps the source opt-in (off) with "High Quality"/"320kbps"
-      labels and a source settings card, and treats its rows as another voice
-      inside the unified results — the web side so far is a separate "JioSaavn"
-      shelf plus a popup-only toggle. Re-shape: in-app source settings (bridge
-      write method), row treatment/labels to match, explicit flag, then decide
-      the default (match Android's off, or keep the fork's on).
+- [ ] **JioSaavn parity with Android + desktop, logically**:
+      Android keeps the source opt-in (off) with a source settings card, and
+      treats its rows as another voice inside the unified results — the web
+      side so far is a separate "JioSaavn" shelf plus a popup-only toggle
+      (the quality mark itself has landed). Re-shape: in-app source settings
+      (bridge write method), then decide the default (match
+      Android's off, or keep the fork's on).
 - [x] Extension DNR rule + `host_permissions` for the api.php and
       `*.saavncdn.com` (same shape as the YouTube rules; the CORS answer and
       the impersonation headers both arrive there). Until that lands, JioSaavn
