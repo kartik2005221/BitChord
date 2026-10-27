@@ -16,6 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import bitchord.desktopapp.generated.resources.Res
@@ -24,6 +26,8 @@ import java.awt.Dimension
 import java.awt.Rectangle
 import java.awt.Toolkit
 import kotlin.math.roundToInt
+import kotlinx.coroutines.collectLatest
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 
 fun main() {
@@ -76,7 +80,33 @@ private fun desktopMain() = application {
     // Closing puts the window away rather than ending the process, while there is a tray icon to
     // bring it back from — see [DesktopWindowVisibility].
     val visible by DesktopWindowVisibility.visible.collectAsState()
-    val state = rememberWindowState(width = 1_220.dp, height = 780.dp)
+    // The window comes up where the last run left it — size, place and the maximized flag ride
+    // in from [DesktopWindowState]; the placement must say the same thing [DesktopWindowMode]'s
+    // own flow says, because the effects below drive this state from that flow.
+    val state = rememberWindowState(
+        width = DesktopWindowState.loadWidth(),
+        height = DesktopWindowState.loadHeight(),
+        position = DesktopWindowState.loadPosition(),
+        placement = DesktopWindowMode.placement.value,
+    )
+    DesktopWindowState.track(state)
+    // The geometry is written back as it settles: 400ms after the last move, resize or
+    // maximize/restore, so every way out of the app — the close button, the tray's quit, a power
+    // cut — finds the store already holding where the window last stood. Only a floating,
+    // specifically-placed window is worth remembering: a maximized one has its flag kept by
+    // [DesktopWindowMode], and the place under Wayland is whatever the platform says.
+    LaunchedEffect(state) {
+        snapshotFlow {
+            Triple(state.placement, state.size, state.position)
+        }.collectLatest {
+            delay(400)
+            if (state.placement == WindowPlacement.Floating &&
+                state.position is WindowPosition.Absolute
+            ) {
+                DesktopWindowState.save(state)
+            }
+        }
+    }
     LaunchedEffect(visible) {
         if (visible && state.isMinimized) {
             state.isMinimized = false
@@ -99,7 +129,10 @@ private fun desktopMain() = application {
         }
     }
     Window(
-        onCloseRequest = { if (DesktopWindowVisibility.onCloseRequest()) exitApplication() },
+        onCloseRequest = {
+            DesktopWindowState.save(state)
+            if (DesktopWindowVisibility.onCloseRequest()) exitApplication()
+        },
         visible = visible,
         title = "BitChord",
         icon = painterResource(Res.drawable.logo),
@@ -146,6 +179,10 @@ private fun desktopMain() = application {
                 (openingSize.width.value * transform.scaleX).roundToInt(),
                 (openingSize.height.value * transform.scaleY).roundToInt(),
             )
+            // The position the last run remembered belongs to a display that this machine may no
+            // longer have; if the window landed nowhere visible, give the window manager its own
+            // say rather than leave it stranded — see [DesktopWindowState.ensureOnScreen].
+            DesktopWindowState.ensureOnScreen(composeWindow)
             if (DesktopPlatform.isWindows && DesktopWindowsFrame.install("BitChord")) {
                 DesktopWindowBackdrop.apply()
             } else if (DesktopPlatform.isMac && DesktopMacFrame.install(composeWindow)) {
@@ -179,7 +216,10 @@ private fun desktopMain() = application {
                 },
                 // The same door the system's close button went through, so the tray keeps the
                 // process alive exactly as it did before.
-                close = { if (DesktopWindowVisibility.onCloseRequest()) exitApplication() },
+                close = {
+                    DesktopWindowState.save(state)
+                    if (DesktopWindowVisibility.onCloseRequest()) exitApplication()
+                },
             )
         }
         CompositionLocalProvider(
