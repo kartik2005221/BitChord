@@ -15,12 +15,17 @@ import { grantedOrigins, lyricsFetch, requestOrigins } from '../lib/lyricsFetch'
 import { installRules } from '../lib/rules';
 import { authState, invalidateAccounts, isSessionCookie, selectChannel, setConnected } from '../lib/ytAuth';
 import * as spotify from '../lib/spotify';
+import { registerExtraRelays, SAVED_ORIGINS_KEY, trustedOrigins } from '../lib/trustedOrigins';
 import { ytFetch } from '../lib/ytFetch';
 
 declare const __SITE_ORIGINS__: string[];
 
-/** Exact origins (port included) allowed to talk to the extension: the site's, and the popup's. */
-const ALLOWED_ORIGINS = new Set(__SITE_ORIGINS__);
+/** The build's trusted origins (site.config.ts), before anything saved later on. */
+const BUILD_ORIGINS: string[] = __SITE_ORIGINS__;
+
+/** Exact origins (port included) allowed to talk to the extension: the site's, the popup's,
+ * and anything added later through the popup (lib/trustedOrigins). */
+const ALLOWED_ORIGINS = new Set(BUILD_ORIGINS);
 const OWN_ORIGIN = new URL(browser.runtime.getURL('/')).origin;
 
 /** Grows as each phase lands its methods; Discord only in builds that include it. */
@@ -236,9 +241,28 @@ export default defineBackground(() => {
   // Dynamic rules persist, but are rewritten on every install and startup so
   // an update that changes them never leaves stale ones behind.
   const refreshRules = () =>
-    installRules(__SITE_ORIGINS__).catch((error: unknown) => console.error('BitChord: installing rules failed', error));
+    installRules([...ALLOWED_ORIGINS]).catch((error: unknown) => console.error('BitChord: installing rules failed', error));
+
+  /** One shape of the truth: sender set, request rules and (Firefox) relay follow together. */
+  const syncOrigins = async (origins: string[]): Promise<void> => {
+    ALLOWED_ORIGINS.clear();
+    for (const origin of [...BUILD_ORIGINS, ...origins]) ALLOWED_ORIGINS.add(origin);
+    await Promise.allSettled([refreshRules(), registerExtraRelays(origins)]);
+  };
+
   browser.runtime.onInstalled.addListener(refreshRules);
   browser.runtime.onStartup.addListener(refreshRules);
+
+  // Origins saved later through the popup: load them now, then follow changes.
+  void trustedOrigins()
+    .then(syncOrigins)
+    .catch((error: unknown) => console.error('BitChord: reading saved origins failed', error));
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !(SAVED_ORIGINS_KEY in changes)) return;
+    void trustedOrigins()
+      .then(syncOrigins)
+      .catch((error: unknown) => console.error('BitChord: re-reading saved origins failed', error));
+  });
 
   // Chromium: the page itself, through externally_connectable.
   browser.runtime.onMessageExternal?.addListener(listener);

@@ -22,6 +22,8 @@ export default defineConfig({
     define: {
       // Checked against every sender at runtime (entrypoints/background.ts).
       __SITE_ORIGINS__: JSON.stringify(SITE_ORIGINS),
+      // The popup's trusted-sites editor is read-only in a store build.
+      __STORE_BUILD__: JSON.stringify(STORE_BUILD),
       __DISCORD_PRESENCE__: JSON.stringify(DISCORD_PRESENCE),
     },
   }),

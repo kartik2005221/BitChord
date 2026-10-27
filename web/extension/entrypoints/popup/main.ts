@@ -1,4 +1,5 @@
 import './style.css';
+import { addOrigin, removeOrigin, savedOrigins, trustedOrigins } from '../../lib/trustedOrigins';
 import {
   BRIDGE_CHANNEL,
   BRIDGE_PROTOCOL,
@@ -201,3 +202,64 @@ call('yt.authState', {})
   .catch(() => list.replaceChildren(simpleRow('YouTube Music', 'Couldn’t read the session')));
 call('spotify.authState', {}).then(setSpotify).catch(() => undefined);
 call('discord.state', {}).then(setDiscord).catch(() => undefined);
+
+// ---- Trusted sites (lib/trustedOrigins) ------------------------------------------
+
+declare const __STORE_BUILD__: boolean;
+
+/** One trusted site. The build's list is the manifest's; saved extras get a Remove. */
+function originRow(origin: string, saved: boolean): HTMLLIElement {
+  const row = el('li', 'row origin');
+  row.append(el('span', 'label detail', origin));
+  if (saved && !__STORE_BUILD__) {
+    const remove = button('Remove', () => void removeOrigin(origin).then(renderSettings));
+    remove.title = 'Take this site out of this profile’s trust list.';
+    row.append(remove);
+  }
+  return row;
+}
+
+/** The Add row — fork builds only: an address, and Add. */
+function addOriginRow(): HTMLLIElement {
+  const row = el('li', 'row add');
+  const input = document.createElement('input');
+  input.className = 'input';
+  input.placeholder = 'https://your-site.pages.dev';
+  input.spellcheck = false;
+  const commit = async (value: string): Promise<void> => {
+    const { error } = await addOrigin(value);
+    input.value = '';
+    if (error === 'invalid') input.placeholder = 'That isn’t a https:// address';
+    else if (error === 'duplicate') input.placeholder = 'Already trusted';
+    else {
+      input.placeholder = 'https://your-site.pages.dev';
+      await renderSettings();
+    }
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') void commit(input.value);
+  });
+  row.append(input, button('Add', () => void commit(input.value)));
+  return row;
+}
+
+/** The whole section, rebuilt whenever the list or an action changes it. */
+async function renderSettings(): Promise<void> {
+  const [origins, saved] = await Promise.all([trustedOrigins(), savedOrigins()]);
+  const extraSet = new Set(saved);
+  const group = el('ul', 'group');
+  const rows = origins.map((origin) => originRow(origin, extraSet.has(origin)));
+  if (!__STORE_BUILD__) rows.push(addOriginRow());
+  group.replaceChildren(...rows);
+  const note = el(
+    'p',
+    'note',
+    __STORE_BUILD__
+      ? 'These are the sites this build serves: their pages get the extension’s help with their YouTube and Spotify sessions.'
+      : 'Sites listed here can use your YouTube and Spotify sessions through this extension. '
+        + 'Added sites live in this profile — on Firefox they join at once; on Chromium the extension must be built with the site.',
+  );
+  document.getElementById('settings')!.replaceChildren(el('span', 'sectitle', 'Trusted sites'), group, note);
+}
+
+void renderSettings();

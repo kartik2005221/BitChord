@@ -1,6 +1,9 @@
 /** The web player's production origin. */
 export const PRODUCTION_ORIGIN = 'https://bitchord.in';
 
+/** This fork's web player (the fork's own Cloudflare Pages deploy). */
+export const FORK_PAGES_ORIGIN = 'https://bitchord-web.pages.dev';
+
 /** The same site at its Cloudflare Pages address (the production branch's deploy). */
 const PAGES_ORIGIN = 'https://bitchord-8bw.pages.dev';
 
@@ -12,14 +15,15 @@ const DEV_ORIGIN = 'http://localhost:5173';
  * this list, and it becomes externally_connectable (Chromium), the relay's
  * content-script matches (Firefox) and the DNR rules' initiatorDomains.
  *
- * bitchord.in and its pages.dev address always, and the dev server too except in a store build
- * (BITCHORD_STORE_BUILD=1), so a published extension never answers a page on
- * localhost. BITCHORD_SITE_ORIGINS (comma-separated) replaces the list. The
- * first origin is the one the popup and homepage_url link to.
+ * The fork's own player first, then bitchord.in and its pages.dev address, and the
+ * dev server too except in a store build (BITCHORD_STORE_BUILD=1), so a
+ * published extension never answers a page on localhost.
+ * BITCHORD_SITE_ORIGINS (comma-separated) replaces the list. The first origin
+ * is the one the popup and homepage_url link to.
  */
 export const SITE_ORIGINS: string[] = (
   process.env.BITCHORD_SITE_ORIGINS ??
-  [PRODUCTION_ORIGIN, PAGES_ORIGIN, ...(process.env.BITCHORD_STORE_BUILD === '1' ? [] : [DEV_ORIGIN])].join(',')
+  [FORK_PAGES_ORIGIN, PRODUCTION_ORIGIN, PAGES_ORIGIN, ...(process.env.BITCHORD_STORE_BUILD === '1' ? [] : [DEV_ORIGIN])].join(',')
 )
   .split(',')
   .map((o) => o.trim().replace(/\/+$/, ''))
