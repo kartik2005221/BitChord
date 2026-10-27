@@ -30,9 +30,25 @@ remaining work is the "Next" section below.
       dead JioSaavn is an empty shelf, never a broken search. Player deck
       routing (RoutingEngine) has YouTube first-use lazy and keeps crossfade,
       AutoMix and video-follow rows safe across both source families.
+- [x] **The background boots again (0.7.0)**: `site.config.ts` read
+      `process.env` at module scope — a browser has no `process`, so every
+      extension since 0.5.0 died on load (`ReferenceError: process is not
+      defined`, captured on real Firefox): no listener, popup rows hanging on
+      "Checking…", detection timing out → "NeedsExtension". Runtime origins
+      now come from the build's `__SITE_ORIGINS__` define (the manifest's
+      single source of truth), the env reads are guarded, and both built
+      bundles are booted in a process-less VM that answers a real bridge ping
+      (8 tests). Real-Firefox harness: the crash before, clean load after.
 
 ## Next
 
+- [ ] **JioSaavn parity with Android + desktop, visually and logically**:
+      Android keeps the source opt-in (off) with "High Quality"/"320kbps"
+      labels and a source settings card, and treats its rows as another voice
+      inside the unified results — the web side so far is a separate "JioSaavn"
+      shelf plus a popup-only toggle. Re-shape: in-app source settings (bridge
+      write method), row treatment/labels to match, explicit flag, then decide
+      the default (match Android's off, or keep the fork's on).
 - [x] Extension DNR rule + `host_permissions` for the api.php and
       `*.saavncdn.com` (same shape as the YouTube rules; the CORS answer and
       the impersonation headers both arrive there). Until that lands, JioSaavn

@@ -11,6 +11,14 @@ const PAGES_ORIGIN = 'https://bitchord-8bw.pages.dev';
 const DEV_ORIGIN = 'http://localhost:5173';
 
 /**
+ * Node's env holds the build flags, but a bare `process.env` reference throws
+ * in a browser bundle (no `process` global) — and a ReferenceError at module
+ * load took the extension's whole background with it once. Both reads are
+ * guarded, so this evaluates wherever the build pulls it: Node, or a bundle.
+ */
+const env: Record<string, string | undefined> | undefined = typeof process === 'undefined' ? undefined : process.env;
+
+/**
  * The web app origins this extension serves. Every message is checked against
  * this list, and it becomes externally_connectable (Chromium), the relay's
  * content-script matches (Firefox) and the DNR rules' initiatorDomains.
@@ -22,8 +30,8 @@ const DEV_ORIGIN = 'http://localhost:5173';
  * is the one the popup and homepage_url link to.
  */
 export const SITE_ORIGINS: string[] = (
-  process.env.BITCHORD_SITE_ORIGINS ??
-  [FORK_PAGES_ORIGIN, PRODUCTION_ORIGIN, PAGES_ORIGIN, ...(process.env.BITCHORD_STORE_BUILD === '1' ? [] : [DEV_ORIGIN])].join(',')
+  env?.BITCHORD_SITE_ORIGINS ??
+  [FORK_PAGES_ORIGIN, PRODUCTION_ORIGIN, PAGES_ORIGIN, ...(env?.BITCHORD_STORE_BUILD === '1' ? [] : [DEV_ORIGIN])].join(',')
 )
   .split(',')
   .map((o) => o.trim().replace(/\/+$/, ''))

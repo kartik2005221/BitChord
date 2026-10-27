@@ -1,4 +1,12 @@
-import { SITE_ORIGINS } from '../site.config';
+/**
+ * The build's list (site.config.ts), injected at compile time. The manifest's
+ * matches/externally_connectable and background.ts's allowlist use this same
+ * value, so an override (BITCHORD_SITE_ORIGINS) can never leave the runtime
+ * list behind. And nothing here derives from `process` again: that bare
+ * reference crashed the extension's background browserside at module load.
+ */
+declare const __SITE_ORIGINS__: string[];
+const BUILD_ORIGINS: string[] = __SITE_ORIGINS__;
 
 /**
  * Sites this extension serves beyond the build's own list (site.config.ts), added at
@@ -24,7 +32,7 @@ import { SITE_ORIGINS } from '../site.config';
 export const SAVED_ORIGINS_KEY = 'siteOrigins';
 
 /** Hostnames the build already serves; dynamic relay registration skips them. */
-const BUILD_HOSTS = new Set(SITE_ORIGINS.map((origin) => new URL(origin).hostname));
+const BUILD_HOSTS = new Set(BUILD_ORIGINS.map((origin) => new URL(origin).hostname));
 
 /** The relay content script's path in the Firefox build (WXT drops the `.content` suffix), for dynamic registration. */
 const RELAY_FILE = 'content-scripts/relay.js';
@@ -48,7 +56,7 @@ export async function savedOrigins(): Promise<string[]> {
 /** Every trusted origin: the build's, then this profile's extras. */
 export async function trustedOrigins(): Promise<string[]> {
   const extras = await savedOrigins();
-  return [...SITE_ORIGINS, ...extras.filter((origin) => !SITE_ORIGINS.includes(origin))];
+  return [...BUILD_ORIGINS, ...extras.filter((origin) => !BUILD_ORIGINS.includes(origin))];
 }
 
 export type AddOutcome = { list: string[]; error: 'invalid' | 'duplicate' | null };
@@ -58,7 +66,7 @@ export async function addOrigin(input: string): Promise<AddOutcome> {
   const current = await savedOrigins();
   const origin = typeof input === 'string' ? normalizeOrigin(input) : null;
   if (origin === null) return { list: current, error: 'invalid' };
-  if (SITE_ORIGINS.includes(origin) || current.includes(origin)) {
+  if (BUILD_ORIGINS.includes(origin) || current.includes(origin)) {
     return { list: current, error: 'duplicate' };
   }
   const list = [...current, origin];
