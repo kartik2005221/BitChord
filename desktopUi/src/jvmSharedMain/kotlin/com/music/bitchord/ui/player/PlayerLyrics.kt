@@ -354,12 +354,15 @@ private val LINE_FALLOFF_ALPHA = floatArrayOf(1f, 0.42f, 0.28f, 0.2f, 0.16f)
 /**
  * How the lines already sung fall away above the playing one.
  *
- * Unlike the read-ahead falloff above, this one runs straight to nothing: a line
- * is fully gone the moment it is no longer the one being sung, rather than
- * lingering as a half-lit ghost. The lines ahead keep their gentler ramp, so
- * what is coming stays legible.
+ * The desktop's own renderer read one curve in both directions, and that is the
+ * behaviour the desktop panel keeps: a line let go drops to a readable floor and
+ * lingers a few lines further up, so following back over a verse is possible.
+ * The `[1, 0]` this build had — gone, in one step, the moment a line is no longer
+ * the one being sung — emptied the panel above the playing line entirely, which is
+ * not what a fullscreen of words is for. The curve here is the old one,
+ * unchanged.
  */
-private val LINE_SUNG_ALPHA = floatArrayOf(1f, 0f)
+private val LINE_SUNG_ALPHA = floatArrayOf(1f, 0.8f, 0.7f, 0.58f, 0.46f)
 
 /**
  * How far a line defocuses per row of distance from the one being sung, and the
@@ -393,6 +396,16 @@ private fun falloffAlpha(values: FloatArray, x: Float): Float {
 private fun lyricAnchor(height: Dp): Dp = height * LINE_ANCHOR_FRACTION
 
 private const val LINE_ANCHOR_FRACTION = 0.4f
+
+/**
+ * How far below the anchor the line being sung is seated, in one row's worth of
+ * height. The anchor places the playing line's top against the list's own top
+ * inset; there, seat it flush and every row the alpha curve wants to show above
+ * it — the sung lines, the whole point of being able to follow back over a
+ * verse — lies just outside the list's reach, and the top of the panel reads as
+ * blank. One row down, the panel holds that line above the playing one.
+ */
+private val LYRIC_SUNG_TRACK_DP = 68.dp
 
 /**
  * Below this a row is too faint to read, and too faint to be clicked: the sung
@@ -1976,19 +1989,23 @@ internal fun LyricsPanel(
     // browse on their own terms.
     // A newer line replaces an unfinished automatic scroll. Only a user's
     // browsing gesture should suspend following, not our own animation.
+    // How far the playing line is seated below the anchor, measured once for the panel — one
+    // row's height, which is what keeps a sung line inside the list above the playing one.
+    val sungTrackPx = with(LocalDensity.current) { LYRIC_SUNG_TRACK_DP.toPx() }
     LaunchedEffect(focusLine, browsing, controlsOpen, active) {
         if (active && isSynced && !browsing &&
             focusLine >= 0 && focusLine in lines.indices
         ) {
             snapshotFlow { listState.layoutInfo.viewportSize.height }.first { it > 0 }
-            // The anchor is the list's own top inset (see [lyricAnchor]): an item at
-            // offset 0 sits exactly there, so following a line is always "bring it to
-            // offset 0" — the same arithmetic the phone uses, with no viewport maths
-            // that can disagree with the padding the list was actually laid out with.
+            // The anchor is the list's own top inset (see [lyricAnchor]), and [sungTrackPx] seats
+            // the playing line one row below it: an item at scrollOffset −s lands that far past
+            // the inset, visibly, with the line just heard sitting between the inset and the
+            // playing one. An item at offset 0 — where this used to land — sat flush under the
+            // inset with nothing above it but blank.
             val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusLine }
             when {
                 !placed -> {
-                    listState.scrollToItem(focusLine, scrollOffset = 0)
+                    listState.scrollToItem(focusLine, scrollOffset = -sungTrackPx.roundToInt())
                     placed = true
                 }
                 // Already on screen, which is the ordinary case of handing over
@@ -1997,18 +2014,25 @@ internal fun LyricsPanel(
                 // list's default spring.
                 visible != null -> {
                     val span = scrollLead(lines, clock.longValue).toInt()
-                    run = ScrollRun(run.id + 1, visible.offset.toFloat(), span)
+                    // The playing line settles [sungTrackPx] below the anchor — the seat
+                    // the un-placed and off-screen cases land at — so the move needed is
+                    // what stands between its offset now and its seat there.
+                    val lead = visible.offset - sungTrackPx
+                    run = ScrollRun(run.id + 1, lead, span)
                     // The same curve the rows catch up on, so a row with no
                     // stagger sits exactly still against the list it is in.
                     listState.animateScrollBy(
-                        value = visible.offset.toFloat(),
+                        value = lead,
                         animationSpec = tween(durationMillis = span, easing = LYRIC_EASING),
                     )
                 }
                 // Somewhere off screen — after a seek, or a long instrumental
                 // scrolled past. How far is not known without laying the rows
                 // out, so this hands back to the list's own staged scroll.
-                else -> listState.animateScrollToItem(focusLine, scrollOffset = 0)
+                else -> listState.animateScrollToItem(
+                    focusLine,
+                    scrollOffset = -sungTrackPx.roundToInt(),
+                )
             }
         }
     }
