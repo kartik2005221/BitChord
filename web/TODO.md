@@ -20,7 +20,7 @@ The fork's web line lives on this branch (`web`), deployed to Cloudflare Pages
 
 ## Next
 
-- [ ] JioSaavn source: TS port of Android's `JioSaavnService` (search, album/playlist, DES stream decrypt, 320/96 pick) into `web/app/src/data/saavn/`
+- [x] JioSaavn source: TS port of Android's `JioSaavnService` (search, album/playlist, DES stream decrypt, 320/96 pick) into `web/app/src/data/saavn/`
 - [ ] JioSaavn in search/results UI + playback glue
 - [ ] Extension DNR rule + `host_permissions` for `jiosaavn.com` / `*.saavncdn.com` (same shape as the YouTube rules)
 - [ ] Popup: JioSaavn toggle once the source lands
