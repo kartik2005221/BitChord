@@ -26,8 +26,8 @@ import java.awt.Dimension
 import java.awt.Rectangle
 import java.awt.Toolkit
 import kotlin.math.roundToInt
-import kotlinx.coroutines.collectLatest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import org.jetbrains.compose.resources.painterResource
 
 fun main() {
