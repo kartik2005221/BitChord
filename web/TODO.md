@@ -1,7 +1,7 @@
 # Fork web line — TODO
 
-The fork's web line lives on **`master`** (trunk for web + the coming desktop
-resurrection), deployed to Cloudflare Pages (`bitchord-web.pages.dev`) with the
+The fork's web line lives on **`master`** (trunk for web, and since today for
+desktop too), deployed to Cloudflare Pages (`bitchord-web.pages.dev`) with the
 party server self-hosted on Render (`bitchord-ktk.onrender.com`). Two ways to
 watch it: a PR merged to `master` deploys if Pages is pointed at `master`
 (done from Cloudflare Pages → Settings → Production branch), or keep building
@@ -46,8 +46,23 @@ remaining work is the "Next" section below.
       the credits wherever the row declared its 320kbps rendition, with the
       separator `SourceQualityBadge` and the rows use: badge, " · ", then the
       names.
+- [x] **The desktop line unfreezes onto master**: upstream deleted the desktop
+      app after v1.9.0 (`desktopApp`/`desktopUi`, their three-platform check
+      jobs, the tag-driven release packaging and the desktop docs), so the
+      merge restores the lot — the modified Spotify files win their
+      modify/delete conflicts, the gradle includes come back, and the check
+      jobs + `release.yml` (deb/rpm/AppImage and friends on a tag) ride on
+      trunk again. Desktop fixes and releases happen on master from here; the
+      `desktop` branch stays as a frozen reference. Also made the fork's CI
+      actually run on master — `check.yml`/`web.yml` triggered on upstream's
+      `main` only, so every master push before this ran on local suites alone.
 
 ## Next
+
+- [ ] **Desktop fixes on master** (patch releases via tags → `release.yml`,
+      e.g. a v1.9.1): the GNOME dock icon / `WM_CLASS` mismatch in the deb's
+      launcher — issue #1 — and more as they're reported; reports live in
+      issues, fixes land on trunk.
 
 - [ ] **JioSaavn parity with Android + desktop, logically**:
       Android keeps the source opt-in (off) with a source settings card, and
