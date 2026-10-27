@@ -675,7 +675,6 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   if (!entry) return;
   cancelCrossfade();
   const token = ++loadToken;
-
   if (!extensionReady()) {
     usePlayer.setState({
       index: at,
@@ -702,6 +701,9 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
     syncAutomix();
   } catch (error) {
     if (token !== loadToken || (error instanceof Error && error.name === 'SupersededError')) return;
+    // The fork's JioSaavn row refused: its YouTube Music cut takes the row's place in the queue and plays, as the
+    // Android resolver steps to the next source. Anywhere else this is an error as before.
+    if (await fallbackSaavn(entry.track, at, token, startSec, auto)) return;
     const message = error instanceof Error ? error.message : String(error);
     usePlayer.setState({ status: 'error', error: message });
     // A track the player reached on its own that can't play is skipped, as on the phone.
@@ -711,6 +713,31 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
         if (token === loadToken) void advance(true);
       }, 1500);
     }
+  }
+}
+
+/**
+ * A JioSaavn row JioSaavn wouldn't serve: matched to YouTube Music and the
+ * queue row replaced in place (one identity per recording), then replayed
+ * from the same spot. False when there is no match, or the queue moved on,
+ * or the row wasn't a JioSaavn one at all.
+ */
+async function fallbackSaavn(row: Track, at: number, token: number, startSec: number, auto: boolean): Promise<boolean> {
+  if (!row.videoId.startsWith('saavn:')) return false;
+  try {
+    const { matchSaavnToYouTube } = await import('@/data/saavn/match');
+    const matched = await matchSaavnToYouTube(row);
+    if (!matched?.videoId || usePlayer.getState().queue[at]?.track.videoId !== row.videoId) return false;
+    usePlayer.setState((state) => ({
+      queue: state.queue.map((entry, i) => (i === at ? { ...entry, track: { ...entry.track, videoId: matched.videoId } } : entry)),
+    }));
+    trackLog.i('JioSaavn refused it; playing its YouTube Music version', row.videoId);
+    if (token !== loadToken) return true; // a newer load owns the deck; the swap is still right
+    await startAt(at, { startSec, auto });
+    return true;
+  } catch (error) {
+    trackLog.w(`JioSaavn fallback match failed: ${String(error)}`, row.videoId);
+    return false;
   }
 }
 
@@ -812,7 +839,18 @@ function refillAutoplay(force = false, anySeed = false): Promise<void> {
   refilling ??= (async () => {
     try {
       const { fetchRadio } = await import('@/data/music/api');
-      const { candidates, seedIsVideo } = await fetchRadio(seed.videoId);
+      // The fork's JioSaavn rows play off their own catalogue, but the radio behind them is YouTube's: the seed
+      // asks with the row's YouTube Music cut. Without one, the station stays quiet rather than erroring.
+      let radioSeed: Track | null = seed;
+      if (radioSeed.videoId.startsWith('saavn:')) {
+        const { matchSaavnToYouTube } = await import('@/data/saavn/match');
+        radioSeed = await matchSaavnToYouTube(radioSeed);
+      }
+      if (!radioSeed) {
+        exhaustedSeeds.add(seed.videoId);
+        return;
+      }
+      const { candidates, seedIsVideo } = await fetchRadio(radioSeed.videoId);
       const current = usePlayer.getState();
       const extra = extendStation(
         current.queue.map((e) => e.track),
@@ -824,14 +862,14 @@ function refillAutoplay(force = false, anySeed = false): Promise<void> {
         exhaustedSeeds.add(seed.videoId);
         return;
       }
-      const source: QueueSource = { title: `${seed.title} Radio`, type: 'radio', id: `RDAMVM${seed.videoId}` };
+      const source: QueueSource = { title: `${radioSeed.title} Radio`, type: 'radio', id: `RDAMVM${radioSeed.videoId}` };
       // Still on the same track? One that moved on gets its own top-up.
       if (current.queue[current.index]?.track.videoId !== playing.videoId || !current.autoplay) {
         autoplaySeed = null;
         return;
       }
       usePlayer.setState({ queue: [...current.queue, ...extra.map((t) => asEntry(t, 'autoplay', source))] });
-      trackLog.i(`AutoPlay added ${extra.length} tracks from ${seed.title}'s radio`, seed.videoId);
+      trackLog.i(`AutoPlay added ${extra.length} tracks from ${radioSeed.title}'s radio`, seed.videoId);
     } catch (error) {
       trackLog.w(`AutoPlay couldn't load the radio: ${String(error)}`, seed.videoId);
       autoplaySeed = null;

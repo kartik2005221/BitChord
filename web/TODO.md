@@ -40,10 +40,20 @@ remaining work is the "Next" section below.
       `X-Forwarded-For`/`Cookie`, so its fetches are refused.
 - [x] Popup: JioSaavn toggle (a Sources row) + the page's ask-before-mix via
       the bridge (`saavn.enabled`), on by default.
-- [ ] **Playback follow-ups**: YouTube fallback when a Saavn row refuses
-      (quality gate or API miss — match to YouTube with the Spotify folder's
-      machinery); AutoPlay radio after a Saavn track (radio is YouTube's, so
-      its seed needs a YT match; today it quietly does nothing instead of
-      erroring).
-- [ ] Web app settings page: party-server override display
+- [x] **Playback follow-ups**: a JioSaavn row that refuses (no stream, under
+      the 96 kbps floor) falls back instead of erroring — matched to its
+      YouTube Music version with the Spotify importer's machinery and swapped
+      into the queue in place. AutoPlay's radio seeds ask with the row's
+      YouTube cut the same way, and with no match the station stays quiet
+      rather than warning on every track.
+- [x] Web app settings page: the Listen Together section shows the party
+      server — this deployment's (`bitchord-ktk.onrender.com`), or a custom
+      one a joined room rode in on.
 - [ ] When a custom domain is bound: add it here and in each deploy env
+- [ ] Upstream PRs, when the work is ready to present: cut `pr/<fix>` topic
+      branches off `main` carrying only the upstream-worthy subsets (the
+      JioSaavn source leans on the fork's extension rules; a standalone
+      shape needs checking first).
+- [ ] Larger JioSaavn surface beyond search rows — album/playlist pages on
+      the catalogue (Android's service itself only does search and song
+      details, so those pages need new endpoint contracts first).

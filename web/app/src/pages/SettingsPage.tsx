@@ -8,6 +8,7 @@ import { useDiscord } from '@/extension/useDiscord';
 import { useExtension } from '@/extension/useExtension';
 import { useYtAuth } from '@/extension/useYtAuth';
 import { useParty } from '@/party/useParty';
+import { DEFAULT_SERVER, partyServer } from '@/party/listenTogether';
 import { useHistorySettings } from '@/playback/historyReporting';
 import { Select } from '@/components/Select';
 import { AUTOMIX_BARS } from '@/playback/automix/choices';
@@ -47,6 +48,13 @@ function youtubeText(auth: ReturnType<typeof useYtAuth>): string {
   if (!browserSignedIn) return 'Not signed in';
   if (!connected) return 'Disconnected';
   return active ? active.name : 'Signed in';
+}
+
+/** The party connection ends where this deployment's server stands, unless a room rode a custom one in. */
+function partyServerLabel(custom: string | null): string {
+  const server = custom ?? DEFAULT_SERVER;
+  const host = server.replace(/^https?:\/\//, '');
+  return custom ? `Custom · ${host}` : host || 'Build default';
 }
 
 /**
@@ -136,6 +144,15 @@ export default function SettingsPage() {
             title="Listen Together"
             value={party.code ? `In party ${party.code}` : 'Listen in sync with friends'}
           />
+          {/* Where the parties meet: this build's server, or the custom one a joined room rode in on. */}
+          <div className={settingsUi.integration}>
+            <span className={settingsUi.integrationName}>Party server</span>
+            <span className={settingsUi.value}>
+              {partyServerLabel(
+                partyServer() && partyServer() !== DEFAULT_SERVER ? partyServer() : null,
+              )}
+            </span>
+          </div>
         </section>
 
         <h2 className={settingsUi.sectionHeader}>Playback</h2>
