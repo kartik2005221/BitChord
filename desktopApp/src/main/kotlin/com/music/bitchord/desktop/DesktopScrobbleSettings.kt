@@ -40,6 +40,13 @@ internal object DesktopScrobbleSettings {
     private val _delayPercent = MutableStateFlow(persistence.float(KEY_DELAY_PERCENT, DEFAULT_DELAY_PERCENT))
     private val _delaySeconds = MutableStateFlow(persistence.int(KEY_DELAY_SECONDS, DEFAULT_DELAY_SECONDS))
 
+    // What the last scrobble was refused with, when it was refused: the row in
+    // Settings that reads "signed in" would otherwise sit there while nothing
+    // was sent anywhere. Cleared on a landed scrobble and on signing in or out.
+    private val _lastError = MutableStateFlow(persistence.string(KEY_LAST_ERROR))
+
+    val lastError: StateFlow<String> = _lastError
+
     val lastfmEnabled: StateFlow<Boolean> = _lastfmEnabled
     val lastfmUsername: StateFlow<String> = _lastfmUsername
     val lastfmSessionKey: StateFlow<String> = _lastfmSessionKey
@@ -103,6 +110,7 @@ internal object DesktopScrobbleSettings {
         persistence.saveString(KEY_LASTFM_SESSION_KEY, sessionKey)
         _lastfmUsername.value = username
         _lastfmSessionKey.value = sessionKey
+        noteSuccess()
         setLastfmEnabled(true)
     }
 
@@ -112,9 +120,29 @@ internal object DesktopScrobbleSettings {
         persistence.saveString(KEY_LASTFM_SESSION_KEY, "")
         _lastfmUsername.value = ""
         _lastfmSessionKey.value = ""
+        noteSuccess()
         setLastfmEnabled(false)
         setLastfmScrobble(false)
         setLastfmNowPlaying(false)
+    }
+
+    /**
+     * Records what the last sent update was refused with. The row in Settings would
+     * otherwise read "signed in" while nothing was sent anywhere; a land clears it.
+     */
+    fun noteFailure(message: String) {
+        val trimmed = message.trim().take(140)
+        if (trimmed.isBlank()) return
+        _lastError.value = trimmed
+        persistence.saveString(KEY_LAST_ERROR, trimmed)
+    }
+
+    /** Clears the record — a scrobble landed, or the listener signed in or out again. */
+    fun noteSuccess() {
+        if (_lastError.value.isNotBlank()) {
+            _lastError.value = ""
+            persistence.saveString(KEY_LAST_ERROR, "")
+        }
     }
 
     private fun write(flow: MutableStateFlow<Boolean>, key: String, value: Boolean) {
@@ -130,6 +158,7 @@ internal object DesktopScrobbleSettings {
     private const val KEY_LASTFM_PRIMARY_ARTIST = "lastfm_primary_artist_only"
     private const val KEY_LASTFM_API_KEY = "lastfm_api_key"
     private const val KEY_LASTFM_API_SECRET = "lastfm_api_secret"
+    private const val KEY_LAST_ERROR = "lastfm_last_error"
     private const val KEY_LISTENBRAINZ_ENABLED = "listenbrainz_enabled"
     private const val KEY_LISTENBRAINZ_TOKEN = "listenbrainz_token"
     private const val KEY_LISTENBRAINZ_PRIMARY_ARTIST = "listenbrainz_primary_artist_only"
