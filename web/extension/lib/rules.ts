@@ -33,15 +33,9 @@ function impersonate(origin: string): HeaderInfo[] {
   return [set('Origin', origin), set('Referer', `${origin}/`), set('X-Origin', origin)];
 }
 
-/** Rule ids 1–99 are this module's; it replaces all of them on every install and startup. */
-export function youtubeRules(initiatorDomains: string[]): Rule[] {
-  const rule = (
-    id: number,
-    urlFilter: string,
-    requestHeaders: HeaderInfo[] | null,
-    resourceTypes = XHR,
-    priority = 1,
-  ): Rule => ({
+/** A rule factory bound to one site's domains (the two rule sets share the shape). */
+function makeRule(initiatorDomains: string[]) {
+  return (id: number, urlFilter: string, requestHeaders: HeaderInfo[] | null, resourceTypes = XHR, priority = 1): Rule => ({
     id,
     priority,
     condition: { urlFilter, initiatorDomains, resourceTypes },
@@ -51,7 +45,11 @@ export function youtubeRules(initiatorDomains: string[]): Rule[] {
       responseHeaders: CORS_RESPONSE,
     },
   });
+}
 
+/** Rule ids 1–99 are this module's; it replaces all of them on every install and startup. */
+export function youtubeRules(initiatorDomains: string[]): Rule[] {
+  const rule = makeRule(initiatorDomains);
   return [
     // InnerTube, as the YouTube Music and YouTube web clients.
     rule(1, '||music.youtube.com/youtubei/', impersonate('https://music.youtube.com')),
@@ -69,6 +67,25 @@ export function youtubeRules(initiatorDomains: string[]): Rule[] {
   ];
 }
 
+/**
+ * JioSaavn, the fork's own music source (data/saavn in the app): the page
+ * asks the catalogue's api.php and plays its CDN directly, so these rules
+ * carry what a page may not set (the Android app's headers: its fixed
+ * Chrome `User-Agent`, the `X-Forwarded-For` that keeps its newest API
+ * answers flowing, and the explicit-content `Cookie`) and answer CORS —
+ * without `Access-Control-Allow-Origin` the anonymous media element is silent.
+ */
+const SAAVN_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+
+export function saavnRules(initiatorDomains: string[]): Rule[] {
+  const rule = makeRule(initiatorDomains);
+  return [
+    rule(8, '||jiosaavn.com/api.php', [set('User-Agent', SAAVN_UA), set('X-Forwarded-For', '49.36.0.1'), set('X-Real-IP', '49.36.0.1'), set('Cookie', 'explicit_content=1')]),
+    // The artwork (c.) and the streams (aac.) share the suffix match; media, because an <audio> element's load is that type.
+    rule(9, '||saavncdn.com/', null, XHR_AND_MEDIA),
+  ];
+}
+
 export const RULE_IDS = Array.from({ length: 99 }, (_, i) => i + 1);
 
 /** The hostnames of the site origins, which is what `initiatorDomains` matches on. */
@@ -77,9 +94,10 @@ export function initiatorDomainsFor(origins: string[]): string[] {
 }
 
 export async function installRules(origins: string[]): Promise<void> {
+  const domains = initiatorDomainsFor(origins);
   await browser.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: RULE_IDS,
-    addRules: youtubeRules(initiatorDomainsFor(origins)),
+    addRules: [...youtubeRules(domains), ...saavnRules(domains)],
   });
 }
 

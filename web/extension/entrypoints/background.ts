@@ -13,6 +13,7 @@ import {
 import * as discord from '../lib/discord';
 import { grantedOrigins, lyricsFetch, requestOrigins } from '../lib/lyricsFetch';
 import { installRules } from '../lib/rules';
+import { saavnEnabled } from '../lib/saavn';
 import { authState, invalidateAccounts, isSessionCookie, selectChannel, setConnected } from '../lib/ytAuth';
 import * as spotify from '../lib/spotify';
 import { registerExtraRelays, SAVED_ORIGINS_KEY, trustedOrigins } from '../lib/trustedOrigins';
@@ -29,7 +30,7 @@ const ALLOWED_ORIGINS = new Set(BUILD_ORIGINS);
 const OWN_ORIGIN = new URL(browser.runtime.getURL('/')).origin;
 
 /** Grows as each phase lands its methods; Discord only in builds that include it. */
-const CAPABILITIES: Capability[] = ['yt', 'yt.auth', 'yt.stats', 'lyrics', 'spotify', ...(discord.AVAILABLE ? (['discord'] as const) : [])];
+const CAPABILITIES: Capability[] = ['yt', 'yt.auth', 'yt.stats', 'lyrics', 'spotify', 'saavn', ...(discord.AVAILABLE ? (['discord'] as const) : [])];
 
 function originOf(sender: Browser.runtime.MessageSender): string | null {
   if (sender.origin) return sender.origin;
@@ -135,6 +136,8 @@ async function handle(request: BridgeRequest): Promise<BridgeResponse> {
         return okResponse<'spotify.canvas'>(request.id, {
           url: await spotify.canvas((request as BridgeRequest<'spotify.canvas'>).params.trackId),
         });
+      case 'saavn.enabled':
+        return okResponse<'saavn.enabled'>(request.id, { enabled: await saavnEnabled() });
       case 'discord.state':
         return okResponse<'discord.state'>(request.id, await discord.discordState());
       case 'discord.connect':

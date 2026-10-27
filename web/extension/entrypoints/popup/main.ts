@@ -1,4 +1,5 @@
 import './style.css';
+import { saavnEnabled, setSaavnEnabled } from '../../lib/saavn';
 import { addOrigin, removeOrigin, savedOrigins, trustedOrigins } from '../../lib/trustedOrigins';
 import {
   BRIDGE_CHANNEL,
@@ -263,3 +264,29 @@ async function renderSettings(): Promise<void> {
 }
 
 void renderSettings();
+
+// ---- JioSaavn source (lib/saavn) ---------------------------------------------------
+
+/** The Sources section: the fork's own music source, and its toggle. */
+async function renderSources(): Promise<void> {
+  const enabled = await saavnEnabled();
+  const who = el('span', 'who');
+  who.append(
+    el('span', 'title', 'JioSaavn'),
+    el('span', 'detail', enabled ? 'Search mixes its songs in' : 'Off — YouTube Music only'),
+  );
+  const row = el('li', 'row origin');
+  row.append(
+    who,
+    button(
+      enabled ? 'Turn off' : 'Turn on',
+      () => void setSaavnEnabled(!enabled).then(() => renderSources()),
+      enabled ? 'Searches go to YouTube Music only.' : 'Searches add JioSaavn\u2019s catalogue again.',
+    ),
+  );
+  const section = document.getElementById('sources');
+  if (!section) return;
+  section.replaceChildren(el('span', 'sectitle', 'Sources'), row);
+}
+
+void renderSources().catch(() => undefined);

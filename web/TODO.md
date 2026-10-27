@@ -33,17 +33,17 @@ remaining work is the "Next" section below.
 
 ## Next
 
+- [x] Extension DNR rule + `host_permissions` for the api.php and
+      `*.saavncdn.com` (same shape as the YouTube rules; the CORS answer and
+      the impersonation headers both arrive there). Until that lands, JioSaavn
+      needs the extension installed: the page alone can't set
+      `X-Forwarded-For`/`Cookie`, so its fetches are refused.
+- [x] Popup: JioSaavn toggle (a Sources row) + the page's ask-before-mix via
+      the bridge (`saavn.enabled`), on by default.
 - [ ] **Playback follow-ups**: YouTube fallback when a Saavn row refuses
       (quality gate or API miss — match to YouTube with the Spotify folder's
       machinery); AutoPlay radio after a Saavn track (radio is YouTube's, so
       its seed needs a YT match; today it quietly does nothing instead of
       erroring).
-- [ ] Extension DNR rule + `host_permissions` for the api.php and
-      `*.saavncdn.com` (same shape as the YouTube rules; the CORS answer and
-      the impersonation headers both arrive there). Until that lands, JioSaavn
-      needs the extension installed: the page alone can't set
-      `X-Forwarded-For`/`Cookie`, so its fetches are refused.
-- [ ] Popup: JioSaavn toggle once the source lands (today it's on wherever the
-      extension serves).
 - [ ] Web app settings page: party-server override display
 - [ ] When a custom domain is bound: add it here and in each deploy env

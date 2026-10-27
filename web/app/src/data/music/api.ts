@@ -2,6 +2,7 @@ import type { YTMusic, YTNodes } from 'youtubei.js/web';
 import type { Candidate } from '@/playback/queue/builder';
 import { getInnertube, getMusicClient, getSignedInnertube } from '@/playback/youtube/innertube';
 import { isExactArtistMatch, normalizedArtistName } from '@/lib/artistCredits';
+import { getBridge } from '@/extension/bridge';
 import { LIBRARY_SECTIONS, LIKED_MUSIC_PLAYLIST, type LibrarySection } from './library';
 import {
   mapAlbum,
@@ -81,9 +82,15 @@ export async function fetchCategories(): Promise<CategoryGroup[]> {
 /**
  * The fork's JioSaavn rows for [query]: its own search, best-effort — the
  * API is total (it answers [] on any miss, including the missing extension
- * the rules need), so a dead JioSaavn is an empty shelf, never a failed search.
+ * the rules need), so a dead JioSaavn is an empty shelf, never a failed
+ * search. The extension's Sources toggle answers first: off means none.
  */
 async function saavnShelf(query: string): Promise<MusicItem[]> {
+  const bridge = getBridge();
+  const enabled = bridge
+    ? await bridge.call('saavn.enabled', {}, { timeoutMs: 2000 }).then((state) => state.enabled).catch(() => true)
+    : true;
+  if (!enabled) return [];
   const { searchSaavnSongs, isExplicit, songArtist, songDurationSec, songImage } = await import('@/data/saavn/api');
   const songs = await searchSaavnSongs(query);
   return songs.map((song) => {

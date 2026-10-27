@@ -16,7 +16,7 @@ export const BRIDGE_CHANNEL = 'bitchord-bridge';
 export const EVENTS_PORT = 'bitchord-events';
 
 /** What the installed extension can do; `ping` reports it. */
-export type Capability = 'yt' | 'yt.auth' | 'yt.stats' | 'addon' | 'lyrics' | 'spotify' | 'discord';
+export type Capability = 'yt' | 'yt.auth' | 'yt.stats' | 'addon' | 'lyrics' | 'spotify' | 'saavn' | 'discord';
 
 export type BrowserFamily = 'chromium' | 'firefox';
 
@@ -214,6 +214,8 @@ export interface BridgeMethods {
   'spotify.searchTracks': { params: { query: string }; result: SpotifyTrack[] };
   /** The track's looping canvas video, or null when it has none. */
   'spotify.canvas': { params: { trackId: string }; result: { url: string | null } };
+  /** The fork's JioSaavn source: whether its rows join searches (the popup's toggle answers it). */
+  'saavn.enabled': { params: Record<string, never>; result: { enabled: boolean } };
   'discord.state': { params: Record<string, never>; result: DiscordState };
   /** Opens the extension's page that connects an account (asks for discord.com, reads the token there). */
   'discord.connect': { params: Record<string, never>; result: Record<string, never> };

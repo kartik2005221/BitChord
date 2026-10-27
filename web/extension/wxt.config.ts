@@ -50,6 +50,8 @@ export default defineConfig({
       'https://api-partner.spotify.com/*',
       'https://clienttoken.spotify.com/*',
       'https://open.spotifycdn.com/*',
+      'https://*.jiosaavn.com/*',
+      'https://*.saavncdn.com/*',
       ...matchPatternsFor(SITE_ORIGINS),
     ],
     // Granted at use time, on the extension's own pages: lyric providers the
