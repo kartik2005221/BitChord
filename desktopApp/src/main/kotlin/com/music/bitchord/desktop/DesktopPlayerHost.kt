@@ -186,7 +186,10 @@ internal object DesktopPlayerSettings : PlayerSettingsSource {
     override val fullBleedArtwork = MutableStateFlow(false)
     override val hideSongStatus = MutableStateFlow(false)
     override val showQueueHistory = MutableStateFlow(false)
-    override val hideVolumeBar = MutableStateFlow(false)
+    // The appearance setting routed into the player. A constant `false` sat here before, so the
+    // player's own layouts asked the setting and got an answer that ignored it — the volume bar
+    // appeared wherever the layouts wanted, on or off.
+    override val hideVolumeBar = DesktopAppearanceSettings.hideVolumeBar
     // A desktop window has no status bar to hide.
     override val hideStatusBar = MutableStateFlow(false)
     override val lastPlayerScreen = MutableStateFlow(

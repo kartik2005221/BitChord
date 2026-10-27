@@ -127,14 +127,14 @@ private val LandscapeArtShape = RoundedCornerShape(LANDSCAPE_ART_CORNER)
 private val LANDSCAPE_HANDLE_STRIP = 24.dp
 
 /**
- * How much of the desktop left column the transport and the toggle row take.
+ * How much of the desktop left column the transport, the volume bar and the toggle row take.
  *
  * The sleeve is sized to leave this much under it, so the controls sit close
  * beneath the cover instead of the sleeve being centred in the whole column and
  * shunting them down to its foot. Only the desktop window uses it; a
  * phone-height window keeps the sleeve filling the column above its row.
  */
-private val LANDSCAPE_DESKTOP_CONTROLS_RESERVE = 300.dp
+private val LANDSCAPE_DESKTOP_CONTROLS_RESERVE = 360.dp
 
 /**
  * The player in a landscape window — a tablet, or a phone on its side. See
@@ -254,10 +254,12 @@ internal fun LandscapePlayerLayout(
                         }
                         Spacer(Modifier.height(24.dp))
                         controls(false)
-                        // The volume bar and the lyrics/output/queue row are
-                        // folded into the player's overflow, which the song
-                        // menu's "More…" opens — so the sleeve and the
-                        // transport are all this column shows.
+                        actions()
+                        // Under them everything the "More…" drawer keeps: the volume bar and
+                        // the lyrics/output/queue row both already have their answers in the
+                        // overflow, but what everybody reaches for not live behind a menu —
+                        // the way the volume bar, the lyrics toggle and the queue toggle sat
+                        // on the desktop player before this layout was redrawn.
                     }
                 }
 

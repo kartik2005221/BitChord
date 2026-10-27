@@ -2114,7 +2114,11 @@ fun NowPlayingScreen(
                                     compact = compact,
                                 )
                             },
-                            volume = if (hideVolumeBar || !compact) {
+                            // The condition is only the appearance setting: every layout that
+                            // renders this pane asks for the volume when it has the room — the
+                            // desktop window puts it under the transport in its left column —
+                            // and the setting is the reader's way to ask for silence there.
+                            volume = if (hideVolumeBar) {
                                 null
                             } else {
                                 {
