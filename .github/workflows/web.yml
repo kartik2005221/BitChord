@@ -5,7 +5,7 @@ name: Web
 # that only breaks the production build (Vite, WXT) is caught before it ships.
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - 'web/**'
       - '.github/workflows/web.yml'
