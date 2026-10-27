@@ -61,6 +61,11 @@ jobs:
           ./gradlew :desktopApp:packageDeb :desktopApp:packageRpm :desktopApp:createDistributable \
             -Pbitchord.version=${{ steps.version.outputs.value }}
 
+      - name: The deb's launcher claims the running window
+        run: |
+          desktopApp/packaging/patch-deb-wmclass.sh \
+            "$PWD"/desktopApp/build/compose/binaries/main/deb/*.deb
+
       - name: The analyser and models are in the jar
         run: |
           jar=$(ls desktopApp/build/compose/binaries/main/app/BitChord/lib/app/desktopApp*.jar)
