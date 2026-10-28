@@ -2,30 +2,70 @@
 
 # Usage: patch-deb-wmclass.sh <built.deb>
 #
-# jpackage generates the deb's .desktop without a StartupWMClass, so GNOME never
-# matches the running window against the launcher: the app shows the right icon in
-# the app grid but a generic gear in the dock/taskbar while it runs, with the
-# window marked <untracked> and the dock's click launching a duplicate. The
-# window's own X11 WM_CLASS, as AWT exposes it (dots and slashes mangled to
-# dashes, verified against GNOME's Looking Glass and with a per-user override on
-# Ubuntu), is com-music-bitchord-desktop-MainKt — the same claim the AppImage's
-# desktop file already makes (see appimage.sh).
+# The deb ships no launcher the desktop can match a running window against: its
+# /usr/share/applications holds no .desktop (out of compose 1.10.3's packageDeb),
+# so the app grid has no entry, the dock marks the window <untracked>, shows a
+# generic icon, and a dock click spawns a duplicate. This gives the deb the same
+# launcher the AppImage already claims (see appimage.sh): StartupWMClass=
+# com-music-bitchord-desktop-MainKt — the window's real X11 WM_CLASS, as AWT
+# exposes it (dots and slashes mangled to dashes; verified against GNOME's
+# Looking Glass and with a per-user override on Ubuntu). Should a deb carry a
+# .desktop after all (other compose/jpackage layouts), that one is finished
+# instead; the repack is verified by reading the entry back out of the deb.
 set -euo pipefail
 
 deb=$1
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+wmclass=com-music-bitchord-desktop-MainKt
 
 dpkg-deb -R "$deb" "$work/root"
-desktop=$(find "$work/root/usr/share/applications" -name '*.desktop' -print -quit)
+
+desktop=$(find "$work/root" -type f -name '*.desktop' -print -quit 2>/dev/null || true)
+
 if [ -z "$desktop" ]; then
-  echo "no .desktop in the deb; nothing to claim the running window with" >&2
-  exit 1
+  # Synthesize the launcher: Exec points at the payload's own launcher, the icon
+  # at whatever png the payload carries — paths as they land on an installed
+  # machine, i.e. the unpack prefix $work/root is stripped.
+  launcher=$(find "$work/root/opt" -type f -path '*/bin/*' -perm /111 -print -quit 2>/dev/null || true)
+  [ -n "$launcher" ] || {
+    echo "$(basename "$deb"): no .desktop and no launcher under /opt to write one for" >&2
+    exit 1
+  }
+  icon=$(find "$work/root/opt" -type f -name '*.png' -print -quit 2>/dev/null || true)
+  launcher=${launcher#"$work/root"}
+  icon=${icon#"$work/root"}
+  mkdir -p "$work/root/usr/share/applications"
+  desktop="$work/root/usr/share/applications/bitchord.desktop"
+  {
+    echo "[Desktop Entry]"
+    echo "Type=Application"
+    echo "Name=BitChord"
+    echo "GenericName=Music Player"
+    echo "Comment=Aesthetic YouTube Music client"
+    echo "Exec=$launcher"
+    echo "Icon=${icon:-bitchord}"
+    echo "Categories=AudioVideo;Audio;Player;"
+    echo "Terminal=false"
+    echo "StartupWMClass=$wmclass"
+  } > "$desktop"
+  kind=synthesized
+else
+  if grep -q "^StartupWMClass=$wmclass" "$desktop"; then
+    echo "$(basename "$deb"): $(basename "$desktop") already claims $wmclass"
+    exit 0
+  fi
+  printf 'StartupWMClass=%s\n' "$wmclass" >> "$desktop"
+  kind=patched
 fi
-if grep -q '^StartupWMClass=' "$desktop"; then
-  echo "$(basename "$deb"): StartupWMClass already set"
-  exit 0
-fi
-printf 'StartupWMClass=com-music-bitchord-desktop-MainKt\n' >> "$desktop"
+
 dpkg-deb -b --root-owner-group "$work/root" "$deb"
-echo "$(basename "$deb"): $(basename "$desktop") now claims com-music-bitchord-desktop-MainKt"
+
+# The claim must survive the repack — read it back out of the deb itself.
+dpkg-deb --fsys-tarfile "$deb" \
+  | tar -xO --wildcards -f - './usr/share/applications/*.desktop' > "$work/readback"
+grep -q "^StartupWMClass=$wmclass" "$work/readback" || {
+  echo "$(basename "$deb"): the claim did not survive the repack" >&2
+  exit 1
+}
+echo "$(basename "$deb"): $kind $(basename "$desktop") claiming $wmclass"
