@@ -11,7 +11,8 @@
 # exposes it (dots and slashes mangled to dashes; verified against GNOME's
 # Looking Glass and with a per-user override on Ubuntu). Should a deb carry a
 # .desktop after all (other compose/jpackage layouts), that one is finished
-# instead; the repack is verified by reading the entry back out of the deb.
+# instead. The script talks while it works: every stage prints its state, so a
+# CI log shows exactly where a deb refuses to carry the entry.
 set -euo pipefail
 
 deb=$1
@@ -19,9 +20,11 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 wmclass=com-music-bitchord-desktop-MainKt
 
+echo "patch: $(basename "$deb") — $(dpkg-deb --version 2>/dev/null | head -n1)"
 dpkg-deb -R "$deb" "$work/root"
 
 desktop=$(find "$work/root" -type f -name '*.desktop' -print -quit 2>/dev/null || true)
+echo "patch: existing .desktop — ${desktop:-(none)}"
 
 if [ -z "$desktop" ]; then
   # Synthesize the launcher: Exec points at the payload's own launcher, the icon
@@ -33,6 +36,7 @@ if [ -z "$desktop" ]; then
     exit 1
   }
   icon=$(find "$work/root/opt" -type f -name '*.png' -print -quit 2>/dev/null || true)
+  echo "patch: launcher — ${launcher#"$work/root"}; icon — ${icon:-(none)}"
   launcher=${launcher#"$work/root"}
   icon=${icon#"$work/root"}
   mkdir -p "$work/root/usr/share/applications"
@@ -49,6 +53,8 @@ if [ -z "$desktop" ]; then
     echo "Terminal=false"
     echo "StartupWMClass=$wmclass"
   } > "$desktop"
+  echo "patch: the written entry:"
+  cat "$desktop"
   kind=synthesized
 else
   if grep -q "^StartupWMClass=$wmclass" "$desktop"; then
@@ -56,19 +62,29 @@ else
     exit 0
   fi
   printf 'StartupWMClass=%s\n' "$wmclass" >> "$desktop"
+  echo "patch: appended — $(tail -n1 "$desktop")"
   kind=patched
 fi
 
 dpkg-deb -b --root-owner-group "$work/root" "$deb"
+echo "patch: repacked"
 
 # The claim must survive the repack — read it back out of the deb itself.
-# dpkg-deb -x rather than tar over the archive: dpkg versions disagree on
-# whether the members carry a ./ prefix, and a tar pattern that misses the
-# naming convention reports "Not found in archive" against a perfectly good repack.
+# First the deb's own contents table (naming-agnostic reporting), then the
+# extracted tree is the enforced proof.
+dpkg-deb -c "$deb" | grep -F 'usr/share/applications' \
+  || echo "patch: NOTE — no applications dir in the deb's contents table; table has $(dpkg-deb -c "$deb" | wc -l) rows"
+
+mkdir -p "$work/now"
 dpkg-deb -x "$deb" "$work/now"
-entry=$(find "$work/now/usr/share/applications" -name '*.desktop' -print -quit 2>/dev/null || true)
-if [ -z "$entry" ] || ! grep -q "^StartupWMClass=$wmclass" "$entry"; then
+entry=$(find "$work/now" -type f -name '*.desktop' -print -quit 2>/dev/null || true)
+echo "patch: entry after extract — ${entry:-(none)}"
+if [ -z "$entry" ]; then
   echo "$(basename "$deb"): the claim did not survive the repack" >&2
   exit 1
 fi
+grep -H "^StartupWMClass=$wmclass" "$entry" || {
+  echo "$(basename "$deb"): the claim did not survive the repack" >&2
+  exit 1
+}
 echo "$(basename "$deb"): $kind $(basename "$entry") claiming $wmclass"
