@@ -62,10 +62,13 @@ fi
 dpkg-deb -b --root-owner-group "$work/root" "$deb"
 
 # The claim must survive the repack — read it back out of the deb itself.
-dpkg-deb --fsys-tarfile "$deb" \
-  | tar -xO --wildcards -f - './usr/share/applications/*.desktop' > "$work/readback"
-grep -q "^StartupWMClass=$wmclass" "$work/readback" || {
+# dpkg-deb -x rather than tar over the archive: dpkg versions disagree on
+# whether the members carry a ./ prefix, and a tar pattern that misses the
+# naming convention reports "Not found in archive" against a perfectly good repack.
+dpkg-deb -x "$deb" "$work/now"
+entry=$(find "$work/now/usr/share/applications" -name '*.desktop' -print -quit 2>/dev/null || true)
+if [ -z "$entry" ] || ! grep -q "^StartupWMClass=$wmclass" "$entry"; then
   echo "$(basename "$deb"): the claim did not survive the repack" >&2
   exit 1
-}
-echo "$(basename "$deb"): $kind $(basename "$desktop") claiming $wmclass"
+fi
+echo "$(basename "$deb"): $kind $(basename "$entry") claiming $wmclass"
