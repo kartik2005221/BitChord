@@ -7,9 +7,14 @@ import kotlinx.coroutines.flow.StateFlow
 /** How the window is sitting on the screen: floating, maximized, or filling it. */
 internal object DesktopWindowMode {
 
-    private val _placement = MutableStateFlow(WindowPlacement.Floating)
+    // The maximized flag the last run left behind answers for the placement the window starts in
+    // — see [DesktopWindowState]. Main.kt seeds its own window state with this same flow's value,
+    // so both layers agree before any effect runs and restoring the flag survives the
+    // placement-driven effect below rather than being caught between it and the compose set.
+    private val bootPlacement = DesktopWindowState.savedPlacement()
+    private val _placement = MutableStateFlow(bootPlacement)
     private val _fullScreen = MutableStateFlow(false)
-    private val _maximized = MutableStateFlow(false)
+    private val _maximized = MutableStateFlow(bootPlacement == WindowPlacement.Maximized)
 
     /** What the window's own `placement` is driven from. */
     val placement: StateFlow<WindowPlacement> = _placement
@@ -74,7 +79,10 @@ internal object DesktopWindowMode {
     }
 
     private fun set(placement: WindowPlacement) {
+        val maximized = placement == WindowPlacement.Maximized
         _placement.value = placement
-        _maximized.value = placement == WindowPlacement.Maximized
+        _maximized.value = maximized
+        // The flag is what the next run starts from — see [DesktopWindowState.savedPlacement].
+        DesktopPersistence().saveBoolean(DesktopWindowState.KEY_MAXIMIZED, maximized)
     }
 }

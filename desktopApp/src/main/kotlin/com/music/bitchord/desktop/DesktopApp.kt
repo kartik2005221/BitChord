@@ -2577,6 +2577,7 @@ fun BitChordDesktopApp() {
             onQuit = {
                 // Native work first: the audio thread and the media controls are inside FFmpeg,
                 // WASAPI and WinRT, and exitProcess would unload those libraries under them.
+                DesktopWindowState.saveTracked()
                 playbackEngine.shutdown()
                 DesktopWindowsMedia.stop()
                 exitProcess(0)

@@ -71,6 +71,15 @@ object DesktopScrobbling {
         get() = apiKey != null && apiSecret != null && sessionKey() != null &&
             DesktopScrobbleSettings.lastfmEnabled.value
 
+    /**
+     * Whether the sending half is complete without regard to the toggles: sign-in
+     * parts plus an app key to sign the calls with. A build whose credentials are
+     * nowhere has session-less sign-in-looking rows in Settings that do nothing —
+     * this is what those rows read, to say so.
+     */
+    val canScrobble: Boolean
+        get() = apiKey != null && apiSecret != null && sessionKey() != null
+
     val listenBrainzConfigured: Boolean
         get() = listenBrainzToken() != null && DesktopScrobbleSettings.listenBrainzEnabled.value
 
@@ -118,14 +127,58 @@ object DesktopScrobbling {
     }
 
     suspend fun updateNowPlaying(song: Song): Result<Unit> = runCatching {
-        if (lastFmConfigured) updateLastFm(song)
-        if (listenBrainzConfigured) submitListenBrainz(song, "playing_now", 0L, song.durationMillis(), 0L)
+        // The Last.fm half of the pair is the one the listener's row reports on:
+        // a landed update clears the last failure, a refused one records it. The
+        // ListenBrainz half keeps its own log line — its failures are not this
+        // row's news, and one service going down should not smear the other.
+        if (lastFmConfigured) {
+            try {
+                updateLastFm(song)
+                DesktopScrobbleSettings.noteSuccess()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                noteFailure("now playing", e)
+            }
+        }
+        if (listenBrainzConfigured) {
+            try {
+                submitListenBrainz(song, "playing_now", 0L, song.durationMillis(), 0L)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DesktopTrackLog.log("listenbrainz now playing failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
     }
 
     suspend fun scrobble(song: Song): Result<Unit> = runCatching {
         val timestamp = System.currentTimeMillis() / 1_000L
-        if (lastFmConfigured) submitLastFm(song, timestamp)
-        if (listenBrainzConfigured) submitListenBrainz(song, "single", activeStartedAtMs, song.durationMillis(), timestamp)
+        if (lastFmConfigured) {
+            try {
+                submitLastFm(song, timestamp)
+                DesktopScrobbleSettings.noteSuccess()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                noteFailure("scrobble", e)
+            }
+        }
+        if (listenBrainzConfigured) {
+            try {
+                submitListenBrainz(song, "single", activeStartedAtMs, song.durationMillis(), timestamp)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DesktopTrackLog.log("listenbrainz scrobble failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    /** One line in the app's own log, and a visible word in Settings, where silence used to sit. */
+    private fun noteFailure(what: String, error: Throwable) {
+        DesktopTrackLog.log("lastfm $what failed: ${error.message ?: error.javaClass.simpleName}")
+        DesktopScrobbleSettings.noteFailure(error.message ?: error.javaClass.simpleName)
     }
 
     /** Mirrors Android's thresholded scrobble timer and pause/resume semantics. */
@@ -168,7 +221,14 @@ object DesktopScrobbling {
                     }
                 }
                 if (shouldSend && lastFmConfigured) {
-                    submitLastFm(song, activeStartedAtMs / 1_000L)
+                    try {
+                        submitLastFm(song, activeStartedAtMs / 1_000L)
+                        DesktopScrobbleSettings.noteSuccess()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        noteFailure("scrobble", e)
+                    }
                 }
             }
         }
@@ -186,12 +246,15 @@ object DesktopScrobbling {
                 val minDurationMs = DesktopScrobbleSettings.minDuration.value * 1_000L
                 if (!lastFmScrobbled && lastFmConfigured && song.durationMillis() > minDurationMs) {
                     submitLastFm(song, startedAt / 1_000L)
+                    DesktopScrobbleSettings.noteSuccess()
                 }
                 if (listenBrainzConfigured) {
                     submitListenBrainz(song, "single", startedAt, song.durationMillis(), System.currentTimeMillis() / 1_000L)
                 }
-            } catch (_: CancellationException) {
-                throw CancellationException()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                noteFailure("scrobble", e)
             }
         }
     }

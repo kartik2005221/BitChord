@@ -367,6 +367,7 @@ private fun ScrobblingSection(onOpenLastfm: () -> Unit, onOpenListenBrainz: () -
     val lastfmEnabled by DesktopScrobbleSettings.lastfmEnabled.collectAsState()
     val lastfmUser by DesktopScrobbleSettings.lastfmUsername.collectAsState()
     val lastfmSession by DesktopScrobbleSettings.lastfmSessionKey.collectAsState()
+    val lastError by DesktopScrobbleSettings.lastError.collectAsState()
     val lbEnabled by DesktopScrobbleSettings.listenBrainzEnabled.collectAsState()
     val lbToken by DesktopScrobbleSettings.listenBrainzToken.collectAsState()
     val signedIn = lastfmSession.isNotBlank()
@@ -401,8 +402,27 @@ private fun ScrobblingSection(onOpenLastfm: () -> Unit, onOpenListenBrainz: () -
             // No API-key gate: a build without baked-in credentials asks for the
             // listener's own key and secret in the sign-in dialog instead.
             subtitle = when {
-                signedIn -> "Signed in as $lastfmUser"
-                else -> "Tap to sign in"
+                !signedIn -> "Tap to sign in"
+                else -> {
+                    // "Signed in" alone used to say nothing about the sending half: a build
+                    // without an app key — or a session the key has changed under — worked
+                    // through every toggle while nothing reached Last.fm. The subtitle says
+                    // the truth about the send, and the last failure the send met.
+                    val failing = lastError.takeIf { it.isNotBlank() }
+                    val sending = when {
+                        !DesktopScrobbling.canScrobble ->
+                            "nothing is being sent — this build has no Last.fm app key; sign out and sign in again"
+                        failing != null ->
+                            "not sending: $failing"
+                        else -> null
+                    }
+                    StringBuilder().apply {
+                        append("Signed in as ").append(lastfmUser)
+                        if (sending != null) {
+                            append(" · ").append(sending)
+                        }
+                    }.toString()
+                }
             },
             checked = lastfmEnabled,
             onCheckedChange = { checked ->
