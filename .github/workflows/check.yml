@@ -2,7 +2,7 @@ name: Check
 
 on:
   push:
-    branches: [master, desktop-fixes]
+    branches: ["**"]
   pull_request:
 
 concurrency:
