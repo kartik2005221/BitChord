@@ -54,14 +54,36 @@ internal object DesktopWindowState {
             WindowPlacement.Floating
         }
 
-    /** The remembered opening size, or the size the app has always opened at when none is saved. */
-    fun loadWidth(): Dp =
-        parseStoredPositive(DesktopPersistence().string(KEY_SIZE), 'x')?.first?.dp
-            ?: DEFAULT_WIDTH_DP.dp
+    /**
+     * The remembered opening size, or the size the app has always opened at when none
+     * is saved — clamped, either way, into the screen it may realize on. A size an
+     * older build remembered oversized (its scale had multiplied in) never comes back
+     * through here bigger than the display, not even when the boot starts maximized:
+     * the runtime clamp in [ensureOnScreen] is floater-only, and these numbers are
+     * what a later restore returns to. Compose's dp and AWT's logical pixels carry the
+     * same measure — one passes straight into the other — so comparing against the
+     * screen's usable area is an honest one.
+     */
+    private val rememberedSize: Pair<Dp, Dp> by lazy {
+        val (width, height) =
+            parseStoredPositive(DesktopPersistence().string(KEY_SIZE), 'x')
+                ?: (DEFAULT_WIDTH_DP to DEFAULT_HEIGHT_DP)
+        runCatching {
+            val config = GraphicsEnvironment
+                .getLocalGraphicsEnvironment()
+                .defaultScreenDevice
+                .defaultConfiguration
+            val insets = Toolkit.getDefaultToolkit().getScreenInsets(config)
+            val bounds = config.bounds
+            val widest = bounds.width - insets.left - insets.right
+            val tallest = bounds.height - insets.top - insets.bottom
+            minOf(width, widest).dp to minOf(height, tallest).dp
+        }.getOrDefault(width.dp to height.dp)
+    }
 
-    fun loadHeight(): Dp =
-        parseStoredPositive(DesktopPersistence().string(KEY_SIZE), 'x')?.second?.dp
-            ?: DEFAULT_HEIGHT_DP.dp
+    fun loadWidth(): Dp = rememberedSize.first
+
+    fun loadHeight(): Dp = rememberedSize.second
 
     /** The remembered position, or the platform's own placement when none is saved. */
     fun loadPosition(): WindowPosition {
