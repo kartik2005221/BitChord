@@ -6,6 +6,8 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import java.awt.GraphicsEnvironment
+import java.awt.Insets
+import java.awt.Toolkit
 import java.awt.Window
 import java.lang.ref.WeakReference
 import kotlin.math.roundToInt
@@ -52,14 +54,36 @@ internal object DesktopWindowState {
             WindowPlacement.Floating
         }
 
-    /** The remembered opening size, or the size the app has always opened at when none is saved. */
-    fun loadWidth(): Dp =
-        parseStoredPositive(DesktopPersistence().string(KEY_SIZE), 'x')?.first?.dp
-            ?: DEFAULT_WIDTH_DP.dp
+    /**
+     * The remembered opening size, or the size the app has always opened at when none
+     * is saved — clamped, either way, into the screen it may realize on. A size an
+     * older build remembered oversized (its scale had multiplied in) never comes back
+     * through here bigger than the display, not even when the boot starts maximized:
+     * the runtime clamp in [ensureOnScreen] is floater-only, and these numbers are
+     * what a later restore returns to. Compose's dp and AWT's logical pixels carry the
+     * same measure — one passes straight into the other — so comparing against the
+     * screen's usable area is an honest one.
+     */
+    private val rememberedSize: Pair<Dp, Dp> by lazy {
+        val (width, height) =
+            parseStoredPositive(DesktopPersistence().string(KEY_SIZE), 'x')
+                ?: (DEFAULT_WIDTH_DP to DEFAULT_HEIGHT_DP)
+        runCatching {
+            val config = GraphicsEnvironment
+                .getLocalGraphicsEnvironment()
+                .defaultScreenDevice
+                .defaultConfiguration
+            val insets = Toolkit.getDefaultToolkit().getScreenInsets(config)
+            val bounds = config.bounds
+            val widest = bounds.width - insets.left - insets.right
+            val tallest = bounds.height - insets.top - insets.bottom
+            minOf(width, widest).dp to minOf(height, tallest).dp
+        }.getOrDefault(width.dp to height.dp)
+    }
 
-    fun loadHeight(): Dp =
-        parseStoredPositive(DesktopPersistence().string(KEY_SIZE), 'x')?.second?.dp
-            ?: DEFAULT_HEIGHT_DP.dp
+    fun loadWidth(): Dp = rememberedSize.first
+
+    fun loadHeight(): Dp = rememberedSize.second
 
     /** The remembered position, or the platform's own placement when none is saved. */
     fun loadPosition(): WindowPosition {
@@ -104,12 +128,31 @@ internal object DesktopWindowState {
     }
 
     /**
-     * A remembered monitor can go away. If the place the window has realized at is
-     * not on any screen at all, hand it back to the window manager's own placement
-     * — AWT re-centres on the primary display — rather than leave it stranded where
-     * it cannot be seen or dragged.
+     * A remembered monitor can go away. A remembered size can be oversized as well —
+     * a smaller display this run, or a size trapped by an older build that multiplied
+     * the display's scale into it — so the window is first clamped into the usable area
+     * of the screen it has realized on, and only then checked for being on any screen
+     * at all: if it still is nowhere, hand it back to the window manager's own
+     * placement — AWT re-centres on the primary display — rather than leave it
+     * stranded where it cannot be seen or dragged.
      */
-    fun ensureOnScreen(window: Window) {
+    fun ensureOnScreen(window: Window, floats: Boolean = true) {
+        window.graphicsConfiguration?.let { config ->
+            val screen = config.bounds
+            val insets = runCatching {
+                Toolkit.getDefaultToolkit().getScreenInsets(config)
+            }.getOrNull() ?: Insets(0, 0, 0, 0)
+            // The window's bounds and its configuration's speak the same space, so the
+            // comparison holds whatever scale the display applies beneath the calls.
+            // Only a floating window is clamped: a maximized or fullscreen one has no
+            // size of its own to correct, and touches on those fight the placement.
+            val widest = screen.width - insets.left - insets.right
+            val tallest = screen.height - insets.top - insets.bottom
+            if (floats && (window.width > widest || window.height > tallest)) {
+                window.setSize(minOf(widest, window.width), minOf(tallest, window.height))
+                DesktopTrackLog.log("window size exceeded the screen; clamped to fit")
+            }
+        }
         val devices = runCatching {
             GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
         }.getOrNull() ?: return

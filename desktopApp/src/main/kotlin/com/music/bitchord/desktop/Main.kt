@@ -163,12 +163,16 @@ private fun desktopMain() = application {
                 (composeWindow.contentPane as? javax.swing.JComponent)?.isOpaque = false
                 composeWindow.rootPane.isOpaque = false
             }
-            // AWT measures this in device pixels while Compose's window state is in dp. Keeping
-            // the scale in the conversion makes the usable minimum consistent on every display.
-            val transform = composeWindow.graphicsConfiguration.defaultTransform
+            // The window is measured in logical units: AWT applies the display's own scale
+            // beneath every call (JDK 11+ does the conversion on each platform), and Compose's
+            // window state speaks that same dp — so the scale must not enter the conversion a
+            // second time. With it in, a 200% display saw every size doubled: the opening
+            // window outgrew the screen, and what the persistence remembered was oversized
+            // with it — see [DesktopWindowState.ensureOnScreen] for the clamp that keeps an
+            // old run's remembered size from doing that again.
             composeWindow.minimumSize = Dimension(
-                (MIN_WINDOW_WIDTH_DP * transform.scaleX).roundToInt(),
-                (MIN_WINDOW_HEIGHT_DP * transform.scaleY).roundToInt(),
+                MIN_WINDOW_WIDTH_DP.roundToInt(),
+                MIN_WINDOW_HEIGHT_DP.roundToInt(),
             )
             // Setting AWT's minimum during the first composition can resize the native peer to
             // that minimum without updating Compose's state. Compose would then keep laying out a
@@ -176,13 +180,13 @@ private fun desktopMain() = application {
             // boundary off-screen until a maximize/restore cycle synchronised the two. Re-assert
             // the requested opening size on the native peer so both layers start in agreement.
             composeWindow.size = Dimension(
-                (openingSize.width.value * transform.scaleX).roundToInt(),
-                (openingSize.height.value * transform.scaleY).roundToInt(),
+                openingSize.width.value.roundToInt(),
+                openingSize.height.value.roundToInt(),
             )
             // The position the last run remembered belongs to a display that this machine may no
             // longer have; if the window landed nowhere visible, give the window manager its own
             // say rather than leave it stranded — see [DesktopWindowState.ensureOnScreen].
-            DesktopWindowState.ensureOnScreen(composeWindow)
+            DesktopWindowState.ensureOnScreen(composeWindow, state.placement == WindowPlacement.Floating)
             if (DesktopPlatform.isWindows && DesktopWindowsFrame.install("BitChord")) {
                 DesktopWindowBackdrop.apply()
             } else if (DesktopPlatform.isMac && DesktopMacFrame.install(composeWindow)) {
