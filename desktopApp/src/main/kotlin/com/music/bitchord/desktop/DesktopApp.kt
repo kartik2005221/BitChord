@@ -5805,7 +5805,7 @@ private fun DesktopDownloadCollectionPage(
                     } else {
                         "${if (collection.playlist) DesktopStrings["playlist_badge", "Playlist"] else DesktopStrings["album_badge", "Album"]}" +
                             " · ${songs.size} of ${collection.videoIds.size} " +
-                            DesktopStrings["d_downloaded_count", "downloaded"],
+                            DesktopStrings["d_downloaded_count", "downloaded"]
                     },
                     color = if (confirmingDelete) MaterialTheme.colorScheme.error else DesktopSecondary,
                     style = MaterialTheme.typography.bodySmall,
