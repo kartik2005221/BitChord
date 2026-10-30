@@ -233,7 +233,6 @@ val buildAnalysisNative by tasks.registering {
     val crossing = crossBuildingForWindows
     val toolchain = project.file("native/mingw-w64.cmake")
     inputs.dir(rootProject.file("native/analyzer"))
-    inputs.dir(rootProject.file("app/src/main/cpp/jni"))
     inputs.dir(project.file("native"))
     inputs.property("target", targetOs)
     outputs.dir(outputDir)
@@ -366,8 +365,10 @@ tasks.named<ProcessResources>("processResources") {
         include("*.dll")
         into("native")
     }
-    // The Automix models, taken from the Android module rather than copied into this one.
-    from(rootProject.file("app/src/main/assets")) {
+    // The Automix models. They used to ride in from the Android module's assets;
+    // with the phone line gone they live in this module, byte for byte the same
+    // files (the web app's public/models carries a copy too).
+    from(project.file("models")) {
         include("*.onnx")
         into("models")
     }

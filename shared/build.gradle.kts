@@ -2,25 +2,18 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
-    id("com.android.library")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 kotlin {
-    androidTarget {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
-    }
-
     jvm {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }
     }
 
-    // Android and desktop are both JVM, but the default hierarchy gives them no source set in
-    // common.
+    // The source set the desktop compiles from, above common but below jvmMain — the
+    // shape the Android target used to share before the phone line left this fork.
     applyDefaultHierarchyTemplate()
 
     sourceSets {
@@ -47,7 +40,6 @@ kotlin {
                 compileOnly("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
             }
         }
-        androidMain.get().dependsOn(jvmSharedMain)
         jvmMain.get().dependsOn(jvmSharedMain)
 
         commonMain.dependencies {
@@ -61,9 +53,4 @@ kotlin {
             implementation("com.squareup.okhttp3:mockwebserver:5.3.2")
         }
     }
-}
-
-android {
-    namespace = "com.music.bitchord.shared"
-    compileSdk = 36
 }

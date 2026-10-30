@@ -2265,7 +2265,9 @@ fun BitChordDesktopApp() {
                 BrowseType.ALBUM -> EntityType.ALBUM
                 BrowseType.ARTIST -> EntityType.ARTIST
                 BrowseType.PLAYLIST -> EntityType.PLAYLIST
-                else -> EntityType.TRACK
+                // Upstream files these under OTHER, never TRACK — a recorded show must
+                // open its page later, not try to play its browse id as a video.
+                BrowseType.OTHER -> EntityType.OTHER
             },
         ),
     )
@@ -4297,13 +4299,19 @@ fun BitChordDesktopApp() {
                                         source = DesktopQueueSource(entity.title, PlaybackSourceType.SEARCH),
                                     )
                                     EntityType.ARTIST -> openArtist(entity.id, entity.title)
-                                    EntityType.ALBUM, EntityType.PLAYLIST -> openBrowseItem(
+                                    // A podcast show opens the same way an album does — its page,
+                                    // not its browse id shoved into the player as a video.
+                                    EntityType.ALBUM, EntityType.PLAYLIST, EntityType.OTHER -> openBrowseItem(
                                         BrowseItem(
                                             browseId = entity.id,
                                             title = entity.title,
                                             subtitle = entity.subtitle,
                                             thumbnailUrl = entity.artworkUrl,
-                                            type = if (entity.entityType == EntityType.ALBUM) BrowseType.ALBUM else BrowseType.PLAYLIST,
+                                            type = when (entity.entityType) {
+                                                EntityType.ALBUM -> BrowseType.ALBUM
+                                                EntityType.PLAYLIST -> BrowseType.PLAYLIST
+                                                else -> BrowseType.OTHER
+                                            },
                                         ),
                                     )
                                 }
