@@ -84,6 +84,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -624,6 +625,10 @@ fun BitChordDesktopApp() {
     var dislikedIds by remember { mutableStateOf(persistence.dislikedIds()) }
     val overlays = remember { DesktopOverlays() }
     var downloads by remember { mutableStateOf(persistence.downloads()) }
+    // The release-level records behind the Downloads page's group cards. Android records the thing
+    // the user tapped — a playlist or album asked for as a whole — because a batch download is
+    // otherwise indistinguishable from forty separate ones the moment it finished.
+    var downloadCollections by remember { mutableStateOf(DesktopDownloadCollections.load(persistence)) }
     var localSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     val downloadQueue by DesktopDownloadQueue.active.collectAsState()
     val downloadInProgress = downloadQueue.keys
@@ -1196,12 +1201,23 @@ fun BitChordDesktopApp() {
         DesktopDownloadQueue.enqueue(song)
     }
 
+    /** Keeps a record only while at least one of its files is still on this computer. */
+    fun pruneDownloadCollections() {
+        val kept = DesktopDownloadCollections.prune(downloadCollections, downloads.map(Song::videoId).toSet())
+        if (kept.size != downloadCollections.size) {
+            downloadCollections = kept
+            DesktopDownloadCollections.save(persistence, kept)
+        }
+    }
+
     /** Deletes the file a download saved and forgets the record. */
     fun removeDownload(song: Song) {
         scope.launch {
             withContext(Dispatchers.IO) { DesktopDownloadManager.delete(song) }
             downloads = downloads.filterNot { it.videoId == song.videoId }
             persistence.saveDownloads(downloads)
+            // The file this was may have been a group's last file; its card follows the music.
+            pruneDownloadCollections()
         }
     }
 
@@ -1211,6 +1227,42 @@ fun BitChordDesktopApp() {
         DesktopDownloadQueue.enqueueAll(
             songs.filterNot { it.videoId in have || it.localPath != null || it.isUnresolvedSpotify },
         )
+    }
+
+    /** [downloadAll] at release level: the release itself is written down at the tap, as Android records. */
+    fun downloadAllFor(collection: DesktopCollection, songs: List<Song>) {
+        downloadCollections = DesktopDownloadCollections.record(
+            existing = downloadCollections,
+            id = collection.playlistId,
+            title = collection.title,
+            subtitle = collection.subtitle,
+            thumbnailUrl = collection.thumbnailUrl,
+            playlist = collection.type == BrowseType.PLAYLIST,
+            videoIds = songs.map(Song::videoId),
+        )
+        DesktopDownloadCollections.save(persistence, downloadCollections)
+        downloadAll(songs)
+    }
+
+    /**
+     * Deleting a group frees every file it gathered and the record that grouped them — Android's
+     * delete-collection rule, where a release is a claim the user can take back whole. A queued or
+     * running transfer of one of its tracks is called off rather than landing a file for a group
+     * that no longer exists.
+     */
+    fun deleteDownloadCollection(group: DesktopDownloadedCollection) {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                group.videoIds.forEach { id ->
+                    if (id in downloadInProgress) DesktopDownloadQueue.cancel(id)
+                }
+                downloads.filter { it.videoId in group.videoIds }.forEach { DesktopDownloadManager.delete(it) }
+            }
+            downloads = downloads.filterNot { it.videoId in group.videoIds }
+            persistence.saveDownloads(downloads)
+            downloadCollections = DesktopDownloadCollections.forget(downloadCollections, group.id)
+            DesktopDownloadCollections.save(persistence, downloadCollections)
+        }
     }
 
     /** Keeps a station queued ahead of whatever is playing. */
@@ -2606,6 +2658,8 @@ fun BitChordDesktopApp() {
             downloads = onDisk
             persistence.saveDownloads(onDisk)
         }
+        // Files that never came back take their grouping with them.
+        pruneDownloadCollections()
         loadHome()
     }
 
@@ -4107,7 +4161,11 @@ fun BitChordDesktopApp() {
                             onShuffle = { songs ->
                                 playSongs(songs.shuffled(), 0, openedCollection?.let { collectionSource(it) })
                             },
-                            onDownloadAll = ::downloadAll,
+                            onDownloadAll = { songs ->
+                                // The release itself is the thing recorded; Android keeps the same
+                                // rule for re-downloads and same-keyed updates.
+                                openedCollection?.let { downloadAllFor(it, songs) }
+                            },
                             animatedCanvas = animatedCanvas,
                             onToggleLike = { song ->
                                 toggleLike(song)
@@ -4335,9 +4393,11 @@ fun BitChordDesktopApp() {
                         destination == DesktopDestination.DOWNLOADS -> Box(Modifier.fillMaxSize()) {
                             DesktopDownloadsPage(
                                 downloads = downloads,
+                                collections = downloadCollections,
                                 onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["downloads", "Downloads"], PlaybackSourceType.BROWSE)) },
                                 contentPadding = contentPadding,
                                 menu = { song -> songMenu(song) },
+                                onDeleteCollection = ::deleteDownloadCollection,
                             )
                             // Only while there is a queue to look at.
                             if (downloadInProgress.isNotEmpty()) {
@@ -5610,22 +5670,196 @@ private fun DesktopHistoryPage(
 @Composable
 private fun DesktopDownloadsPage(
     downloads: List<Song>,
+    collections: List<DesktopDownloadedCollection>,
     onSongClick: (Song) -> Unit,
     contentPadding: PaddingValues,
     menu: (@Composable (Song) -> Unit)? = null,
+    onDeleteCollection: (DesktopDownloadedCollection) -> Unit,
 ) {
-    DesktopLocalMusicPage(
-        songs = downloads,
-        onSongClick = onSongClick,
-        contentPadding = contentPadding,
-        menu = menu,
-        title = DesktopStrings["downloads", "Downloads"],
-        subtitle = DesktopStrings["d_available_offline", "Available offline"],
-        emptyIcon = BitChordIcons.Download,
-        emptyTitle = DesktopStrings["d_no_downloads", "No downloads"],
-        emptyDescription = DesktopStrings["d_downloaded_songs_will_appear_here", "Downloaded songs will appear here."],
-        persistenceKey = "downloaded",
-    )
+    var openCollectionId by remember { mutableStateOf<String?>(null) }
+    // A record can be pruned while its page is open, in which case it stops being openable.
+    val openCollection = openCollectionId?.let { id -> collections.firstOrNull { it.id == id } }
+    if (openCollection != null) {
+        val known = downloads.associateBy(Song::videoId)
+        val releasedSongs = openCollection.videoIds.mapNotNull(known::get)
+        DesktopPageScaffold(contentPadding) {
+            DesktopDownloadCollectionPage(
+                collection = openCollection,
+                songs = releasedSongs,
+                onSongClick = onSongClick,
+                menu = menu,
+                onDelete = {
+                    onDeleteCollection(openCollection)
+                    openCollectionId = null
+                },
+                onBack = { openCollectionId = null },
+            )
+        }
+    } else {
+        // Typed at the call site so the if-expression coerces its lambda arm without guessing.
+        val groupCards: (@Composable ColumnScope.() -> Unit)? = if (collections.isEmpty()) {
+            null
+        } else {
+            {
+                DesktopDownloadCollectionRow(
+                    collections = collections,
+                    downloadedIds = downloads.mapTo(HashSet(), Song::videoId),
+                    onOpen = { openCollectionId = it },
+                )
+            }
+        }
+        DesktopLocalMusicPage(
+            songs = downloads,
+            onSongClick = onSongClick,
+            contentPadding = contentPadding,
+            menu = menu,
+            title = DesktopStrings["downloads", "Downloads"],
+            subtitle = DesktopStrings["d_available_offline", "Available offline"],
+            emptyIcon = BitChordIcons.Download,
+            emptyTitle = DesktopStrings["d_no_downloads", "No downloads"],
+            emptyDescription = DesktopStrings["d_downloaded_songs_will_appear_here", "Downloaded songs will appear here."],
+            persistenceKey = "downloaded",
+            header = groupCards,
+        )
+    }
+}
+
+/**
+ * The releases that were asked for as a whole, in front of the flat list — every file still lands
+ * in the one folder beside the rest; the grouping is what the app remembers, not layout on disk.
+ */
+@Composable
+private fun DesktopDownloadCollectionRow(
+    collections: List<DesktopDownloadedCollection>,
+    downloadedIds: Set<String>,
+    onOpen: (String) -> Unit,
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(collections, key = DesktopDownloadedCollection::id) { collection ->
+            Column(
+                Modifier
+                    .width(150.dp)
+                    .clickable { onOpen(collection.id) },
+            ) {
+                DesktopArtwork(
+                    collection.thumbnailUrl,
+                    Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)),
+                )
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    collection.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    buildString {
+                        append(if (collection.playlist) DesktopStrings["playlist_badge", "Playlist"] else DesktopStrings["album_badge", "Album"])
+                        append(" · ")
+                        append(collection.videoIds.count { it in downloadedIds })
+                    },
+                    color = DesktopSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/** The release opened from its card: the tracks this computer actually has, in the record's order. */
+@Composable
+private fun DesktopDownloadCollectionPage(
+    collection: DesktopDownloadedCollection,
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit,
+    menu: (@Composable (Song) -> Unit)?,
+    onDelete: () -> Unit,
+    onBack: () -> Unit,
+) {
+    // Two taps rather than a dialog: the bin arms, the label says what is about to go, and a tap
+    // away from both resets it. A release is up to a few hundred files; deleting it is also
+    // deleting every one of those from a folder the listener can see.
+    var confirmingDelete by remember(collection.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().padding(horizontal = DesktopPageGutter)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, DesktopStrings["back", "Back"]) }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    collection.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (confirmingDelete) {
+                        DesktopStrings[
+                            "d_delete_group_confirm",
+                            "Tap again to delete every downloaded file of this ${if (collection.playlist) "playlist" else "album"}.",
+                        ]
+                    } else {
+                        "${if (collection.playlist) DesktopStrings["playlist_badge", "Playlist"] else DesktopStrings["album_badge", "Album"]}" +
+                            " · ${songs.size} of ${collection.videoIds.size} " +
+                            DesktopStrings["d_downloaded_count", "downloaded"],
+                    },
+                    color = if (confirmingDelete) MaterialTheme.colorScheme.error else DesktopSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(
+                onClick = {
+                    if (confirmingDelete) onDelete() else confirmingDelete = true
+                },
+            ) {
+                if (confirmingDelete) {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = DesktopStrings["d_delete_group_confirm", "Confirm deleting this group's files"],
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = DesktopStrings["d_delete_group", "Delete this group's files"],
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        if (songs.isEmpty()) {
+            DesktopEmptyPage(
+                BitChordIcons.Download,
+                DesktopStrings["d_nothing_here_yet", "Nothing from here is on this computer yet"],
+                DesktopStrings["d_tracks_arrive", "The tracks of this release appear here as their downloads finish."],
+            )
+        } else {
+            val isCurrentRow = rememberPlayingRowMatcher(songs)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = pagePadding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(songs, key = Song::videoId) { song ->
+                    DesktopSongRow(
+                        song,
+                        isCurrent = isCurrentRow(song),
+                        liked = false,
+                        onClick = onSongClick,
+                        onToggleLike = null,
+                        downloaded = song.localPath != null,
+                        menu = menu,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -5640,6 +5874,8 @@ private fun DesktopLocalMusicPage(
     emptyDescription: String = "Put audio files in your Music folder and reopen this page.",
     persistenceKey: String = "local",
     menu: (@Composable (Song) -> Unit)? = null,
+    /** Pinned above the Songs list — the Downloads page's group cards live here. */
+    header: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val persistence = remember { DesktopPersistence() }
     var selectedTab by remember(persistenceKey) { mutableStateOf(0) }
@@ -5713,7 +5949,7 @@ private fun DesktopLocalMusicPage(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            if (songs.isEmpty()) {
+            if (songs.isEmpty() && header == null) {
                 DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
             } else if (drillDown != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -5723,7 +5959,14 @@ private fun DesktopLocalMusicPage(
                 Spacer(Modifier.height(6.dp))
                 DesktopLibrarySongContent(drillDown!!.second, view, onSongClick, menu)
             } else when (selectedTab) {
-                0 -> DesktopLibrarySongContent(filteredSongs, view, onSongClick, menu)
+                0 -> Column(Modifier.fillMaxSize()) {
+                    header?.invoke()
+                    if (songs.isEmpty()) {
+                        DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
+                    } else {
+                        DesktopLibrarySongContent(filteredSongs, view, onSongClick, menu)
+                    }
+                }
                 1 -> DesktopLibraryGroupingContent(artists, view, onGroupClick = { drillDown = it })
                 else -> DesktopLibraryGroupingContent(albums, view, onGroupClick = { drillDown = it })
             }
