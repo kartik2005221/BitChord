@@ -75,7 +75,18 @@ object DesktopDownloadCollections {
     ): List<DesktopDownloadedCollection> {
         if (id.isBlank() || videoIds.isEmpty()) return existing
         val merged = (videoIds + existing.firstOrNull { it.id == id }?.videoIds.orEmpty()).distinct()
-        val entry = DesktopDownloadedCollection(id, title, subtitle, thumbnailUrl, playlist, merged)
+        // The page's artwork wins, but a visit that arrives with nothing to show does not erase
+        // the one the earlier visit carried — it is the only version the cards would have before
+        // the thumbnails come back.
+        val entry = DesktopDownloadedCollection(
+            id,
+            title,
+            subtitle,
+            thumbnailUrl?.takeIf(String::isNotBlank)
+                ?: existing.firstOrNull { it.id == id }?.thumbnailUrl,
+            playlist,
+            merged,
+        )
         // The record the user just tapped goes to the front, which is how the card row reads.
         return listOf(entry) + existing.filterNot { it.id == id }
     }

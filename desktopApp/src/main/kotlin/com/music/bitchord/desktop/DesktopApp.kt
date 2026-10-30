@@ -2683,6 +2683,14 @@ fun BitChordDesktopApp() {
         }
     }
 
+    // A batch called off on the way is the one shape the finished-collector sees nothing of: the
+    // record was written at the tap, the files the user stopped may never arrive. The queue
+    // draining is the only edge that shape has — records held through the wait are dropped here
+    // once the wait ends and nothing of them reached disk.
+    LaunchedEffect(downloadInProgress.size) {
+        if (downloadInProgress.isEmpty()) pruneDownloadCollections()
+    }
+
     // The charts are period-filtered at read time, so a different period is a different read.
     LaunchedEffect(replayPeriod) {
         replaySummary = withContext(Dispatchers.IO) { DesktopListeningStats.summary(replayPeriod) }
@@ -5780,9 +5788,10 @@ private fun DesktopDownloadCollectionPage(
     onDelete: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // Two taps rather than a dialog: the bin arms, the label says what is about to go, and a tap
-    // away from both resets it. A release is up to a few hundred files; deleting it is also
-    // deleting every one of those from a folder the listener can see.
+    // Two taps rather than a dialog: the bin arms, the label says what is about to go, and the
+    // armed state lives only as long as the page it belongs to — leaving (back, or a group the
+    // store already dropped) rearms nothing. A release is up to a few hundred files; deleting it
+    // is also deleting every one of those from a folder the listener can see.
     var confirmingDelete by remember(collection.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = DesktopPageGutter)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -5820,7 +5829,7 @@ private fun DesktopDownloadCollectionPage(
                 if (confirmingDelete) {
                     Icon(
                         Icons.Rounded.Delete,
-                        contentDescription = DesktopStrings["d_delete_group_confirm", "Confirm deleting this group's files"],
+                        contentDescription = DesktopStrings["d_delete_group_armed", "Confirm deleting this group's files"],
                         tint = MaterialTheme.colorScheme.error,
                     )
                 } else {

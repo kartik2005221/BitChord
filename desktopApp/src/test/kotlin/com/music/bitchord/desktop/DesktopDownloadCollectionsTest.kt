@@ -54,7 +54,16 @@ class DesktopDownloadCollectionsTest {
         val first = DesktopDownloadCollections.record(emptyList(), "PL1", "Night Drive", "s", null, true, listOf("a"))
         val second = DesktopDownloadCollections.record(first, "MPREb_2", "Evening", "s", null, false, listOf("b"))
         assertEquals(listOf("MPREb_2", "PL1"), second.map { it.id })
-        assertFalse(second[1].playlist)
+        assertFalse(second[0].playlist)
+        // A re-record beside it does not rewrite the other record's billing.
+        assertTrue(second[1].playlist)
+    }
+
+    @Test
+    fun `a re-record without fresh artwork keeps the art the earlier visit knew`() {
+        val first = DesktopDownloadCollections.record(emptyList(), "PL1", "Night Drive", "s", "https://example.org/art.png", true, listOf("a"))
+        val second = DesktopDownloadCollections.record(first, "PL1", "Night Drive", "s", null, true, listOf("a", "b"))
+        assertEquals("https://example.org/art.png", second.single().thumbnailUrl)
     }
 
     @Test
