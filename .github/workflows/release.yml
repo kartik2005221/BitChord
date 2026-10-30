@@ -202,15 +202,12 @@ jobs:
           path: dist/*
 
   macos:
-    name: macOS · dmg, pkg, zip (${{ matrix.arch }})
-    strategy:
-      matrix:
-        include:
-          - os: macos-14
-            arch: arm64
-          - os: macos-15-intel
-            arch: x64
-    runs-on: ${{ matrix.os }}
+    name: macOS · dmg, pkg, zip
+    # Apple Silicon only as of v1.9.2.1, whose packages were the Intel machine's last ride: that
+    # audience measured at ~nobody, and the x64 leg ran on the slowest runner in the whole matrix,
+    # pushing every release's finish line out for a file almost no one was waiting for. An Intel
+    # Mac can still run the app built from source.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -269,7 +266,7 @@ jobs:
       - name: Collect
         run: |
           v="${{ steps.version.outputs.value }}"
-          arch="${{ matrix.arch }}"
+          arch="arm64"
           mkdir -p dist
           for f in desktopApp/build/compose/binaries/main/dmg/*.dmg; do
             [ -f "$f" ] && cp "$f" "dist/BitChord-$v-macos-$arch.dmg"
@@ -282,7 +279,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-artifacts
+          name: macos-arm64-artifacts
           path: dist/*
 
   release:
