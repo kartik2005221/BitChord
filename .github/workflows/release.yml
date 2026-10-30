@@ -170,7 +170,10 @@ jobs:
     # audience measured at ~nobody, and the x64 leg ran on the slowest runner in the whole matrix,
     # pushing every release's finish line out for a file almost no one was waiting for. An Intel
     # Mac can still run the app built from source.
-    runs-on: macos-14
+    # macos-latest rather than the macos-14 this job was born on: that image browns out into
+    # retirement on November 2, 2026, cancelling the job at spawn — check.yml's macos-latest
+    # is the same arm64 machine and never noticed.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
