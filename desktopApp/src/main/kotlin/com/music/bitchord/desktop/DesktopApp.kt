@@ -84,7 +84,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -5697,7 +5696,7 @@ private fun DesktopDownloadsPage(
         }
     } else {
         // Typed at the call site so the if-expression coerces its lambda arm without guessing.
-        val groupCards: (@Composable ColumnScope.() -> Unit)? = if (collections.isEmpty()) {
+        val groupCards: (@Composable () -> Unit)? = if (collections.isEmpty()) {
             null
         } else {
             {
@@ -5875,7 +5874,7 @@ private fun DesktopLocalMusicPage(
     persistenceKey: String = "local",
     menu: (@Composable (Song) -> Unit)? = null,
     /** Pinned above the Songs list — the Downloads page's group cards live here. */
-    header: (@Composable ColumnScope.() -> Unit)? = null,
+    header: (@Composable () -> Unit)? = null,
 ) {
     val persistence = remember { DesktopPersistence() }
     var selectedTab by remember(persistenceKey) { mutableStateOf(0) }
