@@ -271,6 +271,7 @@ import bitchord.desktopapp.generated.resources.sf_pro_display_heavy
 import bitchord.desktopapp.generated.resources.sf_pro_display_medium
 import bitchord.desktopapp.generated.resources.sf_pro_display_regular
 import bitchord.desktopapp.generated.resources.sf_pro_display_semibold
+import com.music.bitchord.data.TopPicks
 import com.music.bitchord.data.model.ArtistPage
 import com.music.bitchord.data.model.BrowseItem
 import com.music.bitchord.data.model.BrowseType
@@ -290,6 +291,8 @@ import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.SubscriptionState
+import com.music.bitchord.data.model.TopPick
+import com.music.bitchord.data.model.TopPickKind
 import com.music.bitchord.data.model.UiState
 import com.music.bitchord.data.model.UserPlaylist
 import com.music.bitchord.data.model.artworkAt
@@ -329,6 +332,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -570,6 +574,10 @@ fun BitChordDesktopApp() {
     // Recently Played has its own request and its own skeleton at the head of the page, as on the
     // phone; it is only asked for with an account to have played on.
     var homeRecentsLoading by remember { mutableStateOf(false) }
+    // Home's Top Picks row holds itself — its hour, its listener and its stored
+    // row all live in the holder, and Home only reads what is on show.
+    val topPicks by DesktopTopPicks.picks.collectAsState()
+    val topPicksLoading by DesktopTopPicks.loading.collectAsState()
     // Held out here so a page keeps its place when another is visited and it is come back to.
     val homeListState = rememberLazyListState()
     val exploreListState = rememberLazyListState()
@@ -2510,6 +2518,40 @@ fun BitChordDesktopApp() {
     }
 
     /**
+     * A Top Picks card. A release opens its page; anything else starts the queue behind the
+     * card — fetched only now, and loaded before the player is touched so a failed request
+     * leaves the current queue playing, as the phone's own handler has it.
+     */
+    fun openTopPick(pick: TopPick, label: String) {
+        val browseId = pick.browseId
+        if (pick.kind == TopPickKind.LATEST_RELEASE && browseId != null) {
+            openShelfItem(
+                ShelfItem(
+                    title = pick.title,
+                    subtitle = pick.artistName.orEmpty(),
+                    thumbnailUrl = pick.images.firstOrNull(),
+                    videoId = null,
+                    browseId = browseId,
+                ),
+                label,
+            )
+            return
+        }
+        scope.launch {
+            val songs = TopPicks.queue(pick).getOrNull().orEmpty()
+            if (songs.isEmpty()) {
+                DesktopTrackLog.log("top-picks: the queue behind \"$label\" came back empty")
+                return@launch
+            }
+            playSongs(
+                songs,
+                0,
+                DesktopQueueSource(label, PlaybackSourceType.HOME, pick.watch?.playlistId ?: pick.mood?.name),
+            )
+        }
+    }
+
+    /**
      * The phone's Home: the core feed, the account's own Recently Played at its head, and the
      * supplementary browse feeds, all asked for at once and laid down as each lands. Signed out
      * there is no Recently Played to ask for, which is also how the phone has it.
@@ -4185,24 +4227,51 @@ fun BitChordDesktopApp() {
                             downloadInProgress = downloadInProgress,
                             contentPadding = contentPadding,
                         )
-                        destination == DesktopDestination.LISTEN_NOW -> HomeScreen(
-                            state = homeState,
-                            listState = homeListState,
-                            onItemClick = { item, shelfTitle -> openShelfItem(item, shelfTitle) },
-                            onRetry = ::loadHome,
-                            refreshing = false,
-                            onRefresh = ::loadHome,
-                            pullState = rememberPullToRefreshState(),
-                            contentPadding = sharedPagePadding,
-                            title = null,
-                            signedIn = youtubeSignedIn,
-                            onSignIn = { overlays.accounts = true },
-                            onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
-                            onLoadMore = ::loadMoreHome,
-                            loadingMore = homeLoadingMore,
-                            recentlyPlayedLoading = homeRecentsLoading,
-                            leadHero = false,
-                        )
+                        destination == DesktopDestination.LISTEN_NOW -> {
+                            // Home's Top Picks row keeps itself: one build an hour, one row per
+                            // listener, the stored one painted before anything is fetched.
+                            LaunchedEffect(youtubeSignedIn, activeProfileId) {
+                                val identity = "$youtubeSignedIn/$activeProfileId"
+                                while (true) {
+                                    if (DesktopTopPicks.isStale(identity)) {
+                                        DesktopTopPicks.maybeRefresh(
+                                            scope = scope,
+                                            identity = identity,
+                                            persistence = persistence,
+                                            shelves = {
+                                                snapshotFlow { (homeState as? UiState.Success)?.data }
+                                                    .first { it != null }
+                                                    .orEmpty()
+                                            },
+                                        )
+                                    }
+                                    delay(60_000)
+                                }
+                            }
+                            HomeScreen(
+                                state = homeState,
+                                listState = homeListState,
+                                onItemClick = { item, shelfTitle -> openShelfItem(item, shelfTitle) },
+                                onRetry = ::loadHome,
+                                refreshing = false,
+                                onRefresh = ::loadHome,
+                                pullState = rememberPullToRefreshState(),
+                                contentPadding = sharedPagePadding,
+                                title = null,
+                                signedIn = youtubeSignedIn,
+                                onSignIn = { overlays.accounts = true },
+                                onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
+                                onLoadMore = ::loadMoreHome,
+                                loadingMore = homeLoadingMore,
+                                recentlyPlayedLoading = homeRecentsLoading,
+                                leadHero = false,
+                                topPicks = topPicks,
+                                topPicksLoading = topPicksLoading,
+                                listenerName = activeAccount?.profiles?.firstOrNull { it.profileId == activeProfileId }?.name?.takeIf(String::isNotBlank)
+                                    ?: activeAccount?.name?.takeIf(String::isNotBlank),
+                                onTopPickClick = { pick, label -> openTopPick(pick, label) },
+                            )
+                        }
                         destination == DesktopDestination.EXPLORE && selectedMoodGenre != null -> Column(Modifier.fillMaxSize()) {
                             MoodGenrePlaylistsScreen(
                                 title = selectedMoodGenre!!.title,
