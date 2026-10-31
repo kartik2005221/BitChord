@@ -142,6 +142,9 @@ object DesktopSearchClient {
 
     suspend fun accountsList(): Result<JsonObject> = runCatching { Innertube.accountsList() }
 
+    /** A live pull of the account's own playlists — the picker asks again every time it opens. */
+    suspend fun userPlaylists() = YtMusicRepository.userPlaylists()
+
     /** The account's own playlists among a library shelf's items — the ones an edit can target. */
     internal fun userPlaylists(items: List<com.music.bitchord.data.model.ShelfItem>) =
         com.music.bitchord.data.innertube.InnertubeParser.parseUserPlaylists(items)

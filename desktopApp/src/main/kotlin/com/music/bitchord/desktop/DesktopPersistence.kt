@@ -82,6 +82,20 @@ class DesktopPersistence {
 
     fun saveDownloads(songs: List<Song>) = writeSongs(KEY_DOWNLOADS, songs)
 
+    private val KEY_PLAYLIST_BUMPS = "playlist_add_bumps"
+
+    /** Which playlists a song most recently went into — the picker leads with the freshest. */
+    fun playlistBumps(): Map<String, Long> =
+        string(KEY_PLAYLIST_BUMPS).orEmpty().split(';').mapNotNull { entry ->
+            val parts = entry.split('=')
+            val id = parts.firstOrNull()
+            val stamp = parts.getOrNull(1)?.toLongOrNull()
+            if (id.isNullOrBlank() || stamp == null) null else id to stamp
+        }.toMap()
+
+    fun savePlaylistBumps(bumps: Map<String, Long>) =
+        saveString(KEY_PLAYLIST_BUMPS, bumps.entries.joinToString(";") { "${it.key}=${it.value}" })
+
     fun playlists(): List<DesktopPlaylist> = readLines(KEY_PLAYLISTS).mapNotNull(::decodePlaylist)
 
     fun savePlaylists(playlists: List<DesktopPlaylist>) = writeLines(KEY_PLAYLISTS, playlists.map(DesktopPlaylist::toPreferenceLine))
