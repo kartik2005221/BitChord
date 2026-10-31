@@ -1412,38 +1412,6 @@ fun BitChordDesktopApp() {
      */
     // ---- Playlist sync ---------------------------------------------------------
 
-    /** The Downloads settings group's toggle; the store carries it, the ticker obeys it. */
-    fun setPlaylistSync(enabled: Boolean) {
-        val wasOn = playlistSyncEnabled
-        playlistSyncEnabled = enabled
-        persistence.saveBoolean(DesktopPlaylistSync.KEY_SETTING, enabled)
-        if (enabled && !wasOn) {
-            // As on the phone, switching the setting on is the listener asking for the first
-            // check at once rather than one after the next period.
-            playlistSyncCheck(approved = false)
-        }
-    }
-
-    /**
-     * One look through the downloaded playlists. The engine keeps its own mutex, so the
-     * ticker, the toggle and the strip's tap can all ask at once: the first in runs, the
-     * rest go home.
-     */
-    fun playlistSyncCheck(approved: Boolean) {
-        scope.launch {
-            DesktopPlaylistSync.check(
-                persistence,
-                approved = approved,
-                syncOn = { playlistSyncEnabled },
-                collections = { downloadCollections },
-                recordById = { id -> downloadCollections.firstOrNull { it.id == id } },
-                savedIds = { downloads.map(Song::videoId).toSet() },
-                downloadNow = ::playlistSyncDownload,
-                remember = ::rememberSyncedCollection,
-            )
-        }
-    }
-
     /**
      * The desk half of the phone's downloadNow. The queue already carrying a track answers
      * for it at once — the offer is in it — and the rest is enqueued and waited out, as the
@@ -1493,6 +1461,38 @@ fun BitChordDesktopApp() {
             videoIds = updated.videoIds,
         )
         DesktopDownloadCollections.save(persistence, downloadCollections)
+    }
+
+    /**
+     * One look through the downloaded playlists. The engine keeps its own mutex, so the
+     * ticker, the toggle and the strip's tap can all ask at once: the first in runs, the
+     * rest go home.
+     */
+    fun playlistSyncCheck(approved: Boolean) {
+        scope.launch {
+            DesktopPlaylistSync.check(
+                persistence,
+                approved = approved,
+                syncOn = { playlistSyncEnabled },
+                collections = { downloadCollections },
+                recordById = { id -> downloadCollections.firstOrNull { it.id == id } },
+                savedIds = { downloads.map(Song::videoId).toSet() },
+                downloadNow = ::playlistSyncDownload,
+                remember = ::rememberSyncedCollection,
+            )
+        }
+    }
+
+    /** The Downloads settings group's toggle; the store carries it, the ticker obeys it. */
+    fun setPlaylistSync(enabled: Boolean) {
+        val wasOn = playlistSyncEnabled
+        playlistSyncEnabled = enabled
+        persistence.saveBoolean(DesktopPlaylistSync.KEY_SETTING, enabled)
+        if (enabled && !wasOn) {
+            // As on the phone, switching the setting on is the listener asking for the first
+            // check at once rather than one after the next period.
+            playlistSyncCheck(approved = false)
+        }
     }
 
     // The setting's clock: at once for a last whole check older than the catch-up span, then
