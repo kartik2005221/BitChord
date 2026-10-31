@@ -106,7 +106,7 @@ object DesktopPlaylistSync {
                     more = { YtMusicRepository.moreSongs(it) },
                 )
                 if (!listing.complete) whole = false
-                update(record, listing, approved, savedIds, downloadNow, remember)
+                update(record, listing, approved, recordById, savedIds, downloadNow, remember)
                 delay(PAUSE_MILLIS)
             }
             if (whole) stampCompleteCheck(persistence)
@@ -119,6 +119,7 @@ object DesktopPlaylistSync {
         record: DesktopDownloadedCollection,
         listing: Listing,
         approved: Boolean,
+        recordById: (String) -> DesktopDownloadedCollection?,
         savedIds: () -> Set<String>,
         downloadNow: (List<Song>) -> Set<String>,
         remember: (id: String, title: String, subtitle: String, thumbnailUrl: String?, videoIds: List<String>) -> Unit,
