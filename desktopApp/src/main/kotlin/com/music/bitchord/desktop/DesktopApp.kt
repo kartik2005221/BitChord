@@ -515,6 +515,9 @@ fun BitChordDesktopApp() {
     // transport and queue gesture reaches Listen Together without duplicating protocol logic.
     val partySyncHolder = remember { arrayOfNulls<DesktopPartySync>(1) }
     val partyState by DesktopListenTogether.state.collectAsState()
+    // The strip's asks, collected at the root so a check landing anywhere re-renders whatever
+    // page happens to be carrying the strip at the moment.
+    val playlistSyncAsks by DesktopPlaylistSync.asks.collectAsState()
     var personalQueueStash by remember { mutableStateOf<DesktopQueue?>(null) }
     var personalPositionStash by remember { mutableStateOf(0L) }
     var personalPlayingStash by remember { mutableStateOf(false) }
@@ -664,6 +667,8 @@ fun BitChordDesktopApp() {
     // than once per recomposition.
     var autoplaySeed by remember { mutableStateOf<String?>(null) }
     var autoplayJob by remember { mutableStateOf<Job?>(null) }
+    // The sync toggle — state beside its own save, the shape setAutoplay keeps.
+    var playlistSyncEnabled by remember { mutableStateOf(DesktopPlaylistSync.syncEnabled(persistence)) }
     var automix by remember { mutableStateOf(persistence.boolean("automix", false)) }
     // A manual skip blends into the already-prepared next track over ~15s instead of cutting.
     var automixOnSkip by remember { mutableStateOf(persistence.boolean("automix_on_skip", false)) }
@@ -1405,6 +1410,113 @@ fun BitChordDesktopApp() {
      * not want them. On clears the seed first, so the station is fetched again for the track
      * already playing rather than being refused as one this seed has been loaded for.
      */
+    // ---- Playlist sync ---------------------------------------------------------
+
+    /** The Downloads settings group's toggle; the store carries it, the ticker obeys it. */
+    fun setPlaylistSync(enabled: Boolean) {
+        val wasOn = playlistSyncEnabled
+        playlistSyncEnabled = enabled
+        persistence.saveBoolean(DesktopPlaylistSync.KEY_SETTING, enabled)
+        if (enabled && !wasOn) {
+            // As on the phone, switching the setting on is the listener asking for the first
+            // check at once rather than one after the next period.
+            playlistSyncCheck(approved = false)
+        }
+    }
+
+    /**
+     * One look through the downloaded playlists. The engine keeps its own mutex, so the
+     * ticker, the toggle and the strip's tap can all ask at once: the first in runs, the
+     * rest go home.
+     */
+    fun playlistSyncCheck(approved: Boolean) {
+        scope.launch {
+            DesktopPlaylistSync.check(
+                persistence,
+                approved = approved,
+                syncOn = { playlistSyncEnabled },
+                collections = { downloadCollections },
+                recordById = { id -> downloadCollections.firstOrNull { it.id == id } },
+                savedIds = { downloads.map(Song::videoId).toSet() },
+                downloadNow = ::playlistSyncDownload,
+                remember = ::rememberSyncedCollection,
+            )
+        }
+    }
+
+    /**
+     * The desk half of the phone's downloadNow. The queue already carrying a track answers
+     * for it at once — the offer is in it — and the rest is enqueued and waited out, as the
+     * phone's batch is. Waiting is the point: a track is handed back named only when its
+     * file is really on this computer, because a named track is never new again.
+     */
+    suspend fun playlistSyncDownload(songs: List<Song>): Set<String> {
+        val wanted = songs.map(Song::videoId).toSet()
+        val carried = DesktopDownloadQueue.active.value
+            .filterValues { it.state !is DesktopDownloadState.Failed }
+            .keys
+            .intersect(wanted)
+        val offered = songs
+            .filter { it.videoId !in carried }
+            .filter { it.videoId !in downloads.map(Song::videoId) }
+        DesktopDownloadQueue.enqueueAll(offered)
+        if (offered.isNotEmpty()) {
+            withTimeoutOrNull(15L * 60 * 1000) {
+                while (DesktopDownloadQueue.active.value.any { (id, item) ->
+                        id in wanted &&
+                            (item.state is DesktopDownloadState.Queued || item.state is DesktopDownloadState.Running)
+                    }
+                ) {
+                    delay(2_000)
+                }
+            }
+            // The finished-collector writes each arrival down as it lands; give it a beat to
+            // have taken in the batch before what is on disk decides what gets named.
+            delay(1_000)
+        }
+        return carried + (wanted intersect downloads.map(Song::videoId).toSet())
+    }
+
+    /**
+     * A check's fresh listing for one playlist, written back the way the taps write theirs:
+     * through the record that merges with what was already known. A track the listener
+     * deleted stays gone, and one the playlist stopped listing keeps its file and its name.
+     */
+    fun rememberSyncedCollection(updated: DesktopDownloadedCollection) {
+        downloadCollections = DesktopDownloadCollections.record(
+            downloadCollections,
+            id = updated.id,
+            title = updated.title,
+            subtitle = updated.subtitle,
+            thumbnailUrl = updated.thumbnailUrl,
+            playlist = updated.playlist,
+            videoIds = updated.videoIds,
+        )
+        DesktopDownloadCollections.save(persistence, downloadCollections)
+    }
+
+    // The setting's clock: at once for a last whole check older than the catch-up span, then
+    // on the minute for one older than the period. Re-asks are spaced a period apart — a
+    // check that did not reach the end does not stamp, so a fresh opening of the app asks
+    // again for the part that is missing.
+    LaunchedEffect(youtubeSignedIn, playlistSyncEnabled) {
+        if (!youtubeSignedIn || !playlistSyncEnabled) return@LaunchedEffect
+        var starting = true
+        var lastAsk = 0L
+        while (true) {
+            val now = System.currentTimeMillis()
+            val owedAfter = if (starting) DesktopPlaylistSync.CATCH_UP_MILLIS else DesktopPlaylistSync.PERIOD_MILLIS
+            starting = false
+            if (now - DesktopPlaylistSync.lastCompleteCheck(persistence) >= owedAfter &&
+                now - lastAsk >= DesktopPlaylistSync.PERIOD_MILLIS
+            ) {
+                lastAsk = now
+                playlistSyncCheck(approved = false)
+            }
+            delay(60_000)
+        }
+    }
+
     fun setAutoplay(enabled: Boolean) {
         if (DesktopListenTogether.state.value.controlsLocked) return
         autoplay = enabled
@@ -3979,6 +4091,8 @@ fun BitChordDesktopApp() {
                                         downloadQuality = it
                                         persistence.saveString("download_quality", it)
                                     },
+                                    playlistSyncEnabled = playlistSyncEnabled,
+                                    onPlaylistSyncChange = ::setPlaylistSync,
                                     audioQuality = audioQuality,
                                     onAudioQualityChange = {
                                         audioQuality = it
@@ -4406,9 +4520,20 @@ fun BitChordDesktopApp() {
                             menu = { song -> songMenu(song) },
                         )
                         destination == DesktopDestination.DOWNLOADS -> Box(Modifier.fillMaxSize()) {
+                            // A dismissed ask stays gone for the life of the page; one born
+                            // again from a later check is a new ask and rides in.
+                            var hiddenSyncAsks by remember { mutableStateOf(setOf<String>()) }
                             DesktopDownloadsPage(
                                 downloads = downloads,
                                 collections = downloadCollections,
+                                playlistSyncAsks = playlistSyncAsks.filter { ask ->
+                                    ask.playlistId !in hiddenSyncAsks && downloadCollections.any { it.id == ask.playlistId }
+                                },
+                                onSyncAskApprove = { id ->
+                                    hiddenSyncAsks = hiddenSyncAsks + id
+                                    playlistSyncCheck(approved = true)
+                                },
+                                onSyncAskDismiss = { id -> hiddenSyncAsks = hiddenSyncAsks + id },
                                 onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["downloads", "Downloads"], PlaybackSourceType.BROWSE)) },
                                 contentPadding = contentPadding,
                                 menu = { song -> songMenu(song) },
@@ -5682,10 +5807,60 @@ private fun DesktopHistoryPage(
     }
 }
 
+/**
+ * The "new songs in ⟨playlist⟩" strip at the head of the Downloads page — the desk's asking
+ * where the phone used a notification. "Get them" answers with an approved check that takes
+ * everything found; the close keeps the ask off the page for the rest of the session, and a
+ * later check's clean answer takes the ask off for good.
+ */
+@Composable
+private fun DesktopPlaylistSyncAskStrip(
+    asks: List<DesktopPlaylistSyncAsk>,
+    onApprove: (String) -> Unit,
+    onDismiss: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        asks.forEach { ask ->
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.padding(start = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text(
+                            DesktopStrings["d_playlist_sync_ask", "New songs in \"${ask.title}\": ${ask.count}"],
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            DesktopStrings["d_playlist_sync_ask_note", "Sync found tracks this playlist has that this computer does not"],
+                            color = DesktopSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    TextButton(onClick = { onApprove(ask.playlistId) }) {
+                        Text(DesktopStrings["d_playlist_sync_get", "Get them"])
+                    }
+                    IconButton(onClick = { onDismiss(ask.playlistId) }) {
+                        Icon(Icons.Rounded.Close, contentDescription = DesktopStrings["close", "Close"])
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DesktopDownloadsPage(
     downloads: List<Song>,
     collections: List<DesktopDownloadedCollection>,
+    playlistSyncAsks: List<DesktopPlaylistSyncAsk>,
+    onSyncAskApprove: (String) -> Unit,
+    onSyncAskDismiss: (String) -> Unit,
     onSongClick: (Song) -> Unit,
     contentPadding: PaddingValues,
     menu: (@Composable (Song) -> Unit)? = null,
@@ -5712,10 +5887,17 @@ private fun DesktopDownloadsPage(
         }
     } else {
         // Typed at the call site so the if-expression coerces its lambda arm without guessing.
-        val groupCards: (@Composable () -> Unit)? = if (collections.isEmpty()) {
+        // The strip rides the slot the cards do, so it can show on a page that has no cards
+        // at all — a playlist can be downloaded whole and emptied out track by track.
+        val groupCards: (@Composable () -> Unit)? = if (collections.isEmpty() && playlistSyncAsks.isEmpty()) {
             null
         } else {
             {
+                DesktopPlaylistSyncAskStrip(
+                    asks = playlistSyncAsks,
+                    onApprove = onSyncAskApprove,
+                    onDismiss = onSyncAskDismiss,
+                )
                 DesktopDownloadCollectionRow(
                     collections = collections,
                     downloadedIds = downloads.mapTo(HashSet(), Song::videoId),
@@ -6187,6 +6369,8 @@ private fun DesktopSettingsScreen(
     outputSummary: String,
     downloadQuality: String,
     onDownloadQualityChange: (String) -> Unit,
+    playlistSyncEnabled: Boolean,
+    onPlaylistSyncChange: (Boolean) -> Unit,
     audioQuality: DesktopAudioQuality,
     onAudioQualityChange: (DesktopAudioQuality) -> Unit,
     sleepTimerMinutes: Int?,
@@ -6797,6 +6981,13 @@ private fun DesktopSettingsScreen(
                             )
                         }
                     }
+                    }
+                    SettingsToggle(
+                        DesktopStrings["d_keep_playlists_updated", "Keep playlists updated"],
+                        DesktopStrings["d_keep_downloaded_playlists_in_step_with_their_online_copies", "Keep downloaded playlists in step with their online copies"],
+                        playlistSyncEnabled,
+                        onPlaylistSyncChange,
+                    )
                     }
                 }
             }

@@ -90,8 +90,8 @@ object DesktopPlaylistSync {
         collections: () -> List<DesktopDownloadedCollection>,
         recordById: (String) -> DesktopDownloadedCollection?,
         savedIds: () -> Set<String>,
-        downloadNow: (List<Song>) -> Set<String>,
-        remember: (id: String, title: String, subtitle: String, thumbnailUrl: String?, videoIds: List<String>) -> Unit,
+        downloadNow: suspend (List<Song>) -> Set<String>,
+        remember: (DesktopDownloadedCollection) -> Unit,
     ) {
         if (approved) running.lock() else if (!running.tryLock()) return
         try {
@@ -121,8 +121,8 @@ object DesktopPlaylistSync {
         approved: Boolean,
         recordById: (String) -> DesktopDownloadedCollection?,
         savedIds: () -> Set<String>,
-        downloadNow: (List<Song>) -> Set<String>,
-        remember: (id: String, title: String, subtitle: String, thumbnailUrl: String?, videoIds: List<String>) -> Unit,
+        downloadNow: suspend (List<Song>) -> Set<String>,
+        remember: (DesktopDownloadedCollection) -> Unit,
     ) {
         val fresh = newTracks(listing.songs, record)
         if (fresh.isEmpty()) {
@@ -149,7 +149,7 @@ object DesktopPlaylistSync {
         // the dead.
         val current = recordById(record.id) ?: return
         val order = listingToRecord(listing.songs, current, handled)
-        remember(current.id, current.title, current.subtitle, current.thumbnailUrl, order.map(Song::videoId))
+        remember(current.copy(videoIds = order.map(Song::videoId)))
 
         val arrived = missing.count { it.videoId in handled && it.videoId in savedIds() }
         if (arrived > 0) DesktopTrackLog.log("$TAG: $arrived new songs of \"${record.title}\" arrived")
