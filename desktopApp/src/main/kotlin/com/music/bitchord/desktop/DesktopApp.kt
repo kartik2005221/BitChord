@@ -2537,16 +2537,24 @@ fun BitChordDesktopApp() {
             return
         }
         scope.launch {
-            val songs = TopPicks.queue(pick).getOrNull().orEmpty()
-            if (songs.isEmpty()) {
-                DesktopTrackLog.log("top-picks: the queue behind \"$label\" came back empty")
-                return@launch
+            val fetched = TopPicks.queue(pick)
+            val songs = fetched.getOrNull().orEmpty()
+            when {
+                songs.isEmpty() && fetched.isFailure ->
+                    // A queue that could not be fetched is not a queue that
+                    // gave up nothing — the track log separates the two.
+                    DesktopTrackLog.log(
+                        "top-picks: the queue behind \"$label\" was not fetched — " +
+                            (fetched.exceptionOrNull()?.message ?: "no reason given"),
+                    )
+                songs.isEmpty() ->
+                    DesktopTrackLog.log("top-picks: the queue behind \"$label\" came back empty")
+                else -> playSongs(
+                    songs,
+                    0,
+                    DesktopQueueSource(label, PlaybackSourceType.HOME, pick.watch?.playlistId ?: pick.mood?.name),
+                )
             }
-            playSongs(
-                songs,
-                0,
-                DesktopQueueSource(label, PlaybackSourceType.HOME, pick.watch?.playlistId ?: pick.mood?.name),
-            )
         }
     }
 

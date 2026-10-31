@@ -6,13 +6,16 @@ import com.music.bitchord.data.model.HomeShelf
 import com.music.bitchord.data.model.TopPick
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
+import java.util.Locale
 
 /**
  * Home's "Top Picks for You" row, desktop-side. The shared builder, [TopPicks],
@@ -49,9 +52,13 @@ internal object DesktopTopPicks {
     /** The listener identity the row on screen was built for. */
     private var identityShown: String? = null
 
-    /** The hour the clock says now, in the same shape the stored row carries. */
+    /**
+     * The hour the clock says now, in the same shape the stored row carries.
+     * The digits are asked for under [Locale.ROOT], so a row filed under one
+     * locale still reads back when the machine's formatting rules differ.
+     */
     fun slot(now: LocalDateTime = LocalDateTime.now()): String =
-        "${now.toLocalDate()}T%02d".format(now.hour)
+        "${now.toLocalDate()}T" + "%02d".format(Locale.ROOT, now.hour)
 
     /**
      * True when the row on screen is not of the current hour, not for this
@@ -87,8 +94,11 @@ internal object DesktopTopPicks {
             // Superseded between the call and the launch: the builds ahead of
             // this one speak for the listener.
             if (jobIdentity != identity) return@launch
-            val stored = persistence.string(KEY)
-                ?.let(TopPicks::decode)
+            // The store belongs off the drawing thread, the rule the rest of
+            // the desktop keeps for its own preferences.
+            val stored = withContext(Dispatchers.IO) {
+                persistence.string(KEY)?.let(TopPicks::decode)
+            }
                 ?.takeIf { (identity == null || it.listener == identity) && it.picks.isNotEmpty() }
             stored?.let { AppleArtistPhotos.seed(it.photos) }
             if (stored != null) {
@@ -130,17 +140,15 @@ internal object DesktopTopPicks {
             _picks.value = picks
             slotShown = slot
             identityShown = identity
-            persistence.saveString(
-                KEY,
-                TopPicks.encode(
-                    TopPicks.Stored(
-                        listener = identity,
-                        day = slot,
-                        picks = picks,
-                        photos = AppleArtistPhotos.snapshot(),
-                    ),
+            val encoded = TopPicks.encode(
+                TopPicks.Stored(
+                    listener = identity,
+                    day = slot,
+                    picks = picks,
+                    photos = AppleArtistPhotos.snapshot(),
                 ),
             )
+            withContext(Dispatchers.IO) { persistence.saveString(KEY, encoded) }
             _loading.value = false
         }
     }
