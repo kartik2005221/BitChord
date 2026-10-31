@@ -9,6 +9,8 @@ import androidx.compose.foundation.Image
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.runtime.CompositionLocalProvider
+import com.music.bitchord.data.model.TopPick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import com.music.bitchord.ui.components.longPressMenuClickable
@@ -142,8 +144,31 @@ fun HomeScreen(
     leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
+    /**
+     * The "Top Picks for You" row above Recents. Null while it has not been
+     * built yet, empty when there is nothing to pick from. The row is only
+     * drawn by a caller that can act on it, i.e. passes [onTopPickClick].
+     */
+    topPicks: List<TopPick>? = null,
+    topPicksLoading: Boolean = false,
+    /** The signed-in account's name, for the personal station's "Name's Station". */
+    listenerName: String? = null,
+    onTopPickClick: ((TopPick, String) -> Unit)? = null,
+    onTopPickLongPress: ((TopPick) -> Unit)? = null,
+    /** Whether the Top Picks artwork may animate — see [LocalArtworkMotion]. */
+    artworkMotion: Boolean = true,
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
+
+    // Top Picks' pictures and motion wait for the feed — see LocalArtworkImages.
+    val feedReady = state !is UiState.Loading
+    CompositionLocalProvider(
+        LocalArtworkMotion provides (artworkMotion && feedReady),
+        LocalArtworkImages provides feedReady,
+    ) {
+    // The loops also hold still while the feed is being scrolled — see
+    // LocalArtworkScrolling for why that is asked rather than provided.
+    PausedWhileScrolling(listState) {
 
     PullToRefresh(
         refreshing = refreshing,
@@ -171,6 +196,19 @@ fun HomeScreen(
             if (!signedIn && onSignIn != null) {
                 item {
                     SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
+                }
+            }
+            if (onTopPickClick != null) {
+                when {
+                    !topPicks.isNullOrEmpty() -> item(key = "top-picks") {
+                        TopPicksShelf(
+                            picks = topPicks,
+                            listenerName = listenerName,
+                            onClick = onTopPickClick,
+                            onLongPress = onTopPickLongPress,
+                        )
+                    }
+                    topPicks == null && topPicksLoading -> topPicksSkeleton()
                 }
             }
             when (state) {
@@ -217,6 +255,8 @@ fun HomeScreen(
                 }
             }
         }
+    }
+    }
     }
 
     if (onLoadMore != null && state is UiState.Success) {
