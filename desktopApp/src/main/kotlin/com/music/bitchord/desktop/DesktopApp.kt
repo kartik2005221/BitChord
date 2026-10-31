@@ -6988,7 +6988,6 @@ private fun DesktopSettingsScreen(
                         playlistSyncEnabled,
                         onPlaylistSyncChange,
                     )
-                    }
                 }
             }
             if (section == DesktopSettingsSection.SOURCES) item {
