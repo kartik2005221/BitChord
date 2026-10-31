@@ -775,7 +775,7 @@ fun BitChordDesktopApp() {
         playlistBumps = stamps
         // The store keeps the freshest thirty — the only ones the order can still tell apart.
         persistence.savePlaylistBumps(
-            stamps.entries.sortedByDescending { it.value }.take(30).toMap(),
+            stamps.entries.sortedByDescending { it.value }.take(30).associate { it.toPair() },
         )
     }
 
