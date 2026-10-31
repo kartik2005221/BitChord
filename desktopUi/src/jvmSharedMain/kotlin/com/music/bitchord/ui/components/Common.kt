@@ -157,6 +157,19 @@ val FLOATING_BAR_MAX_WIDTH = 440.dp
  */
 val SHELF_CARD_WIDTH = 150.dp
 
+/**
+ * The gap a decorative loop leaves after each of its frames before asking for
+ * the next: 25ms lands the next frame on the vsync a thirtieth of a second on,
+ * at 60, 90 and 120Hz alike.
+ *
+ * Every frame of anything inside the page is a frame of the whole page — the
+ * glass bars sample it live, so they record it again and re-run their blur —
+ * and asked for on every vsync, a 14dp glyph alone kept a 120Hz phone
+ * redrawing the screen without pause until it ran hot and throttled. Nothing
+ * that only decorates needs more than thirty.
+ */
+const val MOTION_FRAME_GAP_MS = 25L
+
 /** Share of the row a lead-shelf card takes, so the next one peeks in past it. */
 private const val HERO_CARD_FRACTION = 0.70f
 
