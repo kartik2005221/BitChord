@@ -2,6 +2,7 @@ package com.music.bitchord.desktop
 
 import androidx.compose.foundation.lazy.LazyListState
 import com.music.bitchord.ui.components.LocalShelfRowChrome
+import com.music.bitchord.ui.components.optimizedHazeEffect
 import com.music.bitchord.ui.components.ShelfRowChrome
 import com.music.bitchord.ui.components.ShelfRow
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -4448,6 +4449,10 @@ fun BitChordDesktopApp() {
                                 loadingMore = homeLoadingMore,
                                 recentlyPlayedLoading = homeRecentsLoading,
                                 leadHero = false,
+                                // The player covers Home completely while it is up; the
+                                // loops inside the page have nobody watching them, and
+                                // every frame they draw is a frame of the glass blur.
+                                artworkMotion = !overlays.nowPlaying,
                                 topPicks = topPicks,
                                 topPicksLoading = topPicksLoading,
                                 listenerName = activeAccount?.profiles?.firstOrNull { it.profileId == activeProfileId }?.name?.takeIf(String::isNotBlank)
@@ -8190,7 +8195,12 @@ private fun Modifier.desktopFrosted(
         return this.background(edge.dissolve(opaque, fade) ?: SolidColor(opaque))
     }
     val dissolve = edge.dissolve(Color.Black, fade)
-    return this.hazeEffect(state = haze) {
+    // The repo's own optimized variant — a third of the source resolution,
+    // which is what these liquid-glass surfaces were moved to sample at: Auto
+    // left the two biggest panes in the app (the full-height sidebar, the
+    // full-width top bar) blurring at full resolution on every frame of every
+    // scroll. See desktopUi's OptimizedHaze.
+    return this.optimizedHazeEffect(haze) {
         // Spelled out rather than taken from a preset.
         blurEnabled = true
         backgroundColor = DesktopSurface

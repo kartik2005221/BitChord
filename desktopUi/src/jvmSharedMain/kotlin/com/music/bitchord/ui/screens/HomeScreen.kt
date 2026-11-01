@@ -195,7 +195,15 @@ fun HomeScreen(
             }
             if (!signedIn && onSignIn != null) {
                 item {
-                    SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
+                    // Read in this item, so a scroll starting or ending
+                    // recomposes the banner alone: a blurred layer re-drawn
+                    // every frame is not something to leave running under a
+                    // scroll — the sharedUi copy has said so for a while.
+                    SignInBanner(
+                        onSignIn = onSignIn,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                        motion = LocalArtworkMotion.current && !listState.isScrollInProgress,
+                    )
                 }
             }
             if (onTopPickClick != null) {

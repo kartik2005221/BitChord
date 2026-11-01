@@ -16,16 +16,15 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import com.music.bitchord.ui.player.MESH_CYCLE_MILLIS
+import com.music.bitchord.ui.screens.LocalArtworkMotion
+import com.music.bitchord.ui.screens.LocalArtworkScrolling
 import com.music.bitchord.ui.player.MeshGradientBackground
 import com.music.bitchord.ui.player.WelcomeMeshPalettes
 import com.music.bitchord.ui.player.cyclingMeshPalette
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -54,6 +53,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -759,25 +761,46 @@ fun Modifier.hangIntoGutter(outset: Dp): Modifier = layout { measurable, constra
 /** The accent a current song's title takes in lists that mark it with [SearchPlayingBars]. */
 val PlayingAccent = Color(0xFFFB4A62)
 
+/** The shared clock the playing bars breathe on, in milliseconds. */
+private const val PLAYING_BARS_PERIOD_MS = 780
+
 @Composable
 fun SearchPlayingBars(modifier: Modifier = Modifier) {
+    // One clock instead of three infinite transitions: each of those asked for
+    // a frame at display refresh rate, and every frame of anything inside the
+    // page is a frame of the whole page under the glass (MOTION_FRAME_GAP_MS).
+    // This one asks 40 times a second, holds still under a scroll like the
+    // cards' loops do, and keeps the same triangle each bar drew.
+    val phase = remember { mutableFloatStateOf(0f) }
+    val running = LocalArtworkMotion.current
+    val scrolling = LocalArtworkScrolling.current
+    LaunchedEffect(running, scrolling) {
+        if (!running) return@LaunchedEffect
+        var last = Long.MIN_VALUE
+        while (true) {
+            if (scrolling()) {
+                snapshotFlow { scrolling() }.first { !it }
+                last = Long.MIN_VALUE
+            }
+            withFrameNanos { now ->
+                if (last != Long.MIN_VALUE) {
+                    phase.floatValue = (phase.floatValue + (now - last) / (PLAYING_BARS_PERIOD_MS * 1_000_000f)) % 1f
+                }
+                last = now
+            }
+            delay(MOTION_FRAME_GAP_MS)
+        }
+    }
     val heights = listOf(0.38f, 0.78f, 0.52f).mapIndexed { index, minimum ->
-        val transition = rememberInfiniteTransition(label = "search playing bar $index")
-        val height by transition.animateFloat(
-            initialValue = minimum,
-            targetValue = 1f - (index * 0.12f),
-            animationSpec = infiniteRepeatable(
-                animation = keyframes {
-                    durationMillis = 520 + index * 130
-                    minimum at 0
-                    1f at (260 + index * 50)
-                    minimum at durationMillis
-                },
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "search bar height $index",
-        )
-        height
+        val duration = 520 + index * 130
+        val peak = 1f - index * 0.12f
+        // The bar's own cycle inside the shared clock, offset so the bars do
+        // not move in lockstep, and the same rise-to-peak-and-back triangle.
+        val t = ((phase.floatValue * PLAYING_BARS_PERIOD_MS / duration) + index * 0.37f) % 1f
+        val apex = (260 + index * 50).toFloat() / duration
+        val rise = t / apex
+        val fall = (1f - t) / (1f - apex)
+        minimum + (peak - minimum) * minOf(rise, fall).coerceIn(0f, 1f)
     }
     // The plate is a fixed square so only the bars move, never the box around them.
     Box(
@@ -872,7 +895,16 @@ fun PullToRefresh(
  * mesh is the card, and white type is what sits on colour.
  */
 @Composable
-fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
+fun SignInBanner(
+    onSignIn: () -> Unit,
+    modifier: Modifier = Modifier,
+    /**
+     * Whether the mesh may move. Off, it finishes the fade it is in and rests:
+     * a blurred layer re-drawn every frame is not something to leave running
+     * under a scroll, or under the player where nobody sees it.
+     */
+    motion: Boolean = true,
+) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.98f else 1f, spring(stiffness = 900f), label = "signInScale")
@@ -890,12 +922,13 @@ fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
         // A card is a few hundred dp the reader is looking straight at, which
         // is the case the mesh lets keep moving — see its `continuous` note.
         MeshGradientBackground(
-            palette = cyclingMeshPalette(WelcomeMeshPalettes),
+            palette = cyclingMeshPalette(WelcomeMeshPalettes, running = motion),
             modifier = Modifier.matchParentSize(),
             continuous = true,
             driftMillis = 6_000,
             blurRadius = 36.dp,
             colorFadeMillis = MESH_CYCLE_MILLIS,
+            paused = !motion,
         )
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 18.dp)) {
             Text(
