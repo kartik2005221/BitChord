@@ -7082,6 +7082,16 @@ private fun DesktopSettingsScreen(
                             DesktopAppearanceSettings::setAmbientBackdrop,
                         )
                     }
+                    val blurCovers by DesktopAppearanceSettings.blurCovers.collectAsState()
+                    SettingsToggle(
+                        DesktopStrings["blur_covers", "Blur album covers"],
+                        DesktopStrings[
+                            "blur_covers_subtitle",
+                            "Blurs artwork everywhere in the app — Home, Search, the player, Downloads — so nothing identifiable shows",
+                        ],
+                        blurCovers,
+                        DesktopAppearanceSettings::setBlurCovers,
+                    )
                     SettingsToggle(
                         DesktopStrings["full_screen_cover_art", "Full-screen cover art"],
                         DesktopStrings["full_screen_cover_art_subtitle", "Runs the cover to the edges of the player instead of a square sleeve"],

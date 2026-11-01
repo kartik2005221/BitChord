@@ -183,6 +183,8 @@ internal object DesktopPlayerSettings : PlayerSettingsSource {
     override val animatedCanvas = MutableStateFlow(true)
     override val audioQualityCellular = MutableStateFlow(AudioQuality.LOSSLESS)
     override val audioQualityWifi = MutableStateFlow(AudioQuality.LOSSLESS)
+    // The appearance setting routed into the player, exactly as hideVolumeBar is.
+    override val blurCovers = DesktopAppearanceSettings.blurCovers
     override val canvasOverCellular = MutableStateFlow(true)
     override val fullBleedArtwork = MutableStateFlow(false)
     override val hideSongStatus = MutableStateFlow(false)

@@ -1,5 +1,6 @@
 package com.music.bitchord.ui.screens
 
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.contextClick
 import com.music.bitchord.ui.AppUi
 import com.music.bitchord.sharedui.resources.*
@@ -493,7 +494,7 @@ fun CompactTrackRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(48.dp)) {
-            AsyncImage(
+            CoverImage(
                 model = thumbnailUrl.artworkAt(ROW_ART_PX),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
@@ -838,7 +839,7 @@ private fun HeroCard(
             .longPressMenuClickable(onClick = onClick, onLongClick = onLongPress)
             .contextClick(onLongPress),
     ) {
-        AsyncImage(
+        CoverImage(
             model = item.thumbnailUrl.artworkAt(HEADER_ART_PX),
             contentDescription = null,
             contentScale = ContentScale.Crop,
@@ -1077,7 +1078,7 @@ internal fun ShelfCard(
                         .thumbnailBorder(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    AsyncImage(
+                    CoverImage(
                         model = item.thumbnailUrl.artworkAt(CARD_ART_PX),
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,

@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +75,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import com.music.bitchord.ui.components.ExplicitBadge
+import com.music.bitchord.ui.components.thenIf
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.ui.theme.stableStatusBarInsets
@@ -388,6 +392,9 @@ internal fun LandscapeArtwork(
     // would recompose the sleeve for a change only the canvas needs.
     val mixBlend = PlayerSettings.smartMixBlend.collectAsStateWithLifecycle()
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
+    // The privacy mode blurs the still and leaves it at that — the sleeve's own
+    // empty-state note behind it finishes the look the rows use.
+    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
     val glowPulse = rememberMixPulse({ mixBlend.value }, enabled = !reduceAnimation, slow = glowRounded)
     Box(
         modifier = modifier
@@ -458,9 +465,12 @@ internal fun LandscapeArtwork(
                 // portrait sleeve's note on TextureView stacking order.
                 modifier = Modifier
                     .fillMaxSize()
+                    .thenIf(blurredCovers) { blur(28.dp).scale(1.25f) }
                     .drawWithContent { if (artLoaded || !canvasRendered) drawContent() },
             )
-            canvas?.let { clip ->
+            // Blur mode suppresses the motion art entirely — see the portrait
+            // sleeve's note beside its own canvas.
+            canvas.takeIf { !blurredCovers }?.let { clip ->
                 CanvasArtworkPlayer(
                     canvas = clip,
                     isPlaying = isPlaying,

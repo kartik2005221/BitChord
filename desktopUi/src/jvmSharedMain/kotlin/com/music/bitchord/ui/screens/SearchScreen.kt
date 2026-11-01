@@ -1,5 +1,6 @@
 package com.music.bitchord.ui.screens
 
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.contextClick
 import androidx.compose.ui.unit.Dp
 import com.music.bitchord.sharedui.resources.*
@@ -492,7 +493,7 @@ private fun TopResultCard(
         )
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
+            CoverImage(
                 model = song.thumbnailUrl?.artworkAt(ROW_ART_PX),
                 contentDescription = null,
                 modifier = Modifier.size(72.dp).clip(RoundedCornerShape(10.dp)),
@@ -717,7 +718,7 @@ private fun TypeaheadSongRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(52.dp)) {
-            AsyncImage(
+            CoverImage(
                 model = song.artworkAt(ROW_ART_PX),
                 contentDescription = null,
                 modifier = Modifier
@@ -889,7 +890,7 @@ private fun RecentSearchEntityRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(52.dp)) {
-            AsyncImage(
+            CoverImage(
                 model = entity.artworkUrl,
                 contentDescription = null,
                 modifier = Modifier
@@ -948,7 +949,7 @@ private fun BrowseRow(item: BrowseItem, onClick: () -> Unit, onLongPress: (() ->
             .padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
+        CoverImage(
             model = item.thumbnailUrl.artworkAt(ROW_ART_PX),
             contentDescription = null,
             modifier = Modifier

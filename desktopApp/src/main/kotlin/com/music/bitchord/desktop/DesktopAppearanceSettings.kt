@@ -18,6 +18,7 @@ internal object DesktopAppearanceSettings {
     private val _reduceDynamicBlur = flag(KEY_REDUCE_DYNAMIC_BLUR, false)
     private val _hideVolumeBar = flag(KEY_HIDE_VOLUME_BAR, false)
     private val _ambientBackdrop = flag(KEY_AMBIENT_BACKDROP, false)
+    private val _blurCovers = flag(KEY_BLUR_COVERS, false)
 
     /** Freezes the main player's gradient instead of drifting. */
     val reduceAnimation: StateFlow<Boolean> = _reduceAnimation
@@ -31,6 +32,9 @@ internal object DesktopAppearanceSettings {
     /** Diffuses current artwork colors under the window glass chrome like Apple Music. */
     val ambientBackdrop: StateFlow<Boolean> = _ambientBackdrop
 
+    /** Draws every cover as an unidentifiable blur — a privacy mode, never revealed. */
+    val blurCovers: StateFlow<Boolean> = _blurCovers
+
     fun setReduceAnimation(value: Boolean) = write(KEY_REDUCE_ANIMATION, value, _reduceAnimation)
 
     fun setReduceDynamicBlur(value: Boolean) = write(KEY_REDUCE_DYNAMIC_BLUR, value, _reduceDynamicBlur)
@@ -38,6 +42,8 @@ internal object DesktopAppearanceSettings {
     fun setHideVolumeBar(value: Boolean) = write(KEY_HIDE_VOLUME_BAR, value, _hideVolumeBar)
 
     fun setAmbientBackdrop(value: Boolean) = write(KEY_AMBIENT_BACKDROP, value, _ambientBackdrop)
+
+    fun setBlurCovers(value: Boolean) = write(KEY_BLUR_COVERS, value, _blurCovers)
 
     private fun write(key: String, value: Boolean, into: MutableStateFlow<Boolean>) {
         DesktopPersistence().saveBoolean(key, value)
@@ -48,4 +54,5 @@ internal object DesktopAppearanceSettings {
     internal const val KEY_REDUCE_DYNAMIC_BLUR = "reduce_dynamic_blur"
     internal const val KEY_HIDE_VOLUME_BAR = "hide_volume_bar"
     internal const val KEY_AMBIENT_BACKDROP = "ambient_backdrop"
+    internal const val KEY_BLUR_COVERS = "blur_covers"
 }

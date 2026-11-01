@@ -1,6 +1,7 @@
 package com.music.bitchord.ui.player
 
 import com.music.bitchord.sharedui.resources.*
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.ExplicitSongTitle
 
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -803,7 +804,7 @@ private fun InlineQueueRow(
             )
             Spacer(Modifier.width(4.dp))
         }
-        AsyncImage(
+        CoverImage(
             model = rememberRemoteArtworkUrl(song),
             contentDescription = null,
             modifier = Modifier

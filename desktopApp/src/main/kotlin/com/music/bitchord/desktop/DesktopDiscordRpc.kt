@@ -224,9 +224,12 @@ internal object DesktopDiscordRpc {
                     state = song.artist,
                     detailsUrl = watchUrl(song),
                     // No usable artwork sends none, and Discord draws the
-                    // BitChord application's icon instead.
+                    // BitChord application's icon instead. Blur mode sends
+                    // none too — the cover's URL outside the window would
+                    // show what the window is hiding.
                     largeImage = song.artworkAt(ART_PX)
                         ?.takeIf { it.startsWith("http") }
+                        ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
                         ?.let(RpcImage::ExternalImage),
                     smallImage = null,
                     largeText = quality,
@@ -289,7 +292,11 @@ internal object DesktopDiscordRpc {
             put("end", endMs)
         }
         putJsonObject("assets") {
-            song.artworkAt(ART_PX)?.takeIf { it.startsWith("http") }?.let { put("large_image", it) }
+            // Blur mode sends no artwork — see the largeImage note above.
+            song.artworkAt(ART_PX)
+                ?.takeIf { it.startsWith("http") }
+                ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
+                ?.let { put("large_image", it) }
             quality?.let { put("large_text", it) }
         }
         val labels = buttonLabels(song)

@@ -32,6 +32,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -51,6 +52,8 @@ import kotlinx.coroutines.flow.first
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.ui.AppUi
 import com.music.bitchord.ui.player.CanvasArtworkPlayer
+import com.music.bitchord.ui.player.PlayerSettings
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,7 +66,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.libraryGrid
+import com.music.bitchord.ui.components.thenIf
 import com.music.bitchord.ui.components.MOTION_FRAME_GAP_MS
 import com.music.bitchord.ui.components.LIBRARY_GRID_SPACING
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -328,7 +333,7 @@ private fun TopPickCard(
                 branded = false
             }
             TopPickKind.FEATURED_ARTIST -> {
-                AsyncImage(
+                CoverImage(
                     model = pick.images.firstOrNull().croppedAt(HEADER_ART_PX * 3 / 4, HEADER_ART_PX).whenArtworkReady(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
@@ -427,6 +432,9 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
     // would leave the still showing through the clip's own fade, so the still
     // steps out as the clip comes in.
     var covered by remember { mutableFloatStateOf(0f) }
+    // The privacy mode turns the whole card into the blur its foot always was:
+    // backdrop and cover alike, the caption's own scrim doing the rest.
+    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
     Box(modifier.background(Color.Black)) {
         AsyncImage(
             model = rememberBlurredBackdrop(url.croppedAt(BACKDROP_SOURCE_PX).whenArtworkReady()),
@@ -435,7 +443,8 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(0.42f),
+                .fillMaxHeight(0.42f)
+                .thenIf(blurredCovers) { blur(28.dp) },
         )
         // Toned down toward the caption, as Apple does, so the white text reads
         // on any cover.
@@ -456,6 +465,10 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
+                // The privacy mode turns the square into the blur its foot
+                // always was; the caption's scrim and the black box behind do
+                // the rest, so this cover takes the blur and nothing else.
+                .thenIf(blurredCovers) { blur(28.dp) }
                 // Faded out over its last stretch, so the cover runs into the
                 // blur under it instead of ending on a hard line. Offscreen so
                 // the mask cuts the cover alone; the cover never animates, so
@@ -1682,7 +1695,7 @@ private fun ArtistCollageArt(
                 .offset(x = w * cx - diameter / 2, y = h * cy - diameter / 2)
                 .size(diameter)
                 .clip(CircleShape)
-            AsyncImage(
+            CoverImage(
                 model = url.croppedAt(if (d > 0.5f) HEADER_ART_PX else CARD_ART_PX).whenArtworkReady(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
