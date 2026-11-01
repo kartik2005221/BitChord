@@ -23,8 +23,6 @@ import com.music.bitchord.ui.player.WelcomeMeshPalettes
 import com.music.bitchord.ui.player.cyclingMeshPalette
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.keyframes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -761,46 +759,44 @@ fun Modifier.hangIntoGutter(outset: Dp): Modifier = layout { measurable, constra
 /** The accent a current song's title takes in lists that mark it with [SearchPlayingBars]. */
 val PlayingAccent = Color(0xFFFB4A62)
 
-/** The shared clock the playing bars breathe on, in milliseconds. */
-private const val PLAYING_BARS_PERIOD_MS = 780
+/** The resting heights of the playing bars, one each. */
+private val PLAYING_BAR_MINIMUMS = floatArrayOf(0.38f, 0.78f, 0.52f)
+
+/**
+ * A bar's height at [ms] into its cycle: the same rise-to-peak-and-back
+ * triangle the keyframe spec drew — the time is folded per bar rather than
+ * wrapped on a shared clock, so a bar never teleports between cycles.
+ */
+private fun playingBarHeight(index: Int, minimum: Float, ms: Long): Float {
+    val duration = 520 + index * 130
+    val peak = 260 + index * 50
+    var t = (ms % (2L * duration)).toInt()
+    if (t > duration) t = 2 * duration - t
+    return if (t <= peak) {
+        minimum + (1f - minimum) * t / peak
+    } else {
+        1f - (1f - minimum) * (t - peak) / (duration - peak)
+    }
+}
 
 @Composable
 fun SearchPlayingBars(modifier: Modifier = Modifier) {
-    // One clock instead of three infinite transitions: each of those asked for
-    // a frame at display refresh rate, and every frame of anything inside the
-    // page is a frame of the whole page under the glass (MOTION_FRAME_GAP_MS).
-    // This one asks 40 times a second, holds still under a scroll like the
-    // cards' loops do, and keeps the same triangle each bar drew.
-    val phase = remember { mutableFloatStateOf(0f) }
+    // Time in motion rather than an animation per bar: read only in the draw
+    // below, so a frame of it redraws this canvas and never recomposes or
+    // re-lays out the row it sits in. One clock at MOTION_FRAME_GAP_MS, not
+    // three animators asking for a frame at display refresh rate.
+    val elapsedNanos = remember { mutableLongStateOf(0L) }
     val running = LocalArtworkMotion.current
-    val scrolling = LocalArtworkScrolling.current
-    LaunchedEffect(running, scrolling) {
+    LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
         var last = Long.MIN_VALUE
         while (true) {
-            if (scrolling()) {
-                snapshotFlow { scrolling() }.first { !it }
-                last = Long.MIN_VALUE
-            }
             withFrameNanos { now ->
-                if (last != Long.MIN_VALUE) {
-                    phase.floatValue = (phase.floatValue + (now - last) / (PLAYING_BARS_PERIOD_MS * 1_000_000f)) % 1f
-                }
+                if (last != Long.MIN_VALUE) elapsedNanos.longValue += now - last
                 last = now
             }
             delay(MOTION_FRAME_GAP_MS)
         }
-    }
-    val heights = listOf(0.38f, 0.78f, 0.52f).mapIndexed { index, minimum ->
-        val duration = 520 + index * 130
-        val peak = 1f - index * 0.12f
-        // The bar's own cycle inside the shared clock, offset so the bars do
-        // not move in lockstep, and the same rise-to-peak-and-back triangle.
-        val t = ((phase.floatValue * PLAYING_BARS_PERIOD_MS / duration) + index * 0.37f) % 1f
-        val apex = (260 + index * 50).toFloat() / duration
-        val rise = t / apex
-        val fall = (1f - t) / (1f - apex)
-        minimum + (peak - minimum) * minOf(rise, fall).coerceIn(0f, 1f)
     }
     // The plate is a fixed square so only the bars move, never the box around them.
     Box(
@@ -810,18 +806,18 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
             .background(Color.Black.copy(alpha = 0.52f)),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            modifier = Modifier.height(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            heights.forEach { height ->
-                Box(
-                    Modifier
-                        .width(3.dp)
-                        .height(14.dp * height)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White),
+        Canvas(Modifier.size(width = 13.dp, height = 14.dp)) {
+            val barWidth = 3.dp.toPx()
+            val step = barWidth + 2.dp.toPx()
+            val corner = CornerRadius(minOf(2.dp.toPx(), barWidth / 2f))
+            val ms = elapsedNanos.longValue / 1_000_000L
+            PLAYING_BAR_MINIMUMS.forEachIndexed { index, minimum ->
+                val height = size.height * playingBarHeight(index, minimum, ms)
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = Offset(index * step, size.height - height),
+                    size = Size(barWidth, height),
+                    cornerRadius = corner,
                 )
             }
         }

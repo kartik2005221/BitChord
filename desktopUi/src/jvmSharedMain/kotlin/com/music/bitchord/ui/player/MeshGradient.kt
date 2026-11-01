@@ -138,7 +138,10 @@ fun MeshGradientBackground(
     val phase = remember { Animatable(0f) }
     LaunchedEffect(trackKey, reduceAnimation, continuous, animated, paused) {
         when {
-            !animated || reduceAnimation || paused -> phase.snapTo(0f)
+            // Paused holds the pose it is in rather than snapping home — the
+            // fade in flight completes, and the mesh resumes where it left.
+            paused -> Unit
+            !animated || reduceAnimation -> phase.snapTo(0f)
             // A full turn at a time, restarted rather than looped with an
             // infinite spec: the blobs' speeds are irrational multiples of each
             // other, so the pattern never repeats, and a linear phase keeps the
