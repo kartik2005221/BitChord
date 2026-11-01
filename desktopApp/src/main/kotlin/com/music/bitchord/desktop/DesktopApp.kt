@@ -3541,9 +3541,13 @@ fun BitChordDesktopApp() {
                             persistence.saveString("volume", it.toString())
                         },
                         onOpenAudioOutput = { overlays.audioOutput = true },
-                        // The Spotify mark opens the account's own playlists
-                        // beside the page — the browser detour is gone.
-                        onOpenSpotify = { overlays.toggleSidePanel(DesktopSidePanel.SPOTIFY) },
+                        // The Spotify mark opens the account's own playlists as a
+                        // full page, the same one the Library's row opens — the
+                        // browser detour is long gone, and so is the narrow column.
+                        onOpenSpotify = {
+                            selectDestination(DesktopDestination.LIBRARY)
+                            openSpotifyLibrary()
+                        },
                         // A second click on the same button puts the column away, as in Apple Music.
                         onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) },
                         onOpenQueue = { overlays.toggleSidePanel(DesktopSidePanel.QUEUE) },
@@ -3576,8 +3580,12 @@ fun BitChordDesktopApp() {
                         onOpenLocalPlaylist = ::openPlaylist,
                         onOpenSettings = ::openSettings,
                         spotifySignedIn = spotifyCanvasCookie.isNotBlank(),
-                        spotifyOpen = overlays.sidePanel == DesktopSidePanel.SPOTIFY,
-                        onOpenSpotify = { overlays.toggleSidePanel(DesktopSidePanel.SPOTIFY) },
+                        spotifyOpen = destination == DesktopDestination.LIBRARY &&
+                            libraryShowAll?.title == SPOTIFY_SHELF,
+                        onOpenSpotify = {
+                            selectDestination(DesktopDestination.LIBRARY)
+                            openSpotifyLibrary()
+                        },
                         focusSearch = searchFocusRequested,
                         onSearchFocused = { searchFocusRequested = false },
                     )
@@ -3597,26 +3605,9 @@ fun BitChordDesktopApp() {
                 trailing = {
                     val current = selectedSong
                     DesktopSidePanelColumn(
-                        // The Spotify library needs no song behind it — it is a
-                        // browse surface, not a player companion.
-                        panel = overlays.sidePanel.takeIf {
-                            current != null || it == DesktopSidePanel.SPOTIFY
-                        },
+                        panel = overlays.sidePanel.takeIf { current != null },
                         onClose = { overlays.sidePanel = null },
                     ) { which ->
-                        if (which == DesktopSidePanel.SPOTIFY) {
-                            // A browse surface, not a player companion: it
-                            // shows with nothing playing, unlike the others.
-                            SpotifySidePanel(
-                                signedIn = spotifyCanvasCookie.isNotBlank(),
-                                onSignIn = ::signInToSpotify,
-                                onOpenPlaylist = { playlist ->
-                                    openLibraryItem(playlist.toShelfItem())
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                            return@DesktopSidePanelColumn
-                        }
                         if (current == null) return@DesktopSidePanelColumn
                         when (which) {
                             DesktopSidePanel.LYRICS -> LyricsSidePanel(
@@ -3641,6 +3632,7 @@ fun BitChordDesktopApp() {
                                 onClear = ::clearQueue,
                                 modifier = Modifier.fillMaxSize(),
                             )
+                            else -> {}
                         }
                     }
                 },
@@ -4994,7 +4986,7 @@ private fun DesktopTopBar(
                             Icon(
                                 painterResource(SharedRes.drawable.spotify_logo),
                                 DesktopStrings["spotify", "Spotify"],
-                                tint = if (sidePanel == DesktopSidePanel.SPOTIFY) Color.White else DesktopSecondary,
+                                tint = DesktopSecondary,
                                 modifier = Modifier.size(19.dp),
                             )
                         }
