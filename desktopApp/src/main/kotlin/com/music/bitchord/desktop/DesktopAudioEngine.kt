@@ -918,8 +918,10 @@ class DesktopPlaybackEngine(
             if (plan != null) DesktopTransitionRide.gains(plan, styleProgress, transitionGains)
             val out = if (plan != null) transitionGains[0] else kotlin.math.sqrt(1f - styleProgress)
             // The loudness trim rides the incoming fader alone, inside the anti-clip trim below,
-            // so a quiet master entering over a louder leaving one is brought up to meet it while
-            // the summed level is held just as it was.
+            // so a quiet master entering over a louder leaving one is brought up toward it. The
+            // trim can push the summed peak past the untrimmed headroom in the worst corner — a
+            // full +6 dB trim landing at a bass-swap point — which is exactly what the anti-clip
+            // exists to absorb, and why the trim rides inside it rather than beside it.
             val into = if (plan != null) {
                 transitionGains[1] * incomingLoudnessTrim
             } else {
