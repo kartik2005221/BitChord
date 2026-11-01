@@ -103,4 +103,41 @@ class DesktopTempoBufferTest {
     private fun tone(seconds: Double): FloatArray = FloatArray((seconds * rate * channels).toInt()) { index ->
         sin(2.0 * PI * 440.0 * (index / channels) / rate).toFloat()
     }
+
+    @Test
+    fun `the stretch window reaches down to slowdowns as well as up`() {
+        val tempo = DesktopTempoBuffer(channels, rate)
+        tempo.speed = 0.5f
+        assertEquals(0.9f, tempo.speed, "a deep slowdown was not clamped to the floor")
+        tempo.speed = 2f
+        assertEquals(1.25f, tempo.speed, "a deep speed-up was not clamped to the ceiling")
+        // Inside the window the rate passes through untouched, both directions.
+        tempo.speed = 0.95f
+        assertEquals(0.95f, tempo.speed)
+        tempo.speed = 1.2f
+        assertEquals(1.2f, tempo.speed)
+    }
+
+    @Test
+    fun `a slowdown renders more frames than it is fed and the fifo keeps the count honest`() {
+        val tempo = DesktopTempoBuffer(channels, rate).apply { speed = 0.95f }
+        val source = tone(seconds = 2.0)
+        var offset = 0
+        while (offset < source.size) {
+            val count = minOf(4_096, source.size - offset)
+            tempo.push(source.copyOfRange(offset, offset + count), count)
+            offset += count
+        }
+        tempo.finish()
+        var rendered = 0
+        while (tempo.available > 0) {
+            val taken = tempo.take(4_096)
+            assertTrue(tempo.outputCount <= taken.size, "the fifo handed back more than was asked")
+            rendered += tempo.outputCount
+        }
+        assertEquals(0, tempo.available)
+        assertTrue(rendered > source.size, "a slowdown should occupy more output time")
+        val ratio = rendered.toDouble() / source.size
+        assertTrue(ratio in 1.04..1.16, "unexpected rendered rate $ratio")
+    }
 }

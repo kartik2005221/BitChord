@@ -763,6 +763,12 @@ class DesktopPlaybackEngine(
     private var mixed = FloatArray(0)
     private var endPadding = FloatArray(0)
     private val transitionGains = FloatArray(2)
+
+    /**
+     * The relative loudness trim of the running blend, decided once in [armIncomingBlend] and
+     * applied to the incoming deck's fader in [blend]. 1f when there is nothing to match on.
+     */
+    private var incomingLoudnessTrim = 1f
     private var currentReadCount = 0
     private var incomingReadCount = 0
 
@@ -864,7 +870,11 @@ class DesktopPlaybackEngine(
 
     /** The beatmatch stretch [track] is actually rendered at — [DesktopTempoBuffer]'s clamp included. */
     private fun deckRate(track: Track): Double =
-        if (track.tempo != null && !track.tempoDrained) track.tempoRate.coerceIn(1.0, 1.1) else 1.0
+        if (track.tempo != null && !track.tempoDrained) {
+            track.tempoRate.coerceIn(TEMPO_RATE_FLOOR, TEMPO_RATE_CEIL)
+        } else {
+            1.0
+        }
 
     /** Source time each output frame of [track] covers: the listener's speed times the deck's. */
     private fun usPerFrame(track: Track): Double =
@@ -907,7 +917,16 @@ class DesktopPlaybackEngine(
 
             if (plan != null) DesktopTransitionRide.gains(plan, styleProgress, transitionGains)
             val out = if (plan != null) transitionGains[0] else kotlin.math.sqrt(1f - styleProgress)
-            val into = if (plan != null) transitionGains[1] else kotlin.math.sqrt(styleProgress)
+            // The loudness trim rides the incoming fader alone, inside the anti-clip trim below,
+            // so a quiet master entering over a louder leaving one is brought up toward it. The
+            // trim can push the summed peak past the untrimmed headroom in the worst corner — a
+            // full +6 dB trim landing at a bass-swap point — which is exactly what the anti-clip
+            // exists to absorb, and why the trim rides inside it rather than beside it.
+            val into = if (plan != null) {
+                transitionGains[1] * incomingLoudnessTrim
+            } else {
+                kotlin.math.sqrt(styleProgress)
+            }
             // Equal-power gains sum past 1 — up to 1.41 at the midpoint — and two loud masters
             // peaking together would be clipped hard by the sink. A smooth trim of
             // 1 / sqrt(out + into) holds that to 1.19 for at most 1.5 dB, and reshapes nothing:
@@ -1008,7 +1027,10 @@ class DesktopPlaybackEngine(
         val block = tempo.take(DEFAULT_TEMPO_OUTPUT_SAMPLES)
         currentReadCount = tempo.outputCount
         advanceTempoEase(track, currentReadCount / sink.format.channels.coerceAtLeast(1))
-        if (track.tempoRate <= 1.0 && !track.tempoDrained) {
+        // Exactly 1.0, not merely at or under it: a slowdown eases back up through sub-1.0 rates
+        // on its way home, and the old `<= 1.0` here drained the stretch the moment a slowed deck
+        // was promoted.
+        if (track.tempoRate == 1.0 && !track.tempoDrained) {
             // Nothing more is pushed from here; what the stretcher holds is queued unstretched and
             // the decoder takes over once it has played.
             tempo.finish()
@@ -1078,11 +1100,19 @@ class DesktopPlaybackEngine(
     private fun advanceTempoEase(track: Track, outputFrames: Int) {
         if (track.tempoEaseStep <= 0.0 || outputFrames <= 0) return
         track.tempoOutputFrames += outputFrames
-        while (track.tempoOutputFrames >= track.tempoEaseNextFrame && track.tempoRate > 1.0) {
-            track.tempoRate = (track.tempoRate - track.tempoEaseStep).coerceAtLeast(1.0)
+        // Toward 1.0 from either direction — a speed-up steps down, a slowdown steps up — the
+        // same step at a time.
+        while (track.tempoOutputFrames >= track.tempoEaseNextFrame &&
+            kotlin.math.abs(track.tempoRate - 1.0) > TEMPO_RATE_EPSILON
+        ) {
+            track.tempoRate = if (track.tempoRate > 1.0) {
+                (track.tempoRate - track.tempoEaseStep).coerceAtLeast(1.0)
+            } else {
+                (track.tempoRate + track.tempoEaseStep).coerceAtMost(1.0)
+            }
             track.tempoEaseNextFrame += track.tempoEaseEveryFrames
         }
-        if (track.tempoRate <= 1.0001) track.tempoRate = 1.0
+        if (kotlin.math.abs(track.tempoRate - 1.0) <= TEMPO_RATE_EPSILON) track.tempoRate = 1.0
     }
 
     /** Widens one track's samples, unless the audio is Dolby Atmos. */
@@ -1129,6 +1159,7 @@ class DesktopPlaybackEngine(
         transitionBeatRepeat = null
         transitionReverb = null
         transitionTexture = null
+        incomingLoudnessTrim = 1f
         beatRepeatActive = false
         beatRepeatLatched = false
         reverbActive = false
@@ -1137,9 +1168,11 @@ class DesktopPlaybackEngine(
         incomingFilter.open()
         current?.decoder?.close()
         current = incoming
-        if (incoming.tempo != null && incoming.tempoRate > 1.0) {
-            val steps = ceil((incoming.tempoRate - 1.0) / TEMPO_STEP_PER_BEAT).toInt().coerceAtLeast(1)
-            incoming.tempoEaseStep = (incoming.tempoRate - 1.0) / steps
+        val stretchAway = kotlin.math.abs(incoming.tempoRate - 1.0)
+        if (incoming.tempo != null && stretchAway > TEMPO_RATE_EPSILON) {
+            val steps = ceil(stretchAway / TEMPO_STEP_PER_BEAT).toInt().coerceAtLeast(1)
+            // Held as a magnitude; [advanceTempoEase] applies it toward 1.0 by direction.
+            incoming.tempoEaseStep = stretchAway / steps
             incoming.tempoEaseEveryFrames = (
                 (plan?.beatSeconds ?: 0.0).takeIf { it > 0.0 } ?: EASE_FALLBACK_SECONDS
                 ).times(sink.format.sampleRate).toLong().coerceAtLeast(1L)
@@ -1372,6 +1405,7 @@ class DesktopPlaybackEngine(
         transitionBeatRepeat = null
         transitionReverb = null
         transitionTexture = null
+        incomingLoudnessTrim = 1f
         beatRepeatActive = false
         beatRepeatLatched = false
         reverbActive = false
@@ -1692,12 +1726,36 @@ class DesktopPlaybackEngine(
         fadeRemaining = transitionTotal
         incomingSourceFrames = 0.0
         activePlan = plan
-        incoming.tempo = if (plan.incomingPlaybackRate > 1.0001) {
+        // The planner's rate runs 0.9..1.25, and both directions now engage the stretcher: the
+        // old arm attached it only for a speed-up, so a planned slowdown was silently dropped and
+        // the two decks kept the tempo gap the plan was meant to close. The shared planner never
+        // retimes the audible outgoing deck — its `outgoingPlaybackRate` is pinned to 1.0, because
+        // moving an already-audible deck's rate caused discontinuities on Android routes, so only
+        // the incoming one ever moves — which is why there is no outgoing site to apply here.
+        incoming.tempo = if (kotlin.math.abs(plan.incomingPlaybackRate - 1.0) > TEMPO_RATE_EPSILON) {
             DesktopTempoBuffer(sink.format.channels, sink.format.sampleRate).also {
                 it.speed = plan.incomingPlaybackRate.toFloat()
             }
         } else null
-        incoming.tempoRate = plan.incomingPlaybackRate.coerceAtLeast(1.0)
+        incoming.tempoRate = plan.incomingPlaybackRate.coerceIn(TEMPO_RATE_FLOOR, TEMPO_RATE_CEIL)
+        // Loudness matching, decided once per transition while both analyses are at hand: each
+        // deck's representative level over its own stretch of the blend, the difference bounded to
+        // ±6 dB and carried as a gain [blend] multiplies the incoming fader by. The desktop
+        // analyser does not record levelWindows yet, so this usually answers 1f today — but an
+        // analysis stored with levels is honoured the moment one arrives, and both decks' solo
+        // playback is untouched either way.
+        val outgoingVideoId = current?.song?.videoId
+        val outgoingAnalysis = outgoingVideoId?.takeIf { it.isNotBlank() }?.let { analyzer.analysisFor(it) }
+        val incomingAnalysis = analyzer.analysisFor(incoming.song.videoId)
+        val incomingRate = if (plan.incomingPlaybackRate > 0.0) plan.incomingPlaybackRate else 1.0
+        incomingLoudnessTrim = DesktopLoudness.trimBetween(
+            outgoing = outgoingAnalysis,
+            incoming = incomingAnalysis,
+            outFromSeconds = plan.transitionStart,
+            outUntilSeconds = plan.transitionEnd,
+            inFromSeconds = plan.incomingCueTime,
+            inUntilSeconds = plan.incomingCueTime + plan.fadeSeconds * incomingRate,
+        )
         transitionEcho = if (plan.echoSeconds > 0.0) {
             DesktopTransitionEcho(sink.format.sampleRate, sink.format.channels).also { it.configure(plan.echoSeconds) }
         } else null
@@ -1926,6 +1984,15 @@ class DesktopPlaybackEngine(
         private const val DEFAULT_TEMPO_OUTPUT_SAMPLES = 4_096
         private const val TEMPO_STEP_PER_BEAT = 0.0075
         private const val EASE_FALLBACK_SECONDS = 0.5
+
+        /**
+         * The planner's stretch window, slowdowns included — the bounds [DesktopTempoBuffer]
+         * clamps to, and the window the shared transition policy plans inside — and the hair
+         * either side of 1.0 inside which a rate counts as untouched.
+         */
+        private const val TEMPO_RATE_FLOOR = 0.9
+        private const val TEMPO_RATE_CEIL = 1.25
+        private const val TEMPO_RATE_EPSILON = 0.0001
 
         /**
          * How far ahead of its transition a held-back addon track is resolved and opened. Android
