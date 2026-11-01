@@ -3414,6 +3414,7 @@ fun BitChordDesktopApp() {
                             persistence.saveString("volume", it.toString())
                         },
                         onOpenAudioOutput = { overlays.audioOutput = true },
+                        onOpenSpotify = { DesktopExternalLinks.open("https://open.spotify.com/") },
                         // A second click on the same button puts the column away, as in Apple Music.
                         onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) },
                         onOpenQueue = { overlays.toggleSidePanel(DesktopSidePanel.QUEUE) },
@@ -4582,6 +4583,8 @@ private fun DesktopTopBar(
     onOpenNowPlaying: () -> Unit,
     onVolumeChange: (Float) -> Unit,
     onOpenAudioOutput: () -> Unit,
+    /** Opens Spotify itself — the service's own player, where it lives. */
+    onOpenSpotify: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenQueue: () -> Unit,
     /** Which of the two the column beside the page is showing, lit on its button. */
@@ -4811,6 +4814,14 @@ private fun DesktopTopBar(
                         modifier = Modifier.width(78.dp),
                     )
                     Spacer(Modifier.width(5.dp))
+                    DesktopToolbarButton(onClick = onOpenSpotify, size = 32.dp) {
+                        Icon(
+                            painterResource(SharedRes.drawable.spotify_logo),
+                            DesktopStrings["spotify", "Spotify"],
+                            tint = DesktopSecondary,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
                     DesktopToolbarButton(onClick = onOpenAudioOutput, size = 32.dp) {
                         Icon(
                             Icons.Rounded.Headphones,
