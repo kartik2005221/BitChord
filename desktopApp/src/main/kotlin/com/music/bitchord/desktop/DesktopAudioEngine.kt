@@ -763,6 +763,12 @@ class DesktopPlaybackEngine(
     private var mixed = FloatArray(0)
     private var endPadding = FloatArray(0)
     private val transitionGains = FloatArray(2)
+
+    /**
+     * The relative loudness trim of the running blend, decided once in [armIncomingBlend] and
+     * applied to the incoming deck's fader in [blend]. 1f when there is nothing to match on.
+     */
+    private var incomingLoudnessTrim = 1f
     private var currentReadCount = 0
     private var incomingReadCount = 0
 
@@ -911,7 +917,14 @@ class DesktopPlaybackEngine(
 
             if (plan != null) DesktopTransitionRide.gains(plan, styleProgress, transitionGains)
             val out = if (plan != null) transitionGains[0] else kotlin.math.sqrt(1f - styleProgress)
-            val into = if (plan != null) transitionGains[1] else kotlin.math.sqrt(styleProgress)
+            // The loudness trim rides the incoming fader alone, inside the anti-clip trim below,
+            // so a quiet master entering over a louder leaving one is brought up to meet it while
+            // the summed level is held just as it was.
+            val into = if (plan != null) {
+                transitionGains[1] * incomingLoudnessTrim
+            } else {
+                kotlin.math.sqrt(styleProgress)
+            }
             // Equal-power gains sum past 1 — up to 1.41 at the midpoint — and two loud masters
             // peaking together would be clipped hard by the sink. A smooth trim of
             // 1 / sqrt(out + into) holds that to 1.19 for at most 1.5 dB, and reshapes nothing:
@@ -1144,6 +1157,7 @@ class DesktopPlaybackEngine(
         transitionBeatRepeat = null
         transitionReverb = null
         transitionTexture = null
+        incomingLoudnessTrim = 1f
         beatRepeatActive = false
         beatRepeatLatched = false
         reverbActive = false
@@ -1389,6 +1403,7 @@ class DesktopPlaybackEngine(
         transitionBeatRepeat = null
         transitionReverb = null
         transitionTexture = null
+        incomingLoudnessTrim = 1f
         beatRepeatActive = false
         beatRepeatLatched = false
         reverbActive = false
@@ -1721,6 +1736,24 @@ class DesktopPlaybackEngine(
             }
         } else null
         incoming.tempoRate = plan.incomingPlaybackRate.coerceIn(TEMPO_RATE_FLOOR, TEMPO_RATE_CEIL)
+        // Loudness matching, decided once per transition while both analyses are at hand: each
+        // deck's representative level over its own stretch of the blend, the difference bounded to
+        // ±6 dB and carried as a gain [blend] multiplies the incoming fader by. The desktop
+        // analyser does not record levelWindows yet, so this usually answers 1f today — but an
+        // analysis stored with levels is honoured the moment one arrives, and both decks' solo
+        // playback is untouched either way.
+        val outgoingVideoId = current?.song?.videoId
+        val outgoingAnalysis = outgoingVideoId?.takeIf { it.isNotBlank() }?.let { analyzer.analysisFor(it) }
+        val incomingAnalysis = analyzer.analysisFor(incoming.song.videoId)
+        val incomingRate = if (plan.incomingPlaybackRate > 0.0) plan.incomingPlaybackRate else 1.0
+        incomingLoudnessTrim = DesktopLoudness.trimBetween(
+            outgoing = outgoingAnalysis,
+            incoming = incomingAnalysis,
+            outFromSeconds = plan.transitionStart,
+            outUntilSeconds = plan.transitionEnd,
+            inFromSeconds = plan.incomingCueTime,
+            inUntilSeconds = plan.incomingCueTime + plan.fadeSeconds * incomingRate,
+        )
         transitionEcho = if (plan.echoSeconds > 0.0) {
             DesktopTransitionEcho(sink.format.sampleRate, sink.format.channels).also { it.configure(plan.echoSeconds) }
         } else null
