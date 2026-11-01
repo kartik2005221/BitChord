@@ -1110,6 +1110,11 @@ internal fun OutputCaption(
 ) {
     val badge = rememberPartyBadge()
     val outputName = rememberAudioOutputName(accountName)
+    // The system default says nothing for itself, and a caption that says
+    // nothing should not be there: an empty text on a clickable modifier is
+    // an invisible strip that still takes its place and still answers a
+    // hover. Nothing to say, nothing drawn.
+    if (!badge.inParty && outputName.isBlank()) return
     val outputFormat by PlayerPlatform.host.outputFormat.collectAsStateWithLifecycle()
     val nerdStats by NerdStats.current.collectAsStateWithLifecycle()
     // What the route is *capable* of, read off the negotiated AudioTrack —
