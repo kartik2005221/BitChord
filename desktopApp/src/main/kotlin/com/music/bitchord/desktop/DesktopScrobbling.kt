@@ -94,6 +94,14 @@ object DesktopScrobbling {
         get() = DesktopScrobbleSettings.lastfmApiSecret.value.takeIf(String::isNotBlank)
             ?: property("bitchord.lastfm.secret") ?: env("BITCHORD_LASTFM_API_SECRET")
 
+    /**
+     * The key for the unsigned read API — the Replay's artist genres. Signs
+     * nothing, needs no session: settings first, baked key, environment, the
+     * same ladder the scrobbler climbs.
+     */
+    internal val lastFmReadApiKey: String?
+        get() = apiKey
+
     private fun sessionKey(): String? =
         DesktopScrobbleSettings.lastfmSessionKey.value.takeIf(String::isNotBlank)
             ?: env("BITCHORD_LASTFM_SESSION_KEY")

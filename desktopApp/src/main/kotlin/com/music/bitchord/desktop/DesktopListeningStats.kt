@@ -50,6 +50,8 @@ data class DesktopReplaySummary(
     val songs: List<DesktopReplayEntry> = emptyList(),
     val artists: List<DesktopRankedEntry> = emptyList(),
     val albums: List<DesktopRankedEntry> = emptyList(),
+    /** Genres the listening maps to, through what is known about each artist. Empty until facts exist. */
+    val genres: List<DesktopRankedEntry> = emptyList(),
     val hourOfDay: List<Long> = List(24) { 0L },
     /** `YYYY-MM-DD` of the day with the most listening. */
     val busiestDay: String? = null,
@@ -111,7 +113,7 @@ object DesktopListeningStats {
     }
 
     fun summary(period: DesktopReplayPeriod = DesktopReplayPeriod.ALL_TIME): DesktopReplaySummary =
-        synchronized(lock) { summarise(read(), period, LocalDate.now()) }
+        synchronized(lock) { summarise(read(), period, LocalDate.now(), DesktopArtistFacts) }
 
     /** Everything recorded, thrown away. */
     fun clear() = synchronized(lock) {
@@ -124,11 +126,15 @@ object DesktopListeningStats {
      *
      * Split out so it can be checked without a store: the real one is the listener's own play
      * history, and a test that wrote to it would be rewriting what it is meant to be reporting.
+     * [facts] is the artist store the genre chart and the artists' own art and pages come
+     * through — null keeps the charts exactly as they were before facts existed, which is
+     * what tests read.
      */
     internal fun summarise(
         buckets: List<Bucket>,
         period: DesktopReplayPeriod,
         today: LocalDate,
+        facts: DesktopArtistFactsSource? = null,
     ): DesktopReplaySummary {
         val inPeriod = buckets.filter { period.covers(it.month, today) }
         val entries = inPeriod.flatMap { it.tracks.values }
@@ -150,19 +156,74 @@ object DesktopListeningStats {
         }
         val busiest = days.maxByOrNull { it.value }
 
+        // The artist's own picture and page where one has been found, and the
+        // track's sleeve where one hasn't — see [DesktopArtistFacts]. Resolved
+        // here rather than stored in the bucket because it is a fact about the
+        // artist, not about the evening they were played on: written into every
+        // month it would freeze at whatever was known the first time they came
+        // up, and be missing from every month before that.
+        // The chart ranks the lead artist, as the phone's does — the same name
+        // the recording path files facts under, so a collaboration's face and
+        // genres land on the row that carries its billing.
+        val rankedArtists = rank(entries) {
+            primaryArtist(it.song.artist.ifBlank { "Unknown Artist" })
+        }.map { row ->
+            if (facts == null) row else row.copy(
+                artworkUrl = facts.imageFor(row.title) ?: row.artworkUrl,
+                browseId = row.browseId ?: facts.browseIdFor(row.title),
+            )
+        }
+
+        // Genres are derived rather than stored — see [DesktopArtistFacts]. An
+        // artist with no tag yet simply doesn't vote, which is why this can be
+        // an empty list on a page whose other charts are full.
+        val rankedGenres = if (facts == null) emptyList() else {
+            val genreMs = LinkedHashMap<String, Long>()
+            val genrePlays = LinkedHashMap<String, Int>()
+            val genreArt = LinkedHashMap<String, String?>()
+            rankedArtists.forEach { artist ->
+                facts.genresFor(artist.title).forEach { genre ->
+                    genreMs[genre] = (genreMs[genre] ?: 0L) + artist.ms
+                    genrePlays[genre] = (genrePlays[genre] ?: 0) + artist.plays
+                    if (genreArt[genre] == null) genreArt[genre] = artist.artworkUrl
+                }
+            }
+            genreMs.entries.sortedByDescending { it.value }.map {
+                DesktopRankedEntry(
+                    title = it.key,
+                    subtitle = null,
+                    artworkUrl = genreArt[it.key],
+                    browseId = null,
+                    ms = it.value,
+                    plays = genrePlays[it.key] ?: 0,
+                )
+            }
+        }
+
+        // Anything still missing a picture or a page is asked about now, so
+        // opening the page is a second way for these to fill in — the first
+        // being playing the music, which is no help to someone who has just
+        // installed a build that started collecting them.
+        if (facts != null) {
+            rankedArtists.take(ARTISTS_TO_RESOLVE)
+                .filter { it.artworkUrl == null || it.browseId == null }
+                .forEach { facts.noticed(it.title) }
+        }
+
         return DesktopReplaySummary(
             period = period,
             label = labelFor(period, today),
             totalMs = entries.sumOf(DesktopReplayEntry::listenedMs),
             totalPlays = entries.sumOf(DesktopReplayEntry::plays),
             songs = entries.sortedByDescending(DesktopReplayEntry::listenedMs),
-            artists = rank(entries) { it.song.artist.ifBlank { "Unknown Artist" } },
+            artists = rankedArtists,
             albums = rank(entries) { it.song.albumName?.takeIf(String::isNotBlank) ?: "Unknown Album" },
+            genres = rankedGenres,
             hourOfDay = hours.toList(),
             busiestDay = busiest?.key,
             busiestDayMs = busiest?.value ?: 0L,
             distinctSongs = entries.size,
-            distinctArtists = entries.map { it.song.artist.ifBlank { "Unknown Artist" } }.distinct().size,
+            distinctArtists = entries.map { primaryArtist(it.song.artist.ifBlank { "Unknown Artist" }) }.distinct().size,
             distinctAlbums = entries.mapNotNull { it.song.albumName?.takeIf(String::isNotBlank) }.distinct().size,
             since = buckets.map(Bucket::month).filter { it != LEGACY_MONTH }.minOrNull(),
         )
@@ -344,4 +405,7 @@ object DesktopListeningStats {
     private const val ROW_DAY = "d"
     private const val KEY_BUCKETS = "buckets"
     private const val KEY_ENTRIES = "entries"
+
+    /** How far down the artist chart a missing picture or page is still asked about. */
+    private const val ARTISTS_TO_RESOLVE = 15
 }
