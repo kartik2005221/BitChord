@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import com.music.bitchord.ui.player.MESH_CYCLE_MILLIS
 import com.music.bitchord.ui.screens.LocalArtworkMotion
-import com.music.bitchord.ui.screens.LocalArtworkScrolling
 import com.music.bitchord.ui.player.MeshGradientBackground
 import com.music.bitchord.ui.player.WelcomeMeshPalettes
 import com.music.bitchord.ui.player.cyclingMeshPalette
@@ -58,7 +57,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
