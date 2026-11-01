@@ -3575,6 +3575,9 @@ fun BitChordDesktopApp() {
                         onOpenAccountPlaylist = { openShelfItem(it, PLAYLISTS_SHELF) },
                         onOpenLocalPlaylist = ::openPlaylist,
                         onOpenSettings = ::openSettings,
+                        spotifySignedIn = spotifyCanvasCookie.isNotBlank(),
+                        spotifyOpen = overlays.sidePanel == DesktopSidePanel.SPOTIFY,
+                        onOpenSpotify = { overlays.toggleSidePanel(DesktopSidePanel.SPOTIFY) },
                         focusSearch = searchFocusRequested,
                         onSearchFocused = { searchFocusRequested = false },
                     )
@@ -4984,13 +4987,17 @@ private fun DesktopTopBar(
                         modifier = Modifier.width(78.dp),
                     )
                     Spacer(Modifier.width(5.dp))
-                    DesktopToolbarButton(onClick = onOpenSpotify, size = 32.dp) {
-                        Icon(
-                            painterResource(SharedRes.drawable.spotify_logo),
-                            DesktopStrings["spotify", "Spotify"],
-                            tint = if (sidePanel == DesktopSidePanel.SPOTIFY) Color.White else DesktopSecondary,
-                            modifier = Modifier.size(19.dp),
-                        )
+                    // Compact windows have no sidebar, so the mark keeps a home here
+                    // only there — everywhere else it lives under Local Music.
+                    if (compact) {
+                        DesktopToolbarButton(onClick = onOpenSpotify, size = 32.dp) {
+                            Icon(
+                                painterResource(SharedRes.drawable.spotify_logo),
+                                DesktopStrings["spotify", "Spotify"],
+                                tint = if (sidePanel == DesktopSidePanel.SPOTIFY) Color.White else DesktopSecondary,
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
                     }
                     DesktopToolbarButton(onClick = onOpenAudioOutput, size = 32.dp) {
                         Icon(
@@ -5057,6 +5064,11 @@ private fun DesktopSidebar(
     settingsOpen: Boolean,
     accountPlaylists: List<ShelfItem>,
     localPlaylists: List<DesktopPlaylist>,
+    /** Whether a Spotify account is connected — the row under Local Music exists only then. */
+    spotifySignedIn: Boolean,
+    /** Whether the Spotify panel is the one the column beside the page is showing. */
+    spotifyOpen: Boolean,
+    onOpenSpotify: () -> Unit,
     openedCollectionId: String?,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -5171,6 +5183,14 @@ private fun DesktopSidebar(
                     onHide = { DesktopSidebarVisibility.hide(LOCAL_MUSIC_KEY, "Local Music") },
                 )
             }
+            if (spotifySignedIn) {
+                DesktopSidebarItem(
+                    painterResource(SharedRes.drawable.spotify_logo),
+                    DesktopStrings["spotify", "Spotify"],
+                    spotifyOpen,
+                    onClick = onOpenSpotify,
+                )
+            }
             Spacer(Modifier.height(6.dp))
             HorizontalDivider(color = desktopChromeDivider())
             Spacer(Modifier.height(12.dp))
@@ -5239,6 +5259,43 @@ private fun DesktopSidebarItem(
     /** When set, a right-click offers to hide the row — see [DesktopSidebarVisibility]. */
     onHide: (() -> Unit)? = null,
     onClick: () -> Unit,
+) = DesktopSidebarItem(
+    {
+        Icon(
+            icon,
+            label,
+            tint = if (selected) DesktopAccent else DesktopSecondary,
+            modifier = Modifier.size(18.dp),
+        )
+    },
+    label,
+    selected,
+    onHide,
+    onClick,
+)
+
+/** The brand-drawn variant, for rows whose mark is a picture (the Spotify logo) rather than a glyph. */
+@Composable
+private fun DesktopSidebarItem(
+    icon: androidx.compose.ui.graphics.painter.Painter,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) = DesktopSidebarItem(
+    { Icon(icon, label, modifier = Modifier.size(15.dp)) },
+    label,
+    selected,
+    null,
+    onClick,
+)
+
+@Composable
+private fun DesktopSidebarItem(
+    icon: @Composable () -> Unit,
+    label: String,
+    selected: Boolean,
+    onHide: (() -> Unit)?,
+    onClick: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
@@ -5266,7 +5323,7 @@ private fun DesktopSidebarItem(
                 .padding(horizontal = 9.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(icon, label, tint = if (selected) DesktopAccent else DesktopSecondary, modifier = Modifier.size(18.dp))
+            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { icon() }
             Spacer(Modifier.width(10.dp))
             Text(
                 label,

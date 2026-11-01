@@ -122,9 +122,19 @@ private fun desktopMain() = application {
     val placement by DesktopWindowMode.placement.collectAsState()
     LaunchedEffect(placement) { state.placement = placement }
     // ...and back, for the times the window is moved between placements by something that is not
-    // us; see [DesktopWindowMode.adopt].
+    // us; see [DesktopWindowMode.adopt]. The reports land in steps — a fullscreen request is
+    // processed by the window manager asynchronously, and the bounds events in between read
+    // `Floating` while the screen is visibly filling — so they collapse into the settled value
+    // before the mode judges them, and a report that disagrees with what the app itself asked
+    // for is rejected and re-asserted over the window. Compose's own update guard makes that
+    // re-assert idempotent, and snapshotFlow drops the duplicates, so the exchange settles.
     LaunchedEffect(state) {
-        snapshotFlow { state.placement }.collect(DesktopWindowMode::adopt)
+        snapshotFlow { state.placement }.collectLatest { reported ->
+            delay(250)
+            if (!DesktopWindowMode.adopt(reported)) {
+                state.placement = DesktopWindowMode.placement.value
+            }
+        }
     }
     val maximized by DesktopWindowMode.maximized.collectAsState()
     LaunchedEffect(maximized) {

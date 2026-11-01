@@ -99,6 +99,12 @@ internal object DesktopWindowState {
         // from — and its size reflects the fill rather than where the reader left their
         // own window.
         if (state.placement != WindowPlacement.Floating) return
+        // And only a settled one's: a transition in flight — or the first moments after
+        // one — produced the shrunken, bottom-stuck geometry that rapid F11 left behind,
+        // and persisting it is what made the junk survive every restart. Nothing written
+        // until the window has had its say.
+        if (DesktopWindowMode.isTransitionPending()) return
+        if (System.currentTimeMillis() - DesktopWindowMode.lastFullScreenExitAtMs() < 1_500L) return
         runCatching {
             val persistence = DesktopPersistence()
             persistence.saveString(
