@@ -38,6 +38,14 @@ import androidx.compose.ui.unit.sp
 import com.music.bitchord.data.spotify.SpotifyLibrary
 import com.music.bitchord.data.spotify.SpotifyPlaylist
 
+/** What the panel's read of the account is at, this open. */
+private sealed interface SpotifyPanelState {
+    data object Loading : SpotifyPanelState
+    data object Empty : SpotifyPanelState
+    data class Ready(val playlists: List<SpotifyPlaylist>) : SpotifyPanelState
+    data class Failed(val message: String) : SpotifyPanelState
+}
+
 /**
  * The side panel's Spotify view: the account's playlists, one click from the
  * top bar's Spotify mark — the thing the browser detour used to pretend to be.
@@ -47,14 +55,6 @@ import com.music.bitchord.data.spotify.SpotifyPlaylist
  * to the same route the Library grid opens it by, so the tracks fill in and
  * match to YouTube Music exactly as they do from there.
  */
-/** What the panel's read of the account is at, this open. */
-private sealed interface SpotifyPanelState {
-    data object Loading : SpotifyPanelState
-    data object Empty : SpotifyPanelState
-    data class Ready(val playlists: List<SpotifyPlaylist>) : SpotifyPanelState
-    data class Failed(val message: String) : SpotifyPanelState
-}
-
 @Composable
 internal fun SpotifySidePanel(
     signedIn: Boolean,
@@ -111,6 +111,11 @@ internal fun SpotifySidePanel(
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = { refresh++ }) {
                 Text(DesktopStrings["retry", "Retry"])
+            }
+            // An expired cookie fails forever until it is replaced — a retry
+            // alone would be a dead end, so the way in sits beside it.
+            TextButton(onClick = onSignIn) {
+                Text(DesktopStrings["spotify_panel_sign_in", "Sign in to Spotify"])
             }
         }
         state is SpotifyPanelState.Empty -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

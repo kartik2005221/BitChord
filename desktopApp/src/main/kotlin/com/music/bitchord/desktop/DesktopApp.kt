@@ -4983,7 +4983,7 @@ private fun DesktopTopBar(
                         Icon(
                             painterResource(SharedRes.drawable.spotify_logo),
                             DesktopStrings["spotify", "Spotify"],
-                            tint = DesktopSecondary,
+                            tint = if (sidePanel == DesktopSidePanel.SPOTIFY) Color.White else DesktopSecondary,
                             modifier = Modifier.size(19.dp),
                         )
                     }
