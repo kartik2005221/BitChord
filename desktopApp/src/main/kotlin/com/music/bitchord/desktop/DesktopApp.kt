@@ -6362,11 +6362,24 @@ private fun DesktopLocalMusicPage(
                 DesktopLocalTab.ARTISTS -> DesktopLibraryGroupingContent(artists, view, onGroupClick = { drillDown = it })
                 DesktopLocalTab.ALBUMS -> DesktopLibraryGroupingContent(albums, view, onGroupClick = { drillDown = it })
                 DesktopLocalTab.LIKED -> if (likedSongs.isEmpty()) {
-                    DesktopEmptyPage(
-                        BitChordIcons.Heart,
-                        "No liked songs yet",
-                        "Tap the heart on a song on this computer and it waits here.",
-                    )
+                    if (searchQuery.isBlank()) {
+                        DesktopEmptyPage(
+                            BitChordIcons.Heart,
+                            "No liked songs yet",
+                            "Tap the heart on a song on this computer and it waits here.",
+                        )
+                    } else {
+                        // A filter with no match is the list's own answer to give,
+                        // not the shelf's call to like.
+                        DesktopLibrarySongContent(
+                            likedSongs,
+                            view,
+                            onSongClick,
+                            menu,
+                            liked = { song -> song.videoId in likedSet },
+                            onToggleLike = onToggleLiked,
+                        )
+                    }
                 } else {
                     DesktopLibrarySongContent(
                         likedSongs,
@@ -6387,9 +6400,16 @@ private fun DesktopLocalMusicPage(
                     DesktopLibraryGroupingContent(
                         folderGroups,
                         view,
-                        onGroupClick = { drillDown = it },
+                        // The page opens titled as the row it came from — the bare
+                        // folder name, as the phone's folder pages are — the parent
+                        // path already having been named under the row.
+                        onGroupClick = { entry ->
+                            drillDown = entry.first.substringAfterLast('/').ifBlank { entry.first } to entry.second
+                        },
                         // The row names the folder; the parent path under it is what
                         // tells two alike-named folders apart, as the phone's rows do.
+                        // Desktop parents stay absolute: unlike a phone's one storage
+                        // volume, a computer's folders sit in several schemes.
                         label = { path -> path.substringAfterLast('/').ifBlank { path } },
                         subline = { entry -> "${entry.first.substringBeforeLast('/')} · ${entry.second.size} songs" },
                     )

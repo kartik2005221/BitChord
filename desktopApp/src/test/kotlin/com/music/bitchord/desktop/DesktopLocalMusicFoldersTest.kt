@@ -5,7 +5,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * The folder readings of the computer's own files — the desktop port of the
@@ -89,8 +88,8 @@ class DesktopLocalMusicFoldersTest {
     }
 
     @Test
-    fun `re-liking a liked file moves it to the front, never duplicating it`() {
-        assertEquals(listOf("c", "a", "b"), likedAfterToggle(listOf("a", "b", "c"), "c"))
+    fun `toggling a liked row takes it home`() {
+        assertEquals(listOf("a", "b"), likedAfterToggle(listOf("a", "b", "c"), "c"))
     }
 
     @Test
@@ -99,8 +98,7 @@ class DesktopLocalMusicFoldersTest {
     }
 
     @Test
-    fun `unliking an unknown id changes nothing`() {
-        assertTrue(likedAfterToggle(listOf("a", "b"), "z").containsAll(listOf("a", "b")))
-        assertEquals(2, likedAfterToggle(listOf("a", "b"), "z").size)
+    fun `an unknown id goes in as a like, leading the shelf`() {
+        assertEquals(listOf("z", "a", "b"), likedAfterToggle(listOf("a", "b"), "z"))
     }
 }
