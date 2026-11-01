@@ -99,6 +99,11 @@ internal object DesktopWindowState {
         // from — and its size reflects the fill rather than where the reader left their
         // own window.
         if (state.placement != WindowPlacement.Floating) return
+        // While the window manager holds the window fullscreen on the X11 path, Compose's
+        // placement reads Floating all along and the size on screen is the screen's own, not
+        // the reader's — writing it down is the junk-persistence vector again. The confirmed
+        // flag stops it here, before any of the settle checks below are even consulted.
+        if (DesktopWindowMode.x11Active && DesktopWindowMode.fullScreen.value) return
         // And only a settled one's: a transition in flight — or the first moments after
         // one — produced the shrunken, bottom-stuck geometry that rapid F11 left behind,
         // and persisting it is what made the junk survive every restart. Nothing written

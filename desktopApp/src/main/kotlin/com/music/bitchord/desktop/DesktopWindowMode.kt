@@ -1,6 +1,7 @@
 package com.music.bitchord.desktop
 
 import androidx.compose.ui.window.WindowPlacement
+import java.awt.Window
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -36,6 +37,18 @@ internal object DesktopWindowMode {
     private var lastFullScreenExitAtMs = 0L
     private var lastToggleAtMs = 0L
 
+    /** The real window, handed over once by Main.kt — on Linux its manager is spoken to directly. */
+    private var attachedWindow: Window? = null
+
+    /**
+     * Whether the Linux X11 path engaged — fullscreen asked for in raw EWMH hints, the window
+     * manager's own state, with Compose's placement kept out of it entirely. Windows and macOS
+     * (and a Linux box where the plumbing cannot be reached) leave it false and carry on with
+     * the placement path below.
+     */
+    var x11Active: Boolean = false
+        private set
+
     /** What the window's own `placement` is driven from. */
     val placement: StateFlow<WindowPlacement> = _placement
 
@@ -53,6 +66,21 @@ internal object DesktopWindowMode {
      */
     private val fillsScreen: WindowPlacement =
         if (DesktopPlatform.drawsOwnWindowFrame) WindowPlacement.Maximized else WindowPlacement.Fullscreen
+
+    /**
+     * Main.kt hands the window over once it exists, before anything else needs it. On Linux
+     * this is where the window manager's own route is checked for — the toolkit being AWT's X
+     * toolkit and the manager speaking `_NET` — and where the mode switches to it; everywhere
+     * else this only remembers the window and the legacy paths carry on untouched.
+     */
+    fun attach(window: Window) {
+        attachedWindow = window
+        if (!DesktopPlatform.isLinux) return
+        if (DesktopX11Fullscreen.supported(window)) {
+            x11Active = true
+            DesktopTrackLog.log("window mode: fullscreen is the window manager's own _NET_WM_STATE")
+        }
+    }
 
     /**
      * F11. A press while a transition is in flight — or one just asked for — did nothing
@@ -75,6 +103,14 @@ internal object DesktopWindowMode {
     fun toggleMaximized() {
         if (DesktopPlatform.isWindows && _fullScreen.value && DesktopWindowsFrame.setFullscreen(false)) {
             DesktopWindowBackdrop.apply()
+        }
+        // On the X11 path the fullscreen is the window manager's own state, not a placement:
+        // it is asked out first — a no-op where it never engaged — and the maximize then
+        // proceeds as it always has.
+        val window = attachedWindow
+        if (x11Active && _fullScreen.value && window != null) {
+            DesktopX11Fullscreen.setFullScreenMode(window, false)
+            lastFullScreenExitAtMs = System.currentTimeMillis()
         }
         _fullScreen.value = false
         set(if (_placement.value == WindowPlacement.Maximized) WindowPlacement.Floating else WindowPlacement.Maximized)
@@ -119,6 +155,8 @@ internal object DesktopWindowMode {
     fun lastFullScreenExitAtMs(): Long = lastFullScreenExitAtMs
 
     private fun setFullScreen(on: Boolean) {
+        // Optimistic, everywhere: the correction paths below — the poller's word on Linux,
+        // the window's own report elsewhere — are what unsets it when the claim was refused.
         _fullScreen.value = on
         if (!on) lastFullScreenExitAtMs = System.currentTimeMillis()
         // On Windows the only thing that covers a taskbar told to stay on top is a native borderless
@@ -131,7 +169,33 @@ internal object DesktopWindowMode {
             if (!on) DesktopWindowBackdrop.apply()
             return
         }
+        // On Linux the request is a hint to the window manager, not a placement: Compose's own
+        // Fullscreen placement routes through AWT's setFullScreenWindow, whose remembered-bounds
+        // restore races the window manager's and left shrunken, bottom-stuck windows behind a
+        // rapid F11. The hint leaves the placement Floating — always — and the window manager's
+        // own _NET_WM_STATE is what the correction poller reads the flag back from. A manager
+        // that grants no fullscreen at all still gets the legacy placement path.
+        val window = attachedWindow
+        if (x11Active && window != null && DesktopX11Fullscreen.isFullscreenAllowed(window)) {
+            DesktopX11Fullscreen.setFullScreenMode(window, on)
+            set(WindowPlacement.Floating)
+            return
+        }
         set(if (on) fillsScreen else WindowPlacement.Floating)
+    }
+
+    /**
+     * The correction poller's word — what the window manager says the window is doing, read
+     * off the X server. The flag set when asking was only ever a claim: the manager may have
+     * refused it, or taken fullscreen away with one of its own shortcuts. A refused or taken
+     * claim is corrected down, which is what opens the player's swipe gate honestly; a
+     * granted one confirms the flag where it stands.
+     */
+    fun confirmFullScreen(actual: Boolean) {
+        if (actual == _fullScreen.value) return
+        DesktopTrackLog.log("window mode: the window manager reads fullscreen=$actual; corrected")
+        _fullScreen.value = actual
+        if (!actual) lastFullScreenExitAtMs = System.currentTimeMillis()
     }
 
     private fun set(placement: WindowPlacement) {
