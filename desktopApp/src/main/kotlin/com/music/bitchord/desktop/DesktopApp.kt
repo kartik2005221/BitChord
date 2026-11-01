@@ -5288,6 +5288,7 @@ private fun DesktopSidebarItem(
     onClick,
 )
 
+@Composable
 private fun DesktopSidebarItem(
     icon: @Composable () -> Unit,
     label: String,
