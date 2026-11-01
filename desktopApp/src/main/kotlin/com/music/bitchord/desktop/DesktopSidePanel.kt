@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** What the column beside the page is showing. */
-internal enum class DesktopSidePanel { LYRICS, QUEUE, SPOTIFY }
+internal enum class DesktopSidePanel { LYRICS, QUEUE }
 
 /**
  * Apple Music's right-hand sidebar: the lyrics or the queue in a column beside the page, while the
@@ -67,9 +67,9 @@ internal fun DesktopSidePanelColumn(
                 label = "sidePanel",
             ) { which ->
                 Box(Modifier.fillMaxSize()) {
-                    // The lyrics stand on the window itself, as in Apple Music; the queue and the
-                    // Spotify library are lists and take the sidebar's glass.
-                    if (which != DesktopSidePanel.LYRICS) {
+                    // The lyrics stand on the window itself, as in Apple Music; the queue is a list
+                    // and takes the sidebar's glass.
+                    if (which == DesktopSidePanel.QUEUE) {
                         Box(Modifier.fillMaxSize().desktopChromeGlass())
                     }
                     Column(Modifier.fillMaxSize()) {
@@ -80,14 +80,10 @@ internal fun DesktopSidePanelColumn(
                                 .padding(start = 18.dp, end = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // The queue heads itself ("Queue", then its sections); the lyrics
-                            // and the Spotify library carry their own names.
+                            // The queue heads itself ("Queue", then its sections); only the lyrics
+                            // need a name over them.
                             Text(
-                                text = when (which) {
-                                    DesktopSidePanel.LYRICS -> DesktopStrings["lyrics", "Lyrics"]
-                                    DesktopSidePanel.SPOTIFY -> DesktopStrings["spotify", "Spotify"]
-                                    DesktopSidePanel.QUEUE -> ""
-                                },
+                                text = if (which == DesktopSidePanel.LYRICS) DesktopStrings["lyrics", "Lyrics"] else "",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
