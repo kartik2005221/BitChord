@@ -90,6 +90,10 @@ object DesktopArtistFacts : DesktopArtistFactsSource {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val client = HttpClient(CIO) {
+        // A non-200 is a failure, not an empty answer: an error page parsed to
+        // no tags would otherwise be filed as an authoritative "no genres" and
+        // silence the artist for a retry period.
+        expectSuccess = true
         install(HttpTimeout) { requestTimeoutMillis = 15_000 }
     }
 

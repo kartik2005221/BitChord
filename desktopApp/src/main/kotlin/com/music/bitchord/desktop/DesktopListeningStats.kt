@@ -162,7 +162,12 @@ object DesktopListeningStats {
         // artist, not about the evening they were played on: written into every
         // month it would freeze at whatever was known the first time they came
         // up, and be missing from every month before that.
-        val rankedArtists = rank(entries) { it.song.artist.ifBlank { "Unknown Artist" } }.map { row ->
+        // The chart ranks the lead artist, as the phone's does — the same name
+        // the recording path files facts under, so a collaboration's face and
+        // genres land on the row that carries its billing.
+        val rankedArtists = rank(entries) {
+            primaryArtist(it.song.artist.ifBlank { "Unknown Artist" })
+        }.map { row ->
             if (facts == null) row else row.copy(
                 artworkUrl = facts.imageFor(row.title) ?: row.artworkUrl,
                 browseId = row.browseId ?: facts.browseIdFor(row.title),
@@ -218,7 +223,7 @@ object DesktopListeningStats {
             busiestDay = busiest?.key,
             busiestDayMs = busiest?.value ?: 0L,
             distinctSongs = entries.size,
-            distinctArtists = entries.map { it.song.artist.ifBlank { "Unknown Artist" } }.distinct().size,
+            distinctArtists = entries.map { primaryArtist(it.song.artist.ifBlank { "Unknown Artist" }) }.distinct().size,
             distinctAlbums = entries.mapNotNull { it.song.albumName?.takeIf(String::isNotBlank) }.distinct().size,
             since = buckets.map(Bucket::month).filter { it != LEGACY_MONTH }.minOrNull(),
         )

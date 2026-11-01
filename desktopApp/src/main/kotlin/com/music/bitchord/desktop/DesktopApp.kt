@@ -7158,8 +7158,9 @@ private fun DesktopSettingsScreen(
                     SettingsToggle(
                         DesktopStrings["replay_genres", "Replay genres"],
                         DesktopStrings[
-                            "replay_genres_subtitle",
-                            "Adds a Top Genres chart to your Replay — artist lookups go through Last.fm",
+                            if (replayGenres) "replay_genres_enabled_subtitle" else "replay_genres_disabled_subtitle",
+                            if (replayGenres) "Asks Last.fm for an artist’s genres. Only the artist name is sent."
+                            else "The Replay genre chart stays hidden while this is off",
                         ],
                         replayGenres,
                         DesktopScrobbleSettings::setReplayGenres,
