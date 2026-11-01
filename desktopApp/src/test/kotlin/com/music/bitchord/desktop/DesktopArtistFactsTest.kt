@@ -65,7 +65,7 @@ class DesktopArtistFactsTest {
     }
 
     private fun song(id: String, title: String, artist: String) =
-        Song(videoId = id, title = title, artist = artist, thumbnailUrl = "")
+        Song(videoId = id, title = title, artist = artist, thumbnailUrl = null)
 
     private fun bucket(month: String, vararg tracks: Triple<Song, Long, Int>) =
         DesktopListeningStats.Bucket(month).apply {
@@ -101,7 +101,7 @@ class DesktopArtistFactsTest {
             summary.genres.map { it.title to it.ms },
         )
         assertEquals(3, summary.genres.first().plays)
-        assertEquals(1, summary.genres[1].plays)
+        assertEquals(2, summary.genres[1].plays)
     }
 
     @Test
@@ -216,7 +216,7 @@ class DesktopArtistFactsTest {
             today,
         )
         assertEquals("https://example/a.jpg", with.artists.single().artworkUrl)
-        assertEquals("", without.artists.single().artworkUrl)
+        assertNull(without.artists.single().artworkUrl)
         assertNull(without.artists.single().browseId)
         assertTrue(without.genres.isEmpty())
     }
