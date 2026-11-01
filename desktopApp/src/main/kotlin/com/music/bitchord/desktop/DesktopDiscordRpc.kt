@@ -171,7 +171,10 @@ internal object DesktopDiscordRpc {
         // that fills that in runs after this one in the same frame, so it would
         // still hold the previous track's format.
         val quality = qualityLine(state)
-        val key = "${song.videoId}|${state.durationMs}|$speed|$quality"
+        // The blur flag rides in the key: flipping it mid-track is what makes
+        // the already-sent artwork re-push as nothing.
+        val key = "${song.videoId}|${state.durationMs}|$speed|$quality|" +
+            DesktopAppearanceSettings.blurCovers.value
         val position = state.positionMs
         val duration = state.durationMs.takeIf { it > 0 } ?: 0L
         scope.launch {
@@ -224,9 +227,12 @@ internal object DesktopDiscordRpc {
                     state = song.artist,
                     detailsUrl = watchUrl(song),
                     // No usable artwork sends none, and Discord draws the
-                    // BitChord application's icon instead.
+                    // BitChord application's icon instead. Blur mode sends
+                    // none too — the cover's URL outside the window would
+                    // show what the window is hiding.
                     largeImage = song.artworkAt(ART_PX)
                         ?.takeIf { it.startsWith("http") }
+                        ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
                         ?.let(RpcImage::ExternalImage),
                     smallImage = null,
                     largeText = quality,
@@ -289,7 +295,11 @@ internal object DesktopDiscordRpc {
             put("end", endMs)
         }
         putJsonObject("assets") {
-            song.artworkAt(ART_PX)?.takeIf { it.startsWith("http") }?.let { put("large_image", it) }
+            // Blur mode sends no artwork — see the largeImage note above.
+            song.artworkAt(ART_PX)
+                ?.takeIf { it.startsWith("http") }
+                ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
+                ?.let { put("large_image", it) }
             quality?.let { put("large_text", it) }
         }
         val labels = buttonLabels(song)

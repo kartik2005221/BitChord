@@ -163,6 +163,8 @@ interface PlayerSettingsSource {
     val animatedCanvas: StateFlow<Boolean>
     val audioQualityCellular: StateFlow<AudioQuality>
     val audioQualityWifi: StateFlow<AudioQuality>
+    /** Every cover drawn as an unidentifiable blur — the privacy mode, never revealed. */
+    val blurCovers: StateFlow<Boolean>
     val canvasOverCellular: StateFlow<Boolean>
     val fullBleedArtwork: StateFlow<Boolean>
     val hideSongStatus: StateFlow<Boolean>

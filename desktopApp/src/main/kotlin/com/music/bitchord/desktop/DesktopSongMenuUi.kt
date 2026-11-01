@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
@@ -47,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -439,6 +441,16 @@ internal fun DesktopSongMenu(
                     onClick = it,
                 )
             }
+            // A display preference rather than a song command, but it is
+            // exactly where someone staring at a cover they do not want to
+            // see will look for it. Reads the setting live and stays open,
+            // as the rating rows do.
+            val blurCovers by DesktopAppearanceSettings.blurCovers.collectAsState()
+            DesktopMenuRow(
+                icon = Icons.Rounded.VisibilityOff,
+                label = DesktopStrings["blur_covers", "Blur covers"],
+                selected = blurCovers,
+            ) { DesktopAppearanceSettings.setBlurCovers(!blurCovers) }
             if (onSelectLyricsProvider != null && lyricsProviders.isNotEmpty()) {
                 DesktopMenuRow(
                     icon = BitChordIcons.MusicNote,

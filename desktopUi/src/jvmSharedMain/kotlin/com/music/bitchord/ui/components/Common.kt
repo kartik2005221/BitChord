@@ -40,6 +40,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
@@ -81,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.style.TextAlign
@@ -92,6 +94,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
+import com.music.bitchord.ui.icons.BitChordIcons
+import com.music.bitchord.ui.player.PlayerSettings
 import com.music.bitchord.data.model.ROW_ART_PX
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.isMatchPending
@@ -201,6 +209,61 @@ const val HERO_CARD_RATIO = 0.92f
  * width.
  */
 fun heroCardWidth(available: Dp): Dp = minOf(available * HERO_CARD_FRACTION, HERO_CARD_MAX_WIDTH)
+
+/**
+ * The site's own modifier, plus [that] when [condition] holds — a blur gate
+ * reads better with it than a bare `then(if (...))`.
+ */
+internal inline fun Modifier.thenIf(condition: Boolean, that: Modifier.() -> Modifier): Modifier =
+    if (condition) then(Modifier.that()) else this
+
+/**
+ * A cover that answers the blur-covers mode: the artwork drawn far enough
+ * past recognition that only its colours survive, under a scrim, with the
+ * note the player's empty sleeve carries — so a blurred row reads as
+ * intentional rather than broken. Off, it is the plain [AsyncImage] it wraps.
+ *
+ * The modifier keeps the site's own shape — size, clip, border ride outside
+ * the blur, so a circular artist row stays circular.
+ */
+@Composable
+fun CoverImage(
+    model: Any?,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    contentScale: ContentScale = ContentScale.Crop,
+    colorFilter: ColorFilter? = null,
+) {
+    val blurred by PlayerSettings.blurCovers.collectAsState()
+    if (!blurred) {
+        AsyncImage(
+            model = model,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale,
+            colorFilter = colorFilter,
+        )
+        return
+    }
+    Box(modifier.clipToBounds()) {
+        // Enlarged past its box before the site's clip cuts it, so the blur's
+        // soft edges never show as a halo inside the shape.
+        AsyncImage(
+            model = model,
+            contentDescription = contentDescription,
+            contentScale = contentScale,
+            colorFilter = colorFilter,
+            modifier = Modifier.matchParentSize().blur(28.dp).scale(1.25f),
+        )
+        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.16f)))
+        Icon(
+            imageVector = BitChordIcons.MusicNote,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.35f),
+            modifier = Modifier.align(Alignment.Center).size(18.dp),
+        )
+    }
+}
 
 /** Share of the row a page of tracks takes, so the next page peeks in past it. */
 private const val TRACK_COLUMN_FRACTION = 0.88f
@@ -556,9 +619,10 @@ private fun SongRowContent(
             }
         } else {
             Box(Modifier.size(52.dp)) {
-                AsyncImage(
+                CoverImage(
                     model = com.music.bitchord.ui.player.rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
                     contentDescription = null,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .matchParentSize()
                         .clip(RoundedCornerShape(8.dp))

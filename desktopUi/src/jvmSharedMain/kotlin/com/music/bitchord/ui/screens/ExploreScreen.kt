@@ -42,12 +42,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.music.bitchord.data.model.HomeShelf
 import com.music.bitchord.data.model.MoodGenre
 import com.music.bitchord.data.model.MoodGenreSection
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.UiState
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.MessageState
 import com.music.bitchord.ui.components.PAGE_GUTTER
 import com.music.bitchord.ui.components.PullToRefresh
@@ -183,7 +183,7 @@ fun MoodGenreSleeve(
                 .background(tone.placeholder),
         ) {
             item.thumbnailUrl?.let { artwork ->
-                AsyncImage(
+                CoverImage(
                     model = artwork,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,

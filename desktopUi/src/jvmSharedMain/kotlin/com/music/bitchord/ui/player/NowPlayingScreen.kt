@@ -97,6 +97,7 @@ import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -143,6 +144,7 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.music.bitchord.ui.components.ExplicitBadge
+import com.music.bitchord.ui.components.thenIf
 import com.music.bitchord.ui.theme.HideStatusBar
 import com.music.bitchord.ui.theme.StatusBarIcons
 import com.music.bitchord.ui.theme.stableStatusBarInsets
@@ -838,6 +840,10 @@ fun NowPlayingScreen(
     }
     val hideVolumeBar by PlayerSettings.hideVolumeBar.collectAsStateWithLifecycle()
     val hideSongStatus by PlayerSettings.hideSongStatus.collectAsStateWithLifecycle()
+    // The privacy mode blurs the sleeve and its full-bleed expansion in one
+    // stroke — they are the same image — and the empty-state note behind it
+    // finishes the look the rows use.
+    val blurredCovers by PlayerSettings.blurCovers.collectAsStateWithLifecycle()
 
     // Animated cover art: the looping video some labels publish alongside a
     // release, laid over the sleeve. A miss is the normal answer — see
@@ -1359,7 +1365,9 @@ fun NowPlayingScreen(
     // off that, its last few frames would resize the view and rebuild its
     // fade for a picture nobody can see.
     val heroClipMounted = canvas?.takeIf {
-        heroMode && (!(lyricsOpen || queueOpen) || !collapseDone)
+        // Blur mode keeps the hero a still — a sharp video over a blurred
+        // sleeve would undo the whole mode.
+        heroMode && !blurredCovers && (!(lyricsOpen || queueOpen) || !collapseDone)
     }
     val clipFullscreen = spotifyCanvasOnPhone &&
         heroClipMounted?.source == CanvasSource.SPOTIFY
@@ -3176,13 +3184,17 @@ fun NowPlayingScreen(
                                 // [PlayerArtwork.loaded] still flips the moment it does.
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .thenIf(blurredCovers) { blur(28.dp).scale(1.25f) }
                                     .drawWithContent { if (art.loaded || !canvasRendered) drawContent() },
                             )
 
                             // Where the clip plays when it can't have the banner:
                             // inside the same clip as the still art, taking the
                             // sleeve's corners, shadow and paused shrink for free.
-                            if (!heroMode && canvas != null) {
+                            // Blur mode suppresses the motion art entirely: a
+                            // sharp frame between blurs would defeat it, and a
+                            // blurred video costs more than the still is worth.
+                            if (!heroMode && canvas != null && !blurredCovers) {
                                 WhileShown({ !collapsePastHalf }) {
                                     CanvasArtworkPlayer(
                                         canvas = canvas,
