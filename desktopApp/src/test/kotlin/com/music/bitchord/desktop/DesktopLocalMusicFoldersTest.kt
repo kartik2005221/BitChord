@@ -61,8 +61,9 @@ class DesktopLocalMusicFoldersTest {
             song("T3", "/a/Beta/t3.mp3"),
         )
         val groups = files.groupedForDesktopFolders()
-        // Beta rows tie on folder name; /a/Beta leads by parent path.
-        assertEquals(listOf("/a/Beta", "/b/Beta", "/y/Alpha"), groups.map { it.first })
+        // Alpha leads on the folder's own name; the Beta rows tie on theirs,
+        // and /a reads ahead of /b — the phone's folders do name, then parent.
+        assertEquals(listOf("/y/Alpha", "/a/Beta", "/b/Beta"), groups.map { it.first })
     }
 
     @Test
