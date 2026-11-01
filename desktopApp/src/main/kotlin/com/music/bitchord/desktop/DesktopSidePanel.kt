@@ -87,9 +87,6 @@ internal fun DesktopSidePanelColumn(
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.weight(1f),
                             )
                             DesktopToolbarButton(onClick = onClose, size = 28.dp) {
