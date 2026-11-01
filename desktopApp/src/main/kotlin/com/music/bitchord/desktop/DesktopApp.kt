@@ -1073,7 +1073,7 @@ fun BitChordDesktopApp() {
      * their disk, and the account is never asked about an id it does not own.
      */
     fun toggleLocalLike(song: Song) {
-        localLikedIds = DesktopLocalMusic.likedAfterToggle(localLikedIds, song.videoId)
+        localLikedIds = likedAfterToggle(localLikedIds, song.videoId)
         persistence.saveLocalLikedIds(localLikedIds)
     }
 
@@ -6205,7 +6205,6 @@ private fun DesktopDownloadCollectionPage(
     }
 }
 
-@Composable
 /** A folder page's readings of its tracks — the phone's LocalFolderTab, carried over whole. */
 private enum class DesktopLocalTab(val label: String) {
     SONGS("Songs"),
@@ -6222,6 +6221,7 @@ private val DESKTOP_LOCAL_TABS_BASIC = listOf(DesktopLocalTab.SONGS, DesktopLoca
 private val DESKTOP_LOCAL_TABS_DEVICE =
     listOf(DesktopLocalTab.SONGS, DesktopLocalTab.ARTISTS, DesktopLocalTab.ALBUMS, DesktopLocalTab.LIKED, DesktopLocalTab.FOLDERS)
 
+@Composable
 private fun DesktopLocalMusicPage(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
