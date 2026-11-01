@@ -45,6 +45,8 @@ import kotlinx.coroutines.launch
 internal fun DesktopPlayerSheet(
     visible: Boolean,
     onDismiss: () -> Unit,
+    /** False while the window is fullscreen: nothing a swipe does may end it. */
+    canDismiss: Boolean = true,
     content: @Composable BoxScope.(windowWidth: Dp, windowHeight: Dp) -> Unit,
 ) {
     // Mounted while it animates out, so the slide down is seen.
@@ -75,32 +77,43 @@ internal fun DesktopPlayerSheet(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { translationY = offset.value }
-                .draggable(
-                    state = dragState,
-                    orientation = Orientation.Vertical,
-                    onDragStopped = { velocity ->
-                        if (offset.value > heightPx * DISMISS_FRACTION || velocity > DISMISS_VELOCITY) {
-                            onDismiss()
-                        } else {
-                            offset.animateTo(0f, tween(SHEET_SETTLE_MS, easing = FastOutSlowInEasing))
-                        }
+                .then(
+                    if (canDismiss) {
+                        Modifier.draggable(
+                            state = dragState,
+                            orientation = Orientation.Vertical,
+                            onDragStopped = { velocity ->
+                                if (offset.value > heightPx * DISMISS_FRACTION || velocity > DISMISS_VELOCITY) {
+                                    onDismiss()
+                                } else {
+                                    offset.animateTo(0f, tween(SHEET_SETTLE_MS, easing = FastOutSlowInEasing))
+                                }
+                            },
+                        )
+                    } else {
+                        // Fullscreen: the sheet does not move for a drag, and
+                        // nothing it does can end the mode — ESC and F11 own it.
+                        Modifier
                     },
                 ),
         ) {
             content(windowWidth, windowHeight)
             // The handle the landscape player draws at its top edge, made to do
-            // on a click what it promises for a drag.
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth(HANDLE_HIT_WIDTH_FRACTION)
-                    .height(HANDLE_HIT_HEIGHT)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDismiss,
-                    ),
-            )
+            // on a click what it promises for a drag — and to do nothing at all
+            // while fullscreen, where the mode owns the way out.
+            if (canDismiss) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(HANDLE_HIT_WIDTH_FRACTION)
+                        .height(HANDLE_HIT_HEIGHT)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss,
+                        ),
+                )
+            }
         }
     }
 }

@@ -14,6 +14,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
@@ -129,6 +134,25 @@ private fun desktopMain() = application {
         }
     }
     Window(
+        // The window carries F11 — and the fullscreen escape — itself. Key
+        // events only reach the content's own handler when something inside it
+        // holds focus, and a Home with nothing clicked has none: F11 had to
+        // work on every page, always. While fullscreen, ESC is the other way
+        // out, and the player sheet's own dismiss gestures stand down.
+        onPreviewKeyEvent = { event ->
+            when {
+                event.type == KeyEventType.KeyUp && event.key == Key.F11 -> {
+                    DesktopWindowMode.toggle()
+                    true
+                }
+                event.type == KeyEventType.KeyUp && event.key == Key.Escape &&
+                    DesktopWindowMode.fullScreen.value -> {
+                    DesktopWindowMode.exit()
+                    true
+                }
+                else -> false
+            }
+        },
         onCloseRequest = {
             DesktopWindowState.save(state)
             if (DesktopWindowVisibility.onCloseRequest()) exitApplication()
