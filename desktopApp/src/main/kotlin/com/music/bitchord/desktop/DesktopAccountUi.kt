@@ -73,7 +73,8 @@ internal fun DesktopAccountButton(
                 avatar,
                 Modifier
                     .size(26.dp)
-                    .clip(CircleShape)
+                    .clip(CircleShape),
+                blur = false,
                     .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
                 contentScale = ContentScale.Crop,
                 px = 96,
@@ -225,6 +226,7 @@ private fun DesktopProfileRow(
                 Modifier.size(38.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,
                 px = 128,
+                blur = false,
             )
         } else {
             Icon(

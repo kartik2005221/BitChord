@@ -1365,7 +1365,9 @@ fun NowPlayingScreen(
     // off that, its last few frames would resize the view and rebuild its
     // fade for a picture nobody can see.
     val heroClipMounted = canvas?.takeIf {
-        heroMode && (!(lyricsOpen || queueOpen) || !collapseDone)
+        // Blur mode keeps the hero a still — a sharp video over a blurred
+        // sleeve would undo the whole mode.
+        heroMode && !blurredCovers && (!(lyricsOpen || queueOpen) || !collapseDone)
     }
     val clipFullscreen = spotifyCanvasOnPhone &&
         heroClipMounted?.source == CanvasSource.SPOTIFY

@@ -171,7 +171,10 @@ internal object DesktopDiscordRpc {
         // that fills that in runs after this one in the same frame, so it would
         // still hold the previous track's format.
         val quality = qualityLine(state)
-        val key = "${song.videoId}|${state.durationMs}|$speed|$quality"
+        // The blur flag rides in the key: flipping it mid-track is what makes
+        // the already-sent artwork re-push as nothing.
+        val key = "${song.videoId}|${state.durationMs}|$speed|$quality|" +
+            DesktopAppearanceSettings.blurCovers.value
         val position = state.positionMs
         val duration = state.durationMs.takeIf { it > 0 } ?: 0L
         scope.launch {

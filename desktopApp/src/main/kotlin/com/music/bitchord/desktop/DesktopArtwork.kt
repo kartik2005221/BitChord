@@ -162,8 +162,11 @@ fun DesktopArtwork(
     contentScale: ContentScale = ContentScale.Crop,
     contentDescription: String? = null,
     px: Int? = null,
+    /** Faces of people, not of music, ride out the privacy mode: avatars pass false. */
+    blur: Boolean = true,
 ) {
-    val blurredCovers by DesktopAppearanceSettings.blurCovers.collectAsState()
+    val coversBlur by DesktopAppearanceSettings.blurCovers.collectAsState()
+    val blurredCovers = blur && coversBlur
     // The blur reads a deliberately tiny decode of its own — a blob needs no
     // detail, and a 96px download costs a fraction of what the sharp one did.
     val shown = if (blurredCovers) url?.artworkAt(BLUR_PX) else if (px != null) url.artworkAt(px) else url

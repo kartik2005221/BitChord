@@ -526,6 +526,10 @@ private fun CardMotion(
     onCover: (Float) -> Unit = {},
 ) {
     if (source == null || !LocalArtworkImages.current) return
+    // The privacy mode keeps the card on its blurred still; the clip's whole
+    // purpose is to replace that still, so under the mode it never mounts.
+    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
+    if (blurredCovers) return
     // Looked up whether or not the clip may play yet, so the answer is to hand
     // when it may, and the row knows which cards have one to give the slot to.
     val clip by produceState<CanvasArtwork?>(null, source.key) { value = source.lookup() }
