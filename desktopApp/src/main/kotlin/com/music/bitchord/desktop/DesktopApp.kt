@@ -3463,10 +3463,8 @@ fun BitChordDesktopApp() {
                             playPrevious()
                             true
                         }
-                        event.key == Key.F11 -> {
-                            DesktopWindowMode.toggle()
-                            true
-                        }
+                        // F11 lives at the window now, so it answers on every
+                        // page whether or not anything here holds focus.
                         event.key == Key.DirectionLeft && event.isAltPressed && !overlays.nowPlaying -> {
                             goBack()
                             true
@@ -3644,8 +3642,12 @@ fun BitChordDesktopApp() {
                     }
                 },
                 overlay = {
+                    val sheetFullScreen by DesktopWindowMode.fullScreen.collectAsState()
                     DesktopPlayerSheet(
                         visible = overlays.nowPlaying && selectedSong != null,
+                        // Fullscreen is ended by ESC and F11 alone — the sheet's
+                        // own gestures stand down so nothing accidental ends it.
+                        canDismiss = !sheetFullScreen,
                         onDismiss = {
                             DesktopWindowMode.exit()
                             overlays.nowPlaying = false
