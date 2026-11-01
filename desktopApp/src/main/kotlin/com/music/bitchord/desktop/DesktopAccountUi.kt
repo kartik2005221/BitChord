@@ -73,11 +73,11 @@ internal fun DesktopAccountButton(
                 avatar,
                 Modifier
                     .size(26.dp)
-                    .clip(CircleShape),
-                blur = false,
+                    .clip(CircleShape)
                     .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
                 contentScale = ContentScale.Crop,
                 px = 96,
+                blur = false,
             )
         } else {
             Box(
