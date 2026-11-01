@@ -182,6 +182,9 @@ private fun desktopMain() = application {
         val composeWindow = window
         val openingSize = remember { state.size }
         LaunchedEffect(composeWindow) {
+            // The window mode speaks to the window manager through this window on Linux —
+            // hand it over before anything else reads it.
+            DesktopWindowMode.attach(composeWindow)
             DesktopWindowVisibility.attachWindow(composeWindow)
             // AWT's default is white, and it is what shows for the frame or two a moved or resized
             // window takes to repaint: a white band along its edges.
@@ -224,6 +227,22 @@ private fun desktopMain() = application {
                 DesktopWindowBackdrop.apply()
             } else if (DesktopPlatform.isMac && DesktopMacFrame.install(composeWindow)) {
                 DesktopWindowBackdrop.apply()
+            }
+        }
+        // On the X11 path the fullscreen is the window manager's own state, never a Compose
+        // placement, so nothing of Compose's reports it back — the X server is asked instead,
+        // every 400ms while the route is engaged: a request the manager refused is corrected
+        // down (the player's swipe gate opens honestly), and a fullscreen the manager took
+        // away by its own means reads the same way. Where the route never engaged the poll is
+        // skipped entirely — one boolean per tick, nothing else.
+        LaunchedEffect(composeWindow) {
+            while (true) {
+                delay(400)
+                if (DesktopWindowMode.x11Active) {
+                    DesktopWindowMode.confirmFullScreen(
+                        DesktopX11Fullscreen.isInFullScreenMode(composeWindow),
+                    )
+                }
             }
         }
         val actions = remember {

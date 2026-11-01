@@ -501,6 +501,12 @@ compose.desktop {
         jvmArgs("-Xmx512m")
         jvmArgs("-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=20000", "-XX:G1PeriodicGCSystemLoadThreshold=0")
         jvmArgs("-Dbitchord.version=$appVersion")
+        // The X11 fullscreen speaks EWMH to the window manager through AWT's own Xlib wrappers,
+        // reached by reflection (see DesktopX11Fullscreen) — the two packages must be opened for
+        // it. Harmless where there is no X toolkit; without these the Linux path gracefully
+        // falls back to the legacy placement handling.
+        jvmArgs("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+        jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
         if (desktopModuleIndexUrl.isNotBlank()) {
             jvmArgs("-Dbitchord.module.index=$desktopModuleIndexUrl")
         }
