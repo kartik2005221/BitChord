@@ -149,6 +149,16 @@ internal fun DesktopReplayPage(
                 rows = summary.albumRows(CHART_LENGTH),
                 onClick = {},
             )
+            // Empty until artist facts have come in — the chart() call draws
+            // nothing at all while there is no row, so a genre-less Replay
+            // looks like it always did.
+            chart(
+                key = "genres",
+                title = DesktopStrings["top_genres", "Top Genres"],
+                rows = summary.genreRows(CHART_LENGTH),
+                circular = true,
+                onClick = {},
+            )
 
             item("habits") { Habits(summary) }
             item("tail") { Spacer(Modifier.height(32.dp)) }
@@ -448,6 +458,9 @@ internal fun DesktopReplaySummary.artistRows(limit: Int): List<DesktopReplayRow>
 
 internal fun DesktopReplaySummary.albumRows(limit: Int): List<DesktopReplayRow> =
     albums.take(limit).mapIndexed { index, entry -> entry.toRow(index) }
+
+internal fun DesktopReplaySummary.genreRows(limit: Int): List<DesktopReplayRow> =
+    genres.take(limit).mapIndexed { index, entry -> entry.toRow(index) }
 
 private fun DesktopRankedEntry.toRow(index: Int) = DesktopReplayRow(
     key = title,
