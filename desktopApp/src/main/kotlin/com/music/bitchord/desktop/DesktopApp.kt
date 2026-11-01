@@ -7156,7 +7156,9 @@ private fun DesktopSettingsScreen(
                     )
                     val replayGenres by DesktopScrobbleSettings.replayGenres.collectAsState()
                     SettingsToggle(
-                        DesktopStrings["replay_genres", "Replay genres"],
+                        // The phone's own title for this row, already translated
+                        // wherever the desktop carries translations at all.
+                        DesktopStrings["work_out_genres", "Work out genres"],
                         DesktopStrings[
                             if (replayGenres) "replay_genres_enabled_subtitle" else "replay_genres_disabled_subtitle",
                             if (replayGenres) "Asks Last.fm for an artist’s genres. Only the artist name is sent."
