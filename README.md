@@ -110,9 +110,7 @@ We welcome contributions to BitChord! Please review our [Contributing Guide](CON
 
 ### Thanks to all contributors ❤
 
-<a href="https://github.com/kartik2005221/BitChord/graphs/contributors">
-  <img src="https://raw.githubusercontent.com/kartik2005221/BitChord/contributors/contributors.svg" />
-</a>
+See everyone who built BitChord in the [contributors graph](https://github.com/kartik2005221/BitChord/graphs/contributors).
 
 </div>
 
