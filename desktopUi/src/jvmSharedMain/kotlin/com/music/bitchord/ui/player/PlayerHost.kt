@@ -226,6 +226,8 @@ data class AudioOutputDevice(
     val name: String,
     val kind: AudioOutputKind,
     val isActive: Boolean = false,
+    /** The row that means "let the system choose" — the transport caption keeps quiet about it. */
+    val isSystemDefault: Boolean = false,
 )
 
 data class OutputFormatUi(
