@@ -3604,11 +3604,10 @@ fun BitChordDesktopApp() {
                         },
                         onClose = { overlays.sidePanel = null },
                     ) { which ->
-                        if (current == null && which != DesktopSidePanel.SPOTIFY) {
-                            return@DesktopSidePanelColumn
-                        }
-                        when (which) {
-                            DesktopSidePanel.SPOTIFY -> SpotifySidePanel(
+                        if (which == DesktopSidePanel.SPOTIFY) {
+                            // A browse surface, not a player companion: it
+                            // shows with nothing playing, unlike the others.
+                            SpotifySidePanel(
                                 signedIn = spotifyCanvasCookie.isNotBlank(),
                                 onSignIn = ::signInToSpotify,
                                 onOpenPlaylist = { playlist ->
@@ -3616,6 +3615,10 @@ fun BitChordDesktopApp() {
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )
+                            return@DesktopSidePanelColumn
+                        }
+                        if (current == null) return@DesktopSidePanelColumn
+                        when (which) {
                             DesktopSidePanel.LYRICS -> LyricsSidePanel(
                                 song = current,
                                 isPlaying = playback.isPlaying,

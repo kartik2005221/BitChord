@@ -47,6 +47,14 @@ import com.music.bitchord.data.spotify.SpotifyPlaylist
  * to the same route the Library grid opens it by, so the tracks fill in and
  * match to YouTube Music exactly as they do from there.
  */
+/** What the panel's read of the account is at, this open. */
+private sealed interface SpotifyPanelState {
+    data object Loading : SpotifyPanelState
+    data object Empty : SpotifyPanelState
+    data class Ready(val playlists: List<SpotifyPlaylist>) : SpotifyPanelState
+    data class Failed(val message: String) : SpotifyPanelState
+}
+
 @Composable
 internal fun SpotifySidePanel(
     signedIn: Boolean,
@@ -54,24 +62,17 @@ internal fun SpotifySidePanel(
     onOpenPlaylist: (SpotifyPlaylist) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    sealed interface State {
-        data object Loading : State
-        data object Empty : State
-        data class Ready(val playlists: List<SpotifyPlaylist>) : State
-        data class Failed(val message: String) : State
-    }
-
-    var state by remember { mutableStateOf<State>(State.Loading) }
+    var state by remember { mutableStateOf<SpotifyPanelState>(SpotifyPanelSpotifyPanelState.Loading) }
     // A fresh read whenever the panel comes up — and whenever Retry is asked.
     var refresh by remember { mutableIntStateOf(0) }
     LaunchedEffect(signedIn, refresh) {
         if (!signedIn) return@LaunchedEffect
-        state = State.Loading
+        state = SpotifyPanelState.Loading
         runCatching { SpotifyLibrary.playlists() }
-            .onSuccess { state = if (it.isEmpty()) State.Empty else State.Ready(it) }
+            .onSuccess { state = if (it.isEmpty()) SpotifyPanelState.Empty else SpotifyPanelState.Ready(it) }
             .onFailure {
                 DesktopTrackLog.log("spotify: panel playlists failed: ${it.message}")
-                state = State.Failed(it.message ?: "Could not reach Spotify")
+                state = SpotifyPanelState.Failed(it.message ?: "Could not reach Spotify")
             }
     }
 
@@ -92,17 +93,17 @@ internal fun SpotifySidePanel(
                 Text(DesktopStrings["spotify_panel_sign_in", "Sign in to Spotify"])
             }
         }
-        state is State.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        state is SpotifyPanelState.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(modifier = Modifier.size(26.dp))
         }
-        state is State.Failed -> Column(
+        state is SpotifyPanelState.Failed -> Column(
             modifier = modifier.fillMaxSize().padding(horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = DesktopStrings["spotify_panel_unreachable", "Spotify is unreachable"] +
-                    " — " + (state as State.Failed).message,
+                    " — " + (state as SpotifyPanelState.Failed).message,
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
@@ -112,15 +113,15 @@ internal fun SpotifySidePanel(
                 Text(DesktopStrings["retry", "Retry"])
             }
         }
-        state is State.Empty -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        state is SpotifyPanelState.Empty -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text = DesktopStrings["spotify_panel_empty", "No playlists in this account"],
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 13.sp,
             )
         }
-        state is State.Ready -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items((state as State.Ready).playlists, key = { it.id }) { playlist ->
+        state is SpotifyPanelState.Ready -> LazyColumn(modifier = modifier.fillMaxSize()) {
+            items((state as SpotifyPanelState.Ready).playlists, key = { it.id }) { playlist ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
