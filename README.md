@@ -85,13 +85,15 @@
 
 <h1><a id="download"></a>Download</h1>
 
-<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/windows/cozy.svg" alt="Download for Windows" height="55"/></a>
-<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Download_for-Linux-0d1117?style=for-the-badge&logo=linux&logoColor=white" alt="Download for Linux" height="55"/></a>
-<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/macos/cozy.svg" alt="Download for macOS" height="55"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-windows.svg" alt="Download for Windows" height="48"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-linux.svg" alt="Download for Linux" height="48"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-macos.svg" alt="Download for macOS" height="48"/></a>
 
 Grab the latest installer — **msi/setup/portable** for Windows, **deb/rpm/AppImage** for Linux, **dmg/pkg/zip** for macOS — from the [Releases](https://github.com/kartik2005221/BitChord/releases) page.
 
-BitChord for **Android** remains the original upstream project: [kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord/releases).
+<a href="https://github.com/kushagrasinghx/BitChord/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/android/cozy.svg" alt="Download for Android" height="55"/></a>
+
+BitChord for **Android** remains the original upstream project — grab the latest signed APK from the [original Releases](https://github.com/kushagrasinghx/BitChord/releases) page.
 
 
 </div>
