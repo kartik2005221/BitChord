@@ -647,6 +647,9 @@ fun BitChordDesktopApp() {
     var statsRevision by remember { mutableStateOf(0L) }
     var replayPeriod by remember { mutableStateOf(DesktopReplayPeriod.ALL_TIME) }
     val replayHolder = remember { DesktopAccounts.active()?.name.orEmpty() }
+    // Artist facts (pictures, pages, genres) land on their own schedule; the
+    // Replay's summary rebuilds when they do, so a page left open fills in.
+    val factsRevision by DesktopArtistFacts.revision.collectAsState()
     var replaySummary by remember { mutableStateOf(DesktopListeningStats.summary()) }
     var statsCountedSongs by remember { mutableStateOf<Set<String>>(emptySet()) }
     var playlistTarget by remember { mutableStateOf<Song?>(null) }
@@ -2276,6 +2279,9 @@ fun BitChordDesktopApp() {
                     ?: SCROBBLE_THRESHOLD_MS
                 val reachedThreshold = !countedAsPlay && position >= threshold
                 DesktopListeningStats.record(snapshot.song, delta, reachedThreshold)
+                // The Replay's artist art, pages and genres accrue from here —
+                // the lead artist only, exactly what the charts rank by.
+                DesktopArtistFacts.noticed(DesktopListeningStats.primaryArtist(snapshot.song.artist))
                 if (reachedThreshold) {
                     countedAsPlay = true
                     statsCountedSongs = statsCountedSongs + songId
@@ -2285,7 +2291,7 @@ fun BitChordDesktopApp() {
             previousPosition = position
         }
     }
-    LaunchedEffect(statsRevision) {
+    LaunchedEffect(statsRevision, factsRevision) {
         replaySummary = withContext(Dispatchers.IO) { DesktopListeningStats.summary(replayPeriod) }
     }
     DisposableEffect(playbackEngine) {
@@ -7147,6 +7153,16 @@ private fun DesktopSettingsScreen(
                         DesktopStrings["hide_volume_bar_subtitle", "Removes the volume slider from the main player"],
                         hideVolumeBar,
                         DesktopAppearanceSettings::setHideVolumeBar,
+                    )
+                    val replayGenres by DesktopScrobbleSettings.replayGenres.collectAsState()
+                    SettingsToggle(
+                        DesktopStrings["replay_genres", "Replay genres"],
+                        DesktopStrings[
+                            "replay_genres_subtitle",
+                            "Adds a Top Genres chart to your Replay — artist lookups go through Last.fm",
+                        ],
+                        replayGenres,
+                        DesktopScrobbleSettings::setReplayGenres,
                     )
                 }
             }
