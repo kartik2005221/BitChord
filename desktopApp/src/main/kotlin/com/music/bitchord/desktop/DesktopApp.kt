@@ -5275,6 +5275,7 @@ private fun DesktopSidebarItem(
 )
 
 /** The brand-drawn variant, for rows whose mark is a picture (the Spotify logo) rather than a glyph. */
+@Composable
 private fun DesktopSidebarItem(
     icon: androidx.compose.ui.graphics.painter.Painter,
     label: String,
