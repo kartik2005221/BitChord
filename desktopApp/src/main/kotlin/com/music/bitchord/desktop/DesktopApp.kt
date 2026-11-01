@@ -2,6 +2,7 @@ package com.music.bitchord.desktop
 
 import androidx.compose.foundation.lazy.LazyListState
 import com.music.bitchord.ui.components.LocalShelfRowChrome
+import com.music.bitchord.ui.components.optimizedHazeEffect
 import com.music.bitchord.ui.components.ShelfRowChrome
 import com.music.bitchord.ui.components.ShelfRow
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -55,7 +56,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -315,7 +315,6 @@ import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.ui.icons.BitChordIcons
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.materials.HazeMaterials
 import java.util.UUID
@@ -4467,6 +4466,10 @@ fun BitChordDesktopApp() {
                                 loadingMore = homeLoadingMore,
                                 recentlyPlayedLoading = homeRecentsLoading,
                                 leadHero = false,
+                                // The player covers Home completely while it is up; the
+                                // loops inside the page have nobody watching them, and
+                                // every frame they draw is a frame of the glass blur.
+                                artworkMotion = !overlays.nowPlaying,
                                 topPicks = topPicks,
                                 topPicksLoading = topPicksLoading,
                                 listenerName = activeAccount?.profiles?.firstOrNull { it.profileId == activeProfileId }?.name?.takeIf(String::isNotBlank)
@@ -8209,7 +8212,12 @@ private fun Modifier.desktopFrosted(
         return this.background(edge.dissolve(opaque, fade) ?: SolidColor(opaque))
     }
     val dissolve = edge.dissolve(Color.Black, fade)
-    return this.hazeEffect(state = haze) {
+    // The repo's own optimized variant — a third of the source resolution,
+    // which is what these liquid-glass surfaces were moved to sample at: Auto
+    // left the two biggest panes in the app (the full-height sidebar, the
+    // full-width top bar) blurring at full resolution on every frame of every
+    // scroll. See desktopUi's OptimizedHaze.
+    return this.optimizedHazeEffect(haze) {
         // Spelled out rather than taken from a preset.
         blurEnabled = true
         backgroundColor = DesktopSurface

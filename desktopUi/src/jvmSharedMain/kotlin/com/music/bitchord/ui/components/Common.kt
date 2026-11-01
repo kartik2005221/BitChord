@@ -16,16 +16,13 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import com.music.bitchord.ui.player.MESH_CYCLE_MILLIS
+import com.music.bitchord.ui.screens.LocalArtworkMotion
+import com.music.bitchord.ui.screens.LocalArtworkScrolling
 import com.music.bitchord.ui.player.MeshGradientBackground
 import com.music.bitchord.ui.player.WelcomeMeshPalettes
 import com.music.bitchord.ui.player.cyclingMeshPalette
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -54,6 +51,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -759,25 +764,44 @@ fun Modifier.hangIntoGutter(outset: Dp): Modifier = layout { measurable, constra
 /** The accent a current song's title takes in lists that mark it with [SearchPlayingBars]. */
 val PlayingAccent = Color(0xFFFB4A62)
 
+/** The resting heights of the playing bars, one each. */
+private val PLAYING_BAR_MINIMUMS = floatArrayOf(0.38f, 0.78f, 0.52f)
+
+/**
+ * A bar's height at [ms] into its cycle: the same rise-to-peak-and-back
+ * triangle the keyframe spec drew — the time is folded per bar rather than
+ * wrapped on a shared clock, so a bar never teleports between cycles.
+ */
+private fun playingBarHeight(index: Int, minimum: Float, ms: Long): Float {
+    val duration = 520 + index * 130
+    val peak = 260 + index * 50
+    var t = (ms % (2L * duration)).toInt()
+    if (t > duration) t = 2 * duration - t
+    return if (t <= peak) {
+        minimum + (1f - minimum) * t / peak
+    } else {
+        1f - (1f - minimum) * (t - peak) / (duration - peak)
+    }
+}
+
 @Composable
 fun SearchPlayingBars(modifier: Modifier = Modifier) {
-    val heights = listOf(0.38f, 0.78f, 0.52f).mapIndexed { index, minimum ->
-        val transition = rememberInfiniteTransition(label = "search playing bar $index")
-        val height by transition.animateFloat(
-            initialValue = minimum,
-            targetValue = 1f - (index * 0.12f),
-            animationSpec = infiniteRepeatable(
-                animation = keyframes {
-                    durationMillis = 520 + index * 130
-                    minimum at 0
-                    1f at (260 + index * 50)
-                    minimum at durationMillis
-                },
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "search bar height $index",
-        )
-        height
+    // Time in motion rather than an animation per bar: read only in the draw
+    // below, so a frame of it redraws this canvas and never recomposes or
+    // re-lays out the row it sits in. One clock at MOTION_FRAME_GAP_MS, not
+    // three animators asking for a frame at display refresh rate.
+    val elapsedNanos = remember { mutableLongStateOf(0L) }
+    val running = LocalArtworkMotion.current
+    LaunchedEffect(running) {
+        if (!running) return@LaunchedEffect
+        var last = Long.MIN_VALUE
+        while (true) {
+            withFrameNanos { now ->
+                if (last != Long.MIN_VALUE) elapsedNanos.longValue += now - last
+                last = now
+            }
+            delay(MOTION_FRAME_GAP_MS)
+        }
     }
     // The plate is a fixed square so only the bars move, never the box around them.
     Box(
@@ -787,18 +811,18 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
             .background(Color.Black.copy(alpha = 0.52f)),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            modifier = Modifier.height(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            heights.forEach { height ->
-                Box(
-                    Modifier
-                        .width(3.dp)
-                        .height(14.dp * height)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White),
+        Canvas(Modifier.size(width = 13.dp, height = 14.dp)) {
+            val barWidth = 3.dp.toPx()
+            val step = barWidth + 2.dp.toPx()
+            val corner = CornerRadius(minOf(2.dp.toPx(), barWidth / 2f))
+            val ms = elapsedNanos.longValue / 1_000_000L
+            PLAYING_BAR_MINIMUMS.forEachIndexed { index, minimum ->
+                val height = size.height * playingBarHeight(index, minimum, ms)
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = Offset(index * step, size.height - height),
+                    size = Size(barWidth, height),
+                    cornerRadius = corner,
                 )
             }
         }
@@ -872,7 +896,16 @@ fun PullToRefresh(
  * mesh is the card, and white type is what sits on colour.
  */
 @Composable
-fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
+fun SignInBanner(
+    onSignIn: () -> Unit,
+    modifier: Modifier = Modifier,
+    /**
+     * Whether the mesh may move. Off, it finishes the fade it is in and rests:
+     * a blurred layer re-drawn every frame is not something to leave running
+     * under a scroll, or under the player where nobody sees it.
+     */
+    motion: Boolean = true,
+) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.98f else 1f, spring(stiffness = 900f), label = "signInScale")
@@ -890,12 +923,13 @@ fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
         // A card is a few hundred dp the reader is looking straight at, which
         // is the case the mesh lets keep moving — see its `continuous` note.
         MeshGradientBackground(
-            palette = cyclingMeshPalette(WelcomeMeshPalettes),
+            palette = cyclingMeshPalette(WelcomeMeshPalettes, running = motion),
             modifier = Modifier.matchParentSize(),
             continuous = true,
             driftMillis = 6_000,
             blurRadius = 36.dp,
             colorFadeMillis = MESH_CYCLE_MILLIS,
+            paused = !motion,
         )
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 18.dp)) {
             Text(

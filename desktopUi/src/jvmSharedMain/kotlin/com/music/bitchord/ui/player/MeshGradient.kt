@@ -111,6 +111,13 @@ fun MeshGradientBackground(
      * that one fade runs into the next and the colour never sits still.
      */
     colorFadeMillis: Int = 1400,
+    /**
+     * Holds the mesh still — the fade it is in finishes, then nothing asks for
+     * a frame until it is let go. A blurred layer re-drawn every frame is not
+     * something to leave running under a scroll, or under a cover that hides
+     * the surface entirely. The sharedUi copy has had this for a while.
+     */
+    paused: Boolean = false,
 ) {
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
 
@@ -129,8 +136,11 @@ fun MeshGradientBackground(
     // Read in the draw lambda, not here: an Animatable read during draw
     // invalidates only the drawing, leaving composition out of the loop.
     val phase = remember { Animatable(0f) }
-    LaunchedEffect(trackKey, reduceAnimation, continuous, animated) {
+    LaunchedEffect(trackKey, reduceAnimation, continuous, animated, paused) {
         when {
+            // Paused holds the pose it is in rather than snapping home — the
+            // fade in flight completes, and the mesh resumes where it left.
+            paused -> Unit
             !animated || reduceAnimation -> phase.snapTo(0f)
             // A full turn at a time, restarted rather than looped with an
             // infinite spec: the blobs' speeds are irrational multiples of each
@@ -246,11 +256,16 @@ val WelcomeMeshPalettes: List<MeshPalette> = listOf(
  * stays on the first palette instead.
  */
 @Composable
-fun cyclingMeshPalette(palettes: List<MeshPalette>, stepMillis: Int = MESH_CYCLE_MILLIS): MeshPalette {
+fun cyclingMeshPalette(
+    palettes: List<MeshPalette>,
+    stepMillis: Int = MESH_CYCLE_MILLIS,
+    /** Whether the palette may keep stepping — off under a scroll or a cover. */
+    running: Boolean = true,
+): MeshPalette {
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
     var step by remember { mutableIntStateOf(0) }
-    LaunchedEffect(reduceAnimation, stepMillis) {
-        if (reduceAnimation) return@LaunchedEffect
+    LaunchedEffect(reduceAnimation, stepMillis, running) {
+        if (reduceAnimation || !running) return@LaunchedEffect
         while (isActive) {
             delay(stepMillis.toLong())
             step++
