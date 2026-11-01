@@ -53,6 +53,11 @@ import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import androidx.compose.foundation.layout.Arrangement
