@@ -11,10 +11,9 @@
 
 <br/>
 
-[![Latest release](https://img.shields.io/github/v/release/kushagrasinghx/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kushagrasinghx/BitChord/releases)
-[![License](https://img.shields.io/github/license/kushagrasinghx/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kushagrasinghx/BitChord/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/kushagrasinghx/BitChord/total?style=for-the-badge&labelColor=0d1117)](https://github.com/kushagrasinghx/BitChord/releases)
-[![Listening now](https://api.bitchord.kushagrasingh.in/api/stats/live/badge.svg)](https://api.bitchord.kushagrasingh.in/api/stats/live)
+[![Latest release](https://img.shields.io/github/v/release/kartik2005221/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/BitChord/releases)
+[![License](https://img.shields.io/github/license/kartik2005221/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/BitChord/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/kartik2005221/BitChord/total?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/BitChord/releases)
 
 <br/>
 
@@ -22,13 +21,12 @@
 
 <br/>
 
-<a href="https://fmhy.net/mobile#youtube-music" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Featured on FMHY" height="55"/></a>
-<a href="https://trendshift.io/repositories/177639?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-177639" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/177639" alt="kushagrasinghx%2FBitChord | Trendshift" width="250" height="55"/></a>
-
 </div>
 
 > [!IMPORTANT]
 > BitChord is not affiliated with, endorsed by, or connected to YouTube or Google in any way. Use it at your own discretion.
+
+> BitChord began as [Kushagra Singh's](https://github.com/kushagrasinghx) BitChord — this desktop-focused fork exists thanks to the original project and its creator.
 
 ---
 
@@ -49,7 +47,6 @@
 - **Automix [Beta]** — DJ-style transitions with beat-matching and tempo-stretching.
 - **Offline downloads** — save tracks with embedded metadata.
 - **Local music library** integration.
-- **Background playback** via a proper foreground media session.
 - **Apple-like lyrics animation** — credit to [binimum](https://github.com/binimum/am-lyrics).
 
 #### Connectivity & Accounts
@@ -70,11 +67,10 @@
 - **Frosted-glass UI** — Telegram-style translucent bars via Haze, Material 3 theming.
 
 #### Controls & Tweaks
-- **Per-network audio quality** — separate quality ceilings for Wi-Fi and mobile data.
+- **Audio quality ceilings** — pick the ceiling each stream is allowed to reach.
 - **Playback speed control** (0.5×–2.0×) and **skip silence**.
 - **Sleep timer** — fixed presets or "stop after this track".
 - **System equalizer** integration.
-- **Bit-perfect USB exclusive output** — sends lossless tracks to a USB DAC unchanged, at each track's own rate and bit depth. Thanks to [Mornye](https://github.com/mornyeapp/Mornye) for the reference.
 - **Stats for nerds** — codec, bit depth, sample rate, and more on the now-playing screen.
 
     </td>
@@ -89,9 +85,13 @@
 
 <h1><a id="download"></a>Download</h1>
 
-<a href="https://github.com/kushagrasinghx/BitChord/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/android/cozy.svg" alt="Download for Android" height="55"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/windows/cozy.svg" alt="Download for Windows" height="55"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/linux/cozy.svg" alt="Download for Linux" height="55"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/macos/cozy.svg" alt="Download for macOS" height="55"/></a>
 
-Grab the latest signed APK from the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page. Sideloading requires enabling "Install unknown apps" for whichever app you download it with.
+Grab the latest installer — **msi/setup/portable** for Windows, **deb/rpm/AppImage** for Linux, **dmg/pkg/zip** for macOS — from the [Releases](https://github.com/kartik2005221/BitChord/releases) page.
+
+BitChord for **Android** remains the original upstream project: [kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord/releases).
 
 
 </div>
@@ -108,8 +108,8 @@ We welcome contributions to BitChord! Please review our [Contributing Guide](CON
 
 ### Thanks to all contributors ❤
 
-<a href="https://github.com/kushagrasinghx/BitChord/graphs/contributors">
-  <img src="https://raw.githubusercontent.com/kushagrasinghx/BitChord/contributors/contributors.svg" />
+<a href="https://github.com/kartik2005221/BitChord/graphs/contributors">
+  <img src="https://raw.githubusercontent.com/kartik2005221/BitChord/contributors/contributors.svg" />
 </a>
 
 </div>
@@ -122,11 +122,9 @@ We welcome contributions to BitChord! Please review our [Contributing Guide](CON
 
 BitChord is free and always will be — if it's earned a spot in your rotation, you can chip in here:
 
-<a href="https://ko-fi.com/kushagrasinghx" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/donate/kofi-singular-alt/cozy.svg" alt="Support me on Ko-fi" height="55"/></a>
-<a href="https://paypal.me/kuxhagrasingh" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/donate/paypal-plural/cozy.svg" alt="Support us on PayPal" height="55"/></a>
+BitChord is free and always will be — if it's earned a spot in your rotation, UPI support is appreciated:
 
-<br/>
-<img src="upi_support.jpg" alt="UPI Support" width="250" />
+**`kartik2005221@upi`**
 
 </div>
 
