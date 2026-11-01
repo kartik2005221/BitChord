@@ -69,6 +69,12 @@ internal fun DesktopPlayerSheet(
                 mounted = false
             }
         }
+        // Fullscreen landing mid-drag disposes the drag modifier before its
+        // stop ever runs, which would leave the sheet hanging at the dragged
+        // offset for the whole session — put it back where it belongs.
+        LaunchedEffect(canDismiss) {
+            if (!canDismiss) offset.snapTo(0f)
+        }
 
         val dragState = rememberDraggableState { delta ->
             scope.launch { offset.snapTo((offset.value + delta).coerceIn(0f, heightPx)) }
