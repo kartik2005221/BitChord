@@ -3552,7 +3552,8 @@ fun BitChordDesktopApp() {
                         onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) },
                         onOpenQueue = { overlays.toggleSidePanel(DesktopSidePanel.QUEUE) },
                         sidePanel = overlays.sidePanel,
-                        accountAvatar = activeAccount?.profiles?.firstOrNull { it.profileId == activeProfileId }?.avatar?.takeIf { it.isNotBlank() }
+                        accountAvatar = activeAccount?.profiles?.firstOrNull { it.profileId == activeProfileId }?.avatar?.takeIf { it.isNotBlank() },
+                        spotifySignedIn = spotifyCanvasCookie.isNotBlank(),
                             ?: activeAccount?.avatar?.takeIf { it.isNotBlank() }
                             ?: activeAccount?.profiles?.firstOrNull()?.avatar?.takeIf { it.isNotBlank() },
                         onOpenAccounts = { DesktopTrackLog.log("accounts: opening the switcher"); overlays.accounts = true },
@@ -4755,6 +4756,8 @@ private fun DesktopTopBar(
     /** Which of the two the column beside the page is showing, lit on its button. */
     sidePanel: DesktopSidePanel?,
     accountAvatar: String?,
+    /** Whether a Spotify account is connected — the compact mark exists only then. */
+    spotifySignedIn: Boolean = true,
     onOpenAccounts: () -> Unit,
     /** The app's one way back — every page's own arrow was folded into this. */
     canGoBack: Boolean,
@@ -4981,7 +4984,7 @@ private fun DesktopTopBar(
                     Spacer(Modifier.width(5.dp))
                     // Compact windows have no sidebar, so the mark keeps a home here
                     // only there — everywhere else it lives under Local Music.
-                    if (compact) {
+                    if (compact && spotifySignedIn) {
                         DesktopToolbarButton(onClick = onOpenSpotify, size = 32.dp) {
                             Icon(
                                 painterResource(SharedRes.drawable.spotify_logo),
