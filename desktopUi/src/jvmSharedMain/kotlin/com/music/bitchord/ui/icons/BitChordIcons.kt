@@ -449,6 +449,39 @@ object BitChordIcons {
             }
         }.build()
 
+    /** Five-point star — the player's like glyph, standing where the heart used to. */
+    val Star: ImageVector by lazy { star("bc_star", filled = false) }
+
+    val StarFilled: ImageVector by lazy { star("bc_star_filled", filled = true) }
+
+    private fun star(name: String, filled: Boolean): ImageVector =
+        ImageVector.Builder(
+            name = name,
+            defaultWidth = 24.dp, defaultHeight = 24.dp,
+            viewportWidth = 24f, viewportHeight = 24f,
+        ).apply {
+            path(
+                stroke = stroke,
+                strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+                fill = if (filled) stroke else null,
+            ) {
+                // Ten vertices: five points, alternating with the notches between them.
+                moveTo(12f, 2.2f)
+                lineTo(14.6f, 9f)
+                lineTo(21.8f, 9.3f)
+                lineTo(16.2f, 13.6f)
+                lineTo(18.2f, 20.6f)
+                lineTo(12f, 16.6f)
+                lineTo(5.8f, 20.6f)
+                lineTo(7.8f, 13.6f)
+                lineTo(2.2f, 9.3f)
+                lineTo(9.4f, 9f)
+                close()
+            }
+        }.build()
+
     /** Adding something — a new playlist, on the library shelf. */
     val Plus: ImageVector by lazy {
         ImageVector.Builder(

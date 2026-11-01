@@ -101,6 +101,7 @@ internal object DesktopPlayerHost : PlayerHost {
                     name = name,
                     kind = kindOf(name),
                     isActive = id == selected,
+                    isSystemDefault = id == DesktopAudioDevices.SYSTEM_DEFAULT,
                 )
             }
         }

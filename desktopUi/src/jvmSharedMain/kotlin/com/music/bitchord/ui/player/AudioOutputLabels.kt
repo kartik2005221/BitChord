@@ -44,5 +44,8 @@ internal fun rememberAudioOutputName(accountName: String?): String {
                 accountName.trim().split(Regex("\\s+")).first(),
             )
         }
+    // The system default is not a device to name: the picker keeps the row,
+    // the caption under the transport says nothing for it.
+    if (active.isSystemDefault) return ""
     return outputLabel(active, accountName)
 }

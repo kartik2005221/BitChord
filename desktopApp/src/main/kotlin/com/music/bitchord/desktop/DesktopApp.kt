@@ -755,6 +755,41 @@ fun BitChordDesktopApp() {
             ?.let(DesktopSearchClient::userPlaylists)
             .orEmpty()
     }
+    // The pane's live copy. The shelf remember above answers once per library load, so the
+    // counts it carried stayed frozen from the moment the app started. Asking again when the
+    // pane opens keeps the numbers the account has now.
+    var accountPlaylistsFresh by remember { mutableStateOf<List<UserPlaylist>?>(null) }
+    var playlistBumps by remember { mutableStateOf(persistence.playlistBumps()) }
+
+    // Un-nudged rows keep the feed's order: sortedByDescending is stable, and rank zero is
+    // every playlist no song has gone into lately.
+    val paneAccountPlaylists = remember(accountPlaylistsFresh, accountPlaylists, playlistBumps) {
+        (accountPlaylistsFresh ?: accountPlaylists).sortedByDescending { playlistBumps[it.playlistId] ?: 0L }
+    }
+
+    fun refreshAccountPlaylists() {
+        scope.launch {
+            DesktopSearchClient.userPlaylists().onSuccess { fetched ->
+                accountPlaylistsFresh = fetched
+            }
+        }
+    }
+
+    fun bumpPlaylist(id: String) {
+        val stamps = playlistBumps + (id to System.currentTimeMillis())
+        playlistBumps = stamps
+        // The store keeps the freshest thirty — the only ones the order can still tell apart.
+        persistence.savePlaylistBumps(
+            stamps.entries.sortedByDescending { it.value }.take(30).associate { it.toPair() },
+        )
+    }
+
+    // The picker's ask: every time it comes up signed in, the account is read as it is now.
+    LaunchedEffect(overlays.playlistDialog, playlistTarget, youtubeSignedIn) {
+        if (youtubeSignedIn && (overlays.playlistDialog || playlistTarget != null)) {
+            refreshAccountPlaylists()
+        }
+    }
     // The add-to-playlist dialog intentionally keeps only playlists owned by the account. The
     // sidebar is a library browser instead, so it shows the complete paged shelf: owned, saved,
     // and YouTube's built-in playlists such as Liked Music.
@@ -1641,6 +1676,8 @@ fun BitChordDesktopApp() {
         scope.launch {
             DesktopSearchClient.createPlaylist(name, privacy, listOfNotNull(seed?.videoId))
                 .onSuccess { playlistId ->
+                    bumpPlaylist(playlistId)
+                    refreshAccountPlaylists()
                     closePlaylistDialogs()
                     editPlaylistShelf { items ->
                         val card = ShelfItem(
@@ -1735,7 +1772,13 @@ fun BitChordDesktopApp() {
         playlistError = null
         scope.launch {
             DesktopSearchClient.addToPlaylist(playlist.playlistId, listOf(song.videoId))
-                .onSuccess { closePlaylistDialogs() }
+                .onSuccess {
+                    bumpPlaylist(playlist.playlistId)
+                    // The pane is closing, but the stamp leads on its next opening, and the
+                    // refresh replaces the count the shelf remember was holding.
+                    refreshAccountPlaylists()
+                    closePlaylistDialogs()
+                }
                 .onFailure {
                     DesktopTrackLog.log("playlist: could not add ${song.videoId}: ${it.message}")
                     playlistBusy = false
@@ -3483,6 +3526,7 @@ fun BitChordDesktopApp() {
                             persistence.saveString("volume", it.toString())
                         },
                         onOpenAudioOutput = { overlays.audioOutput = true },
+                        onOpenSpotify = { DesktopExternalLinks.open("https://open.spotify.com/") },
                         // A second click on the same button puts the column away, as in Apple Music.
                         onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) },
                         onOpenQueue = { overlays.toggleSidePanel(DesktopSidePanel.QUEUE) },
@@ -3874,7 +3918,7 @@ fun BitChordDesktopApp() {
                     if (overlays.playlistDialog || playlistTarget != null) {
                         DesktopPlaylistDialog(
                             song = playlistTarget,
-                            accountPlaylists = accountPlaylists,
+                            accountPlaylists = paneAccountPlaylists,
                             localPlaylists = playlists,
                             signedIn = youtubeSignedIn,
                             canUseAccount = playlistTarget
@@ -4664,6 +4708,8 @@ private fun DesktopTopBar(
     onOpenNowPlaying: () -> Unit,
     onVolumeChange: (Float) -> Unit,
     onOpenAudioOutput: () -> Unit,
+    /** Opens Spotify itself — the service's own player, where it lives. */
+    onOpenSpotify: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenQueue: () -> Unit,
     /** Which of the two the column beside the page is showing, lit on its button. */
@@ -4893,6 +4939,14 @@ private fun DesktopTopBar(
                         modifier = Modifier.width(78.dp),
                     )
                     Spacer(Modifier.width(5.dp))
+                    DesktopToolbarButton(onClick = onOpenSpotify, size = 32.dp) {
+                        Icon(
+                            painterResource(SharedRes.drawable.spotify_logo),
+                            DesktopStrings["spotify", "Spotify"],
+                            tint = DesktopSecondary,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
                     DesktopToolbarButton(onClick = onOpenAudioOutput, size = 32.dp) {
                         Icon(
                             Icons.Rounded.Headphones,
