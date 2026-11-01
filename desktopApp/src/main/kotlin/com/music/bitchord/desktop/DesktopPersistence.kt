@@ -27,6 +27,15 @@ class DesktopPersistence {
 
     fun saveDislikedIds(ids: Set<String>) = writeLines(KEY_DISLIKED_IDS, ids.toList())
 
+    /**
+     * Liked files on this computer, newest like first — the offline Liked shelf
+     * the Local Music folder's Liked tab reads. Separate from [likedIds]: the
+     * account's is a list of video ids, this one never leaves the computer.
+     */
+    fun localLikedIds(): List<String> = readLines(KEY_LOCAL_LIKED_IDS)
+
+    fun saveLocalLikedIds(ids: List<String>) = writeLines(KEY_LOCAL_LIKED_IDS, ids)
+
     /** Every lyric database, in the order they are asked. */
     fun lyricsSourceOrder(): List<String> =
         // The phone's rule for a saved order meeting a newer build: hidden sources drop out, a new
@@ -310,6 +319,7 @@ class DesktopPersistence {
     private companion object {
         const val KEY_LIKED_IDS = "liked_ids"
         const val KEY_DISLIKED_IDS = "disliked_ids"
+        const val KEY_LOCAL_LIKED_IDS = "local_liked_ids"
         const val KEY_HISTORY = "history"
         const val KEY_QUEUE = "queue"
         const val KEY_DOWNLOADS = "downloads"

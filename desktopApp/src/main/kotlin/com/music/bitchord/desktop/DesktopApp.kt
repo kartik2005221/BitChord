@@ -632,6 +632,8 @@ fun BitChordDesktopApp() {
     // In-flight tail of the Liked Music chain; replaced whenever the library is fetched again.
     var likedSyncJob by remember { mutableStateOf<Job?>(null) }
     var dislikedIds by remember { mutableStateOf(persistence.dislikedIds()) }
+    /** Liked files on this computer, newest like first — the Local Music Liked shelf. */
+    var localLikedIds by remember { mutableStateOf(persistence.localLikedIds()) }
     val overlays = remember { DesktopOverlays() }
     var downloads by remember { mutableStateOf(persistence.downloads()) }
     // The release-level records behind the Downloads page's group cards. Android records the thing
@@ -1064,6 +1066,16 @@ fun BitChordDesktopApp() {
 
     fun toggleDislike(song: Song) =
         rate(song, if (song.videoId in dislikedIds) LikeStatus.INDIFFERENT else LikeStatus.DISLIKE)
+
+    /**
+     * Likes or unlikes a file on this computer — the Local Music Liked shelf.
+     * Separate from [toggleLike]: a file's heart is the listener's own marks on
+     * their disk, and the account is never asked about an id it does not own.
+     */
+    fun toggleLocalLike(song: Song) {
+        localLikedIds = DesktopLocalMusic.likedAfterToggle(localLikedIds, song.videoId)
+        persistence.saveLocalLikedIds(localLikedIds)
+    }
 
     /** The origin the live queue is carrying, for anything appended to it. */
     fun currentQueueSource(): DesktopQueueSource? = liveQueue.current?.playbackSource?.let {
@@ -4676,6 +4688,9 @@ fun BitChordDesktopApp() {
                             onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["local_music", "Local Music"], PlaybackSourceType.BROWSE)) },
                             contentPadding = contentPadding,
                             menu = { song -> songMenu(song) },
+                            likedOrder = localLikedIds,
+                            onToggleLiked = ::toggleLocalLike,
+                            tabs = DESKTOP_LOCAL_TABS_DEVICE,
                         )
                     }
                 }
@@ -6191,6 +6206,22 @@ private fun DesktopDownloadCollectionPage(
 }
 
 @Composable
+/** A folder page's readings of its tracks — the phone's LocalFolderTab, carried over whole. */
+private enum class DesktopLocalTab(val label: String) {
+    SONGS("Songs"),
+    ARTISTS("Artists"),
+    ALBUMS("Albums"),
+    LIKED("Liked"),
+    FOLDERS("Folders"),
+}
+
+/** Every folder page keeps the phone's basic three; the Downloads page stops there. */
+private val DESKTOP_LOCAL_TABS_BASIC = listOf(DesktopLocalTab.SONGS, DesktopLocalTab.ARTISTS, DesktopLocalTab.ALBUMS)
+
+/** Local Music's: this whole computer, so the Liked shelf and the folders its music sits in join them. */
+private val DESKTOP_LOCAL_TABS_DEVICE =
+    listOf(DesktopLocalTab.SONGS, DesktopLocalTab.ARTISTS, DesktopLocalTab.ALBUMS, DesktopLocalTab.LIKED, DesktopLocalTab.FOLDERS)
+
 private fun DesktopLocalMusicPage(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
@@ -6204,9 +6235,14 @@ private fun DesktopLocalMusicPage(
     menu: (@Composable (Song) -> Unit)? = null,
     /** Pinned above the Songs list — the Downloads page's group cards live here. */
     header: (@Composable () -> Unit)? = null,
+    /** The folder's readings of its tracks; the Downloads page keeps the phone's basic three. */
+    tabs: List<DesktopLocalTab> = DESKTOP_LOCAL_TABS_BASIC,
+    /** Liked files on this computer, newest like first — handed with [onToggleLiked], the Liked tab fills. */
+    likedOrder: List<String> = emptyList(),
+    onToggleLiked: ((Song) -> Unit)? = null,
 ) {
     val persistence = remember { DesktopPersistence() }
-    var selectedTab by remember(persistenceKey) { mutableStateOf(0) }
+    var selectedTab by remember(persistenceKey) { mutableStateOf(tabs.first()) }
     var searchQuery by remember(persistenceKey) { mutableStateOf("") }
     var view by remember(persistenceKey) {
         mutableStateOf(
@@ -6233,12 +6269,26 @@ private fun DesktopLocalMusicPage(
     }
     val artists = remember(filteredSongs) {
         filteredSongs.groupBy { it.artist.ifBlank { "On This Computer" } }
-            .entries.sortedBy { it.key.lowercase() }
+            .map { (name, grouped) -> name to grouped }
+            .sortedBy { it.first.lowercase() }
     }
     val albums = remember(filteredSongs) {
         filteredSongs.groupBy { it.albumName?.takeIf(String::isNotBlank) ?: "Unknown Album" }
-            .entries.sortedBy { it.key.lowercase() }
+            .map { (name, grouped) -> name to grouped }
+            .sortedBy { it.first.lowercase() }
     }
+    // The Liked shelf: this computer's liked files, in the order they were liked —
+    // the page's sort never reorders the shelf, the way the phone keeps it.
+    val likedSet = remember(likedOrder) { likedOrder.toHashSet() }
+    val likedSongs = remember(likedOrder, songs, searchQuery) {
+        val onThisComputer = songs.associateBy(Song::videoId)
+        likedOrder.mapNotNull(onThisComputer::get).filter { song ->
+            searchQuery.isBlank() || song.title.contains(searchQuery, true) ||
+                song.artist.contains(searchQuery, true) || song.albumName.orEmpty().contains(searchQuery, true)
+        }
+    }
+    // The Folders tab: every directory of the computer the page's songs sit in.
+    val folderGroups = remember(filteredSongs) { filteredSongs.groupedForDesktopFolders() }
     DesktopPageScaffold(contentPadding) {
         Column(
             Modifier.fillMaxSize().padding(horizontal = DesktopPageGutter),
@@ -6271,9 +6321,9 @@ private fun DesktopLocalMusicPage(
                 }
             }
             Spacer(Modifier.height(10.dp))
-            TabRow(selectedTabIndex = selectedTab, containerColor = Color.Transparent) {
-                listOf("Songs", "Artists", "Albums").forEachIndexed { index, label ->
-                    Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(label) })
+            TabRow(selectedTabIndex = tabs.indexOf(selectedTab), containerColor = Color.Transparent) {
+                tabs.forEach { tab ->
+                    Tab(selected = selectedTab == tab, onClick = { selectedTab = tab }, text = { Text(tab.label) })
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -6285,18 +6335,65 @@ private fun DesktopLocalMusicPage(
                     Text(drillDown!!.first, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(6.dp))
-                DesktopLibrarySongContent(drillDown!!.second, view, onSongClick, menu)
+                DesktopLibrarySongContent(
+                    drillDown!!.second,
+                    view,
+                    onSongClick,
+                    menu,
+                    liked = { song -> song.videoId in likedSet },
+                    onToggleLike = onToggleLiked,
+                )
             } else when (selectedTab) {
-                0 -> Column(Modifier.fillMaxSize()) {
+                DesktopLocalTab.SONGS -> Column(Modifier.fillMaxSize()) {
                     header?.invoke()
                     if (songs.isEmpty()) {
                         DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
                     } else {
-                        DesktopLibrarySongContent(filteredSongs, view, onSongClick, menu)
+                        DesktopLibrarySongContent(
+                            filteredSongs,
+                            view,
+                            onSongClick,
+                            menu,
+                            liked = { song -> song.videoId in likedSet },
+                            onToggleLike = onToggleLiked,
+                        )
                     }
                 }
-                1 -> DesktopLibraryGroupingContent(artists, view, onGroupClick = { drillDown = it })
-                else -> DesktopLibraryGroupingContent(albums, view, onGroupClick = { drillDown = it })
+                DesktopLocalTab.ARTISTS -> DesktopLibraryGroupingContent(artists, view, onGroupClick = { drillDown = it })
+                DesktopLocalTab.ALBUMS -> DesktopLibraryGroupingContent(albums, view, onGroupClick = { drillDown = it })
+                DesktopLocalTab.LIKED -> if (likedSongs.isEmpty()) {
+                    DesktopEmptyPage(
+                        BitChordIcons.Heart,
+                        "No liked songs yet",
+                        "Tap the heart on a song on this computer and it waits here.",
+                    )
+                } else {
+                    DesktopLibrarySongContent(
+                        likedSongs,
+                        view,
+                        onSongClick,
+                        menu,
+                        liked = { song -> song.videoId in likedSet },
+                        onToggleLike = onToggleLiked,
+                    )
+                }
+                DesktopLocalTab.FOLDERS -> if (folderGroups.isEmpty()) {
+                    DesktopEmptyPage(
+                        Icons.Rounded.Folder,
+                        "No folders",
+                        "Songs grouped by the folder they sit in show up here.",
+                    )
+                } else {
+                    DesktopLibraryGroupingContent(
+                        folderGroups,
+                        view,
+                        onGroupClick = { drillDown = it },
+                        // The row names the folder; the parent path under it is what
+                        // tells two alike-named folders apart, as the phone's rows do.
+                        label = { path -> path.substringAfterLast('/').ifBlank { path } },
+                        subline = { entry -> "${entry.first.substringBeforeLast('/')} · ${entry.second.size} songs" },
+                    )
+                }
             }
         }
     }
@@ -6315,6 +6412,9 @@ private fun DesktopLibrarySongContent(
     view: DesktopLibraryView,
     onSongClick: (Song) -> Unit,
     menu: (@Composable (Song) -> Unit)? = null,
+    /** The row's heart, as the Liked shelf knows it; the default draws none. */
+    liked: (Song) -> Boolean = { false },
+    onToggleLike: ((Song) -> Unit)? = null,
 ) {
     if (songs.isEmpty()) {
         DesktopEmptyPage(BitChordIcons.Search, "No matching music", "Try a different search.")
@@ -6346,9 +6446,9 @@ private fun DesktopLibrarySongContent(
                 DesktopSongRow(
                     song,
                     isCurrent = isCurrentRow(song),
-                    liked = false,
+                    liked = liked(song),
                     onClick = onSongClick,
-                    onToggleLike = null,
+                    onToggleLike = onToggleLike,
                     downloaded = song.localPath != null,
                     menu = menu,
                 )
@@ -6359,9 +6459,13 @@ private fun DesktopLibrarySongContent(
 
 @Composable
 private fun DesktopLibraryGroupingContent(
-    groups: List<Map.Entry<String, List<Song>>>,
+    groups: List<Pair<String, List<Song>>>,
     view: DesktopLibraryView,
     onGroupClick: (Pair<String, List<Song>>) -> Unit,
+    /** The title drawn for a group's key; the key itself by default. */
+    label: (String) -> String = { it },
+    /** The line under the title; the plain "N songs" when null. */
+    subline: (Pair<String, List<Song>>) -> String? = { null },
 ) {
     if (groups.isEmpty()) {
         DesktopEmptyPage(BitChordIcons.Search, "Nothing here yet", "Music will be grouped as it is added.")
@@ -6373,12 +6477,12 @@ private fun DesktopLibraryGroupingContent(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            gridItems(groups, key = { it.key }) { group ->
-                Column(Modifier.fillMaxWidth().clickable { onGroupClick(group.key to group.value) }) {
-                    DesktopArtwork(group.value.firstOrNull()?.thumbnailUrl, Modifier.fillMaxWidth().height(150.dp).clip(CircleShape))
+            gridItems(groups, key = { it.first }) { group ->
+                Column(Modifier.fillMaxWidth().clickable { onGroupClick(group) }) {
+                    DesktopArtwork(group.second.firstOrNull()?.thumbnailUrl, Modifier.fillMaxWidth().height(150.dp).clip(CircleShape))
                     Spacer(Modifier.height(7.dp))
-                    Text(group.key, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                    Text("${group.value.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(label(group.first), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                    Text(subline(group) ?: "${group.second.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -6388,16 +6492,16 @@ private fun DesktopLibraryGroupingContent(
             contentPadding = pagePadding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(groups, key = { it.key }) { group ->
+            items(groups, key = { it.first }) { group ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { onGroupClick(group.key to group.value) }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().clickable { onGroupClick(group) }.padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    DesktopArtwork(group.value.firstOrNull()?.thumbnailUrl, Modifier.size(54.dp).clip(CircleShape))
+                    DesktopArtwork(group.second.firstOrNull()?.thumbnailUrl, Modifier.size(54.dp).clip(CircleShape))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(group.key, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                        Text("${group.value.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
+                        Text(label(group.first), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                        Text(subline(group) ?: "${group.second.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
                     }
                     Icon(BitChordIcons.Play, DesktopStrings["open", "Open"], tint = DesktopSecondary)
                 }

@@ -172,3 +172,34 @@ fun List<Song>.sortedForDesktopLibrary(sort: DesktopLibrarySort): List<Song> = w
             .thenBy(String.CASE_INSENSITIVE_ORDER, Song::title),
     )
 }
+
+/** The directory a file sits in, or null when its path isn't known — a pathless row is the Songs tab's alone. */
+internal fun Song.localDirectory(): String? =
+    localPath?.replace('\\', '/')?.substringBeforeLast('/', "")?.takeIf(String::isNotEmpty)
+
+/**
+ * The Folders tab: every directory of the computer holding any of the songs,
+ * the way a file manager would name it — the phone's `LocalGroups.foldersOf`.
+ *
+ * Two directories of the same name in different places stay two rows; the
+ * row's subtitle is the parent path, which is what tells them apart. Within a
+ * folder the rows read by title, as the phone's directory pages do.
+ */
+fun List<Song>.groupedForDesktopFolders(): List<Pair<String, List<Song>>> =
+    groupBy(Song::localDirectory)
+        .mapNotNull { (path, group) -> path?.let { it to group } }
+        .map { (path, group) ->
+            path to group.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, Song::title))
+        }
+        .sortedWith(
+            compareBy<Pair<String, List<Song>>> { it.first.substringAfterLast('/').lowercase(Locale.ROOT) }
+                .thenBy { it.first.substringBeforeLast('/').lowercase(Locale.ROOT) },
+        )
+
+/**
+ * Toggles a device file on the Liked shelf: a like leads — the newest like
+ * first, the way the phone keeps its offline Liked playlist — and an unlike
+ * takes its row out.
+ */
+fun likedAfterToggle(current: List<String>, videoId: String): List<String> =
+    if (videoId in current) current.filterNot { it == videoId } else listOf(videoId) + current
