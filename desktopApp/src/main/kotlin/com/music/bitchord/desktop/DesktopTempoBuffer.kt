@@ -16,8 +16,10 @@ internal class DesktopTempoBuffer(channels: Int, sampleRate: Int) {
 
     var speed: Float
         get() = processor.speed
+        // The planner's whole stretch window, slowdowns included: 0.9..1.25, the same bounds
+        // [com.music.bitchord.playback.smart.TransitionPolicy] plans inside.
         set(value) {
-            processor.speed = value.coerceIn(1f, 1.1f)
+            processor.speed = value.coerceIn(0.9f, 1.25f)
         }
 
     val available: Int get() = queuedCount
