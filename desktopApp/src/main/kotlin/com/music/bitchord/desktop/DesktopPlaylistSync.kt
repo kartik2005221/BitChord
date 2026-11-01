@@ -96,8 +96,14 @@ object DesktopPlaylistSync {
         if (approved) running.lock() else if (!running.tryLock()) return
         try {
             if (!syncOn()) return
+            // A check is the one place that knows which playlist records still
+            // exist: an ask pointing into a deleted one can never be answered
+            // and would hang on the strip until the process ended. Reconcile
+            // once per check.
+            val ids = collections().map { it.id }
+            _asks.value = _asks.value.filter { it.playlistId in ids.toSet() }
             var whole = true
-            collections().map { it.id }.forEach { id ->
+            ids.forEach { id ->
                 if (!syncOn()) return
                 val record = recordById(id) ?: return@forEach
                 val browseId = syncableBrowseId(record) ?: return@forEach
@@ -153,6 +159,13 @@ object DesktopPlaylistSync {
 
         val arrived = missing.count { it.videoId in handled && it.videoId in savedIds() }
         if (arrived > 0) DesktopTrackLog.log("$TAG: $arrived new songs of \"${record.title}\" arrived")
+        // The batch has been dealt with: whatever the record now names is not
+        // new anymore, so the ask about it goes home now rather than at the
+        // next whole check. A row a fetch failed on stays out of handled, and
+        // the ask stands until a later check lands it.
+        if (fresh.all { it.videoId in handled }) {
+            _asks.value = _asks.value.filterNot { it.playlistId == record.id }
+        }
     }
 
     // ---- Reading a playlist -------------------------------------------------

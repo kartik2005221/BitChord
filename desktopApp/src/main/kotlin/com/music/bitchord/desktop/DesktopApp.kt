@@ -1401,15 +1401,6 @@ fun BitChordDesktopApp() {
         }
     }
 
-    /**
-     * Turning AutoPlay on or off, and what that does to the queue.
-     *
-     * Android runs one path for this — `toggleAutoplayFromNotification` — whether the switch was
-     * thrown in the player or anywhere else, and it does more than set a flag. Off drops the
-     * suggestions it had already queued, because switching it off is the listener saying they do
-     * not want them. On clears the seed first, so the station is fetched again for the track
-     * already playing rather than being refused as one this seed has been loaded for.
-     */
     // ---- Playlist sync ---------------------------------------------------------
 
     /**
@@ -1517,6 +1508,15 @@ fun BitChordDesktopApp() {
         }
     }
 
+    /**
+     * Turning AutoPlay on or off, and what that does to the queue.
+     *
+     * Android runs one path for this — `toggleAutoplayFromNotification` — whether the switch was
+     * thrown in the player or anywhere else, and it does more than set a flag. Off drops the
+     * suggestions it had already queued, because switching it off is the listener saying they do
+     * not want them. On clears the seed first, so the station is fetched again for the track
+     * already playing rather than being refused as one this seed has been loaded for.
+     */
     fun setAutoplay(enabled: Boolean) {
         if (DesktopListenTogether.state.value.controlsLocked) return
         autoplay = enabled
