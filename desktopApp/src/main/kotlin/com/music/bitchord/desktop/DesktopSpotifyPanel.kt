@@ -62,7 +62,7 @@ internal fun SpotifySidePanel(
     onOpenPlaylist: (SpotifyPlaylist) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var state by remember { mutableStateOf<SpotifyPanelState>(SpotifyPanelSpotifyPanelState.Loading) }
+    var state by remember { mutableStateOf<SpotifyPanelState>(SpotifyPanelState.Loading) }
     // A fresh read whenever the panel comes up — and whenever Retry is asked.
     var refresh by remember { mutableIntStateOf(0) }
     LaunchedEffect(signedIn, refresh) {
