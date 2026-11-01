@@ -86,7 +86,7 @@
 <h1><a id="download"></a>Download</h1>
 
 <a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/windows/cozy.svg" alt="Download for Windows" height="55"/></a>
-<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/linux/cozy.svg" alt="Download for Linux" height="55"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Download_for-Linux-0d1117?style=for-the-badge&logo=linux&logoColor=white" alt="Download for Linux" height="55"/></a>
 <a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/macos/cozy.svg" alt="Download for macOS" height="55"/></a>
 
 Grab the latest installer — **msi/setup/portable** for Windows, **deb/rpm/AppImage** for Linux, **dmg/pkg/zip** for macOS — from the [Releases](https://github.com/kartik2005221/BitChord/releases) page.
