@@ -27,6 +27,9 @@
 > [!IMPORTANT]
 > **Independent community project.** This repository continues development of the original PC/desktop app after its discontinuation upstream. It is a fork of [BitChord by @kushagrasinghx](https://github.com/kushagrasinghx/BitChord), but it is **not an official continuation** and is not endorsed, maintained, or supported by the original creator or upstream maintainers. We respect the original work, preserve its attribution and license, and welcome community contributions.
 
+> [!NOTE]
+> **Unofficial modified fork.** This repo is an unofficial fork of [BitChord-Desktop-Revived by @Bntagaaa](https://github.com/Bntagaaa/BitChord-Desktop-Revived) with small personal modifications (e.g. its own in-app update source and bundled Last.fm keys supplied at build time). It is not endorsed by the upstream maintainers. Released under GPL-3.0 — see [LICENSE](LICENSE) — with full credit and thanks to the upstream project and all contributors.
+
 
 
 

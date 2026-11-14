@@ -39,9 +39,13 @@ jobs:
           echo "Building $version"
 
       - name: Write local.properties
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
         run: |
-          echo "LASTFM_API_KEY=${{ secrets.LASTFM_API_KEY }}" > local.properties
-          echo "LASTFM_SECRET=${{ secrets.LASTFM_SECRET }}" >> local.properties
+          umask 077
+          printf 'LASTFM_API_KEY=%s\n' "$LASTFM_API_KEY" > local.properties
+          printf 'LASTFM_SECRET=%s\n' "$LASTFM_SECRET" >> local.properties
 
       - name: Packaging tools
         run: |
@@ -202,10 +206,14 @@ jobs:
           echo "Building $version"
 
       - name: Write local.properties
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
         shell: bash
         run: |
-          echo "LASTFM_API_KEY=${{ secrets.LASTFM_API_KEY }}" > local.properties
-          echo "LASTFM_SECRET=${{ secrets.LASTFM_SECRET }}" >> local.properties
+          umask 077
+          printf 'LASTFM_API_KEY=%s\n' "$LASTFM_API_KEY" > local.properties
+          printf 'LASTFM_SECRET=%s\n' "$LASTFM_SECRET" >> local.properties
 
       - name: Tests
         run: .\gradlew.bat :shared:jvmTest :desktopApp:test "-Pbitchord.version=${{ steps.version.outputs.value }}"
