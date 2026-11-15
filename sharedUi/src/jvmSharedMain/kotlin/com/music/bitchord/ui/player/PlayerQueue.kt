@@ -2,6 +2,7 @@ package com.music.bitchord.ui.player
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.trackArtSize
 import androidx.compose.ui.layout.ContentScale
 import com.music.bitchord.sharedui.resources.*
@@ -84,7 +85,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
-import coil3.compose.AsyncImage
 import com.music.bitchord.ui.components.thumbnailBorder
 import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.data.model.QueueTier
@@ -805,7 +805,7 @@ private fun InlineQueueRow(
             mode = ArtworkHoverMode.DARKEN_AND_PLAY,
             hovered = rowHovered,
         ) {
-            AsyncImage(
+            CoverImage(
                 model = rememberRemoteArtworkUrl(song),
                 contentScale = ContentScale.Crop,
                 contentDescription = null,

@@ -3,6 +3,7 @@ package com.music.bitchord.ui.screens
 import com.music.bitchord.data.settings.LibraryViewType
 
 import com.music.bitchord.ui.components.trackArtSize
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.contextClick
 import com.music.bitchord.ui.AppUi
 import com.music.bitchord.sharedui.resources.*
@@ -614,7 +615,7 @@ fun CompactTrackRow(
             hovered = rowHovered,
         ) {
 
-            AsyncImage(
+            CoverImage(
                 model = thumbnailUrl.artworkAt(ROW_ART_PX),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
@@ -983,7 +984,7 @@ private fun HeroCard(
             mode = ArtworkHoverMode.DARKEN_ONLY,
             hovered = cardHovered,
         ) {
-            AsyncImage(
+            CoverImage(
                 model = item.thumbnailUrl.artworkAt(HEADER_ART_PX),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
@@ -1337,7 +1338,7 @@ internal fun ShelfCard(
                         mode = ArtworkHoverMode.DARKEN_ONLY,
                         hovered = cardHovered,
                     ) {
-                        AsyncImage(
+                        CoverImage(
                             model = if (item.isVideo) item.thumbnailUrl else item.thumbnailUrl.artworkAt(CARD_ART_PX),
                             contentDescription = null,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,

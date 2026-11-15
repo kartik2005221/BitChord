@@ -74,6 +74,7 @@ internal fun DesktopAccountButton(
                     .border(1.dp, DesktopForeground.copy(alpha = 0.18f), CircleShape),
                 contentScale = ContentScale.Crop,
                 px = 96,
+                blur = false,
             )
         } else {
             Box(
@@ -247,6 +248,7 @@ private fun DesktopProfileRow(
                 Modifier.size(32.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,
                 px = 128,
+                blur = false,
             )
         } else {
             Icon(

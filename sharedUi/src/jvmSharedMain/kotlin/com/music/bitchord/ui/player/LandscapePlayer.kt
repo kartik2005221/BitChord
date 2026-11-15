@@ -2,6 +2,7 @@ package com.music.bitchord.ui.player
 
 import androidx.compose.foundation.layout.union
 import com.music.bitchord.ui.components.ExplicitBadge
+import com.music.bitchord.ui.components.thenIf
 import com.music.bitchord.ui.theme.stableStatusBarInsets
 
 import com.music.bitchord.sharedui.resources.*
@@ -20,6 +21,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -295,6 +299,9 @@ internal fun LandscapeArtwork(
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val casts = artLoaded || canvasRendered
+    // The privacy mode blurs the still and leaves it at that — the sleeve's own
+    // empty-state note behind it finishes the look the rows use.
+    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -335,9 +342,12 @@ internal fun LandscapeArtwork(
                 // portrait sleeve's note on TextureView stacking order.
                 modifier = Modifier
                     .fillMaxSize()
+                    .thenIf(blurredCovers) { blur(28.dp).scale(1.25f) }
                     .drawWithContent { if (artLoaded || !canvasRendered) drawContent() },
             )
-            canvas?.let { clip ->
+            // Blur mode suppresses the motion art entirely — see the portrait
+            // sleeve's note beside its own canvas.
+            canvas.takeIf { !blurredCovers }?.let { clip ->
                 CanvasArtworkPlayer(
                     canvas = clip,
                     isPlaying = isPlaying,

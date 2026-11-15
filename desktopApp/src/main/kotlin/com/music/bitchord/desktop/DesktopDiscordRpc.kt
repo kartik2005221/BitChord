@@ -123,7 +123,10 @@ internal object DesktopDiscordRpc {
             clear()
             return
         }
-        val key = "${song.videoId}|${state.durationMs}|$speed"
+        // The blur flag rides in the key: flipping it mid-track is what makes
+        // the already-sent artwork re-push as nothing.
+        val key = "${song.videoId}|${state.durationMs}|$speed|" +
+            DesktopAppearanceSettings.blurCovers.value
         if (key == lastKey) return
         lastKey = key
         val position = state.positionMs
@@ -168,9 +171,13 @@ internal object DesktopDiscordRpc {
                     detailsUrl = watchUrl(song),
                     // Never null: an activity with no large image falls back to
                     // whatever icon the application id points at, which is not
-                    // ours to set.
+                    // ours to set. Blur mode sends none too — the cover's URL
+                    // outside the window would show what the window is hiding.
                     largeImage = RpcImage.ExternalImage(
-                        song.artworkAt(ART_PX)?.takeIf { it.startsWith("http") } ?: FALLBACK_ART_URL,
+                        song.artworkAt(ART_PX)
+                            ?.takeIf { it.startsWith("http") }
+                            ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
+                            ?: FALLBACK_ART_URL,
                     ),
                     smallImage = null,
                     largeText = song.albumName,
@@ -224,7 +231,14 @@ internal object DesktopDiscordRpc {
             put("end", endMs)
         }
         putJsonObject("assets") {
-            put("large_image", song.artworkAt(ART_PX)?.takeIf { it.startsWith("http") } ?: FALLBACK_ART_URL)
+            // Blur mode sends no artwork — see the largeImage note above.
+            put(
+                "large_image",
+                song.artworkAt(ART_PX)
+                    ?.takeIf { it.startsWith("http") }
+                    ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
+                    ?: FALLBACK_ART_URL,
+            )
             song.albumName?.let { put("large_text", it) }
         }
         val labels = buttonLabels(song)
