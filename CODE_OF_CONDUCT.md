@@ -16,7 +16,7 @@ The following behaviors are unacceptable within the project:
 
 ## Reporting
 If you experience or witness unacceptable behavior, report it privately to the project maintainer:
-- Email: `kushagrasinghx@gmail.com`
+- Email: `kartik2005221@proton.me`
 
 Reports will be handled privately and with appropriate discretion.
 
