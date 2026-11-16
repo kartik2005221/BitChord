@@ -32,7 +32,7 @@
 
 <div align="center">
 
-<img src="Banner.jpg" alt="BitChord desktop — the player, the lyrics, the blend" width="100%" />
+<img src="Banner.png" alt="BitChord desktop — the artist page, the frosted covers, the player" width="100%" />
 
 <h1><a id="features"></a>Features</h1>
 
