@@ -37,7 +37,7 @@ internal object DesktopUpdateChecker {
         repeat(3) { attempt ->
             val response = http.get("https://api.github.com/repos/$REPOSITORY/releases?per_page=100") {
                 header("Accept", "application/vnd.github+json")
-                header("User-Agent", "BitChord-Desktop-Revived-updater")
+                header("User-Agent", "bitchord-desktop-updater")
             }
             val status = response.status.value
             check(status !in setOf(403, 429) || response.headers["X-RateLimit-Remaining"] != "0") {

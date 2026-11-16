@@ -50,6 +50,7 @@ import com.music.bitchord.data.model.MoodGenre
 import com.music.bitchord.data.model.MoodGenreSection
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.UiState
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.MessageState
 import com.music.bitchord.ui.components.PAGE_GUTTER
 import com.music.bitchord.ui.components.PullToRefresh
@@ -304,7 +305,7 @@ private fun ModernMoodGenreCard(
                 .background(tone.placeholder),
         ) {
             item.thumbnailUrl?.let { artwork ->
-                AsyncImage(
+                CoverImage(
                     model = artwork,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,

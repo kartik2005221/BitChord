@@ -1,55 +1,15 @@
 # Maintainers
 
-This document lists the maintainers responsible for BitChord.
+This document lists the maintainers responsible for this BitChord fork.
 
 | Maintainer | GitHub | Responsibilities |
 |---|---|---|
-| Kushagra Singh | [@kushagrasinghx](https://github.com/kushagrasinghx) | Project creator, core architecture, release management, and PR reviews |
+| Kartik | [@kartik2005221](https://github.com/kartik2005221) | Fork maintenance, desktop development, release management |
+
+## About the original project
+
+BitChord was created by Kushagra Singh ([@kushagrasinghx](https://github.com/kushagrasinghx)), who built the original Android client and its core architecture. The desktop lineage was carried forward by [BitChord-Desktop-Revived](https://github.com/Bntagaaa/BitChord-Desktop-Revived) by [@Bntagaaa](https://github.com/Bntagaaa) before this fork. The upstream original lives at [kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord).
 
 ## Responsibilities
 
 Maintainers oversee project direction, repository maintenance, review and merging of contributions, and release management.
-
-## Contributors
-
-This list is automatically generated from GitHub repository contributor data.
-
-<!-- BEGIN CONTRIBUTORS -->
-- [@Bntagaaa](https://github.com/Bntagaaa)
-- [@kushagrasinghx](https://github.com/kushagrasinghx)
-- [@Galaxyyss](https://github.com/Galaxyyss)
-- [@NeoTurcios](https://github.com/NeoTurcios)
-- [@KabirSinghBhatia](https://github.com/KabirSinghBhatia)
-- [@MaverickRox](https://github.com/MaverickRox)
-- [@penetratorcwl](https://github.com/penetratorcwl)
-- [@itsmeadarsh2008](https://github.com/itsmeadarsh2008)
-- [@claude](https://github.com/claude)
-- [@hongducdev](https://github.com/hongducdev)
-- [@kmmiio99o](https://github.com/kmmiio99o)
-- [@byburak3525](https://github.com/byburak3525)
-- [@AbhiTheModder](https://github.com/AbhiTheModder)
-- [@tadikwa](https://github.com/tadikwa)
-- [@apricotbucket28](https://github.com/apricotbucket28)
-- [@nitinbhat972](https://github.com/nitinbhat972)
-- [@AngelCas04](https://github.com/AngelCas04)
-- [@rairulyle](https://github.com/rairulyle)
-- [@nxfu](https://github.com/nxfu)
-- [@CHEYCKIT](https://github.com/CHEYCKIT)
-- [@tmyt105](https://github.com/tmyt105)
-- [@hasanbkaylan](https://github.com/hasanbkaylan)
-- [@chaudharyjatin115](https://github.com/chaudharyjatin115)
-- [@Eful97](https://github.com/Eful97)
-- [@aryasarukkai](https://github.com/aryasarukkai)
-- [@AniXDex](https://github.com/AniXDex)
-- [@bazilbycom](https://github.com/bazilbycom)
-- [@BernoldM](https://github.com/BernoldM)
-- [@Elitenotavailable](https://github.com/Elitenotavailable)
-- [@InfantAjith96](https://github.com/InfantAjith96)
-- [@MaximeLeBesnerais](https://github.com/MaximeLeBesnerais)
-- [@Nishad-Amit](https://github.com/Nishad-Amit)
-- [@impin2rex](https://github.com/impin2rex)
-- [@SHUBH-snippet](https://github.com/SHUBH-snippet)
-- [@Sourabhnamdev9981](https://github.com/Sourabhnamdev9981)
-- [@santhoshg-io](https://github.com/santhoshg-io)
-- [@yxyydev](https://github.com/yxyydev)
-<!-- END CONTRIBUTORS -->

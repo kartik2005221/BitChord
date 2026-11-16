@@ -85,7 +85,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import coil3.compose.AsyncImage
 import com.music.bitchord.data.model.BrowseItem
 import com.music.bitchord.data.model.BrowseType
 import com.music.bitchord.data.model.ROW_ART_PX
@@ -101,6 +100,7 @@ import com.music.bitchord.ui.components.MessageState
 import com.music.bitchord.ui.components.PAGE_GUTTER
 import com.music.bitchord.ui.components.ArtworkHover
 import com.music.bitchord.ui.components.ArtworkHoverMode
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.RowMoreButton
 import com.music.bitchord.ui.components.ROW_DIVIDER_INSET
 import com.music.bitchord.ui.components.SearchField
@@ -613,9 +613,10 @@ private fun TopResultCard(
                 mode = ArtworkHoverMode.DARKEN_AND_PLAY,
                 hovered = cardHovered,
             ) {
-                AsyncImage(
+                CoverImage(
                     model = song.thumbnailUrl?.artworkAt(ROW_ART_PX),
                     contentDescription = null,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -853,9 +854,10 @@ private fun TypeaheadSongRow(
             mode = ArtworkHoverMode.DARKEN_AND_PLAY,
             hovered = rowHovered,
         ) {
-            AsyncImage(
+            CoverImage(
                 model = song.artworkAt(ROW_ART_PX),
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
 
             )
@@ -964,9 +966,10 @@ private fun RecentSearchEntityRow(
             mode = if (entity.entityType == EntityType.TRACK) ArtworkHoverMode.DARKEN_AND_PLAY else ArtworkHoverMode.DARKEN_ONLY,
             hovered = rowHovered,
         ) {
-            AsyncImage(
+            CoverImage(
                 model = entity.artworkUrl,
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
             )
             if (isCurrent && isPlaying) {
@@ -1030,9 +1033,10 @@ private fun BrowseRow(item: BrowseItem, onClick: () -> Unit, onLongPress: (() ->
             mode = ArtworkHoverMode.DARKEN_ONLY,
             hovered = rowHovered,
         ) {
-            AsyncImage(
+            CoverImage(
                 model = item.thumbnailUrl.artworkAt(ROW_ART_PX),
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
             )
         }

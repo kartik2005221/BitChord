@@ -108,6 +108,8 @@ internal object DesktopAppearanceSettings {
     private val _enableOldTopMusicPlayerStyle = flag(KEY_ENABLE_OLD_TOP_MUSIC_PLAYER_STYLE, false)
     // v1.8 Explore cards remain the default; the classic v1.7 sleeve can be opted into.
     private val _useOldExploreCards = flag(KEY_USE_OLD_EXPLORE_CARDS, false)
+    // The privacy mode: every sleeve drawn as an unidentifiable blur.
+    private val _blurCovers = flag(KEY_BLUR_COVERS, false)
 
     /** Freezes the main player's gradient instead of drifting. */
     val reduceAnimation: StateFlow<Boolean> = _reduceAnimation
@@ -142,6 +144,9 @@ internal object DesktopAppearanceSettings {
     /** Switches Explore category artwork between current and classic v1.7 cards. */
     val useOldExploreCards: StateFlow<Boolean> = _useOldExploreCards
 
+    /** Draws every cover as an unidentifiable blur — a privacy mode, never revealed. */
+    val blurCovers: StateFlow<Boolean> = _blurCovers
+
     /** Whether the lyrics pane carries its own log console. */
 
     fun setReduceAnimation(value: Boolean) = write(KEY_REDUCE_ANIMATION, value, _reduceAnimation)
@@ -166,6 +171,8 @@ internal object DesktopAppearanceSettings {
     fun setUseOldExploreCards(value: Boolean) =
         write(KEY_USE_OLD_EXPLORE_CARDS, value, _useOldExploreCards)
 
+    fun setBlurCovers(value: Boolean) = write(KEY_BLUR_COVERS, value, _blurCovers)
+
 
     private fun write(key: String, value: Boolean, into: MutableStateFlow<Boolean>) {
         DesktopPersistence().saveBoolean(key, value)
@@ -179,4 +186,5 @@ internal object DesktopAppearanceSettings {
     internal const val KEY_HIDE_VOLUME_BAR = "hide_volume_bar"
     internal const val KEY_ENABLE_OLD_TOP_MUSIC_PLAYER_STYLE = "enable_old_top_music_player_style"
     internal const val KEY_USE_OLD_EXPLORE_CARDS = "use_old_explore_cards"
+    internal const val KEY_BLUR_COVERS = "blur_covers"
 }

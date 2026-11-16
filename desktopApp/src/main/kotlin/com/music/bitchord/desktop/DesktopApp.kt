@@ -671,6 +671,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var statsRevision by remember { mutableStateOf(0L) }
     var replayPeriod by remember { mutableStateOf(DesktopReplayPeriod.ALL_TIME) }
     val replayHolder = remember { DesktopAccounts.active()?.name.orEmpty() }
+    // Artist facts (pictures, pages, genres) land on their own schedule; the
+    // Replay's summary rebuilds when they do, so a page left open fills in.
+    val factsRevision by DesktopArtistFacts.revision.collectAsState()
     var replaySummary by remember { mutableStateOf(DesktopReplaySummary()) }
     var statsCountedSongs by remember { mutableStateOf<Set<String>>(emptySet()) }
     var playlistTarget by remember { mutableStateOf<Song?>(null) }
@@ -2116,6 +2119,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     ?: SCROBBLE_THRESHOLD_MS
                 val reachedThreshold = !countedAsPlay && position >= threshold
                 DesktopListeningStats.record(snapshot.song, delta, reachedThreshold)
+                // The Replay's artist art, pages and genres accrue from here —
+                // the lead artist only, exactly what the charts rank by.
+                DesktopArtistFacts.noticed(DesktopListeningStats.primaryArtist(snapshot.song.artist))
                 if (reachedThreshold) {
                     countedAsPlay = true
                     statsCountedSongs = statsCountedSongs + songId
@@ -2125,7 +2131,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             previousPosition = position
         }
     }
-    LaunchedEffect(statsRevision, replayPeriod, activeAccountId) {
+    LaunchedEffect(statsRevision, replayPeriod, activeAccountId, factsRevision) {
         replaySummary = withContext(Dispatchers.IO) { DesktopListeningStats.summary(replayPeriod) }
     }
     DisposableEffect(playbackEngine) {
@@ -8108,6 +8114,16 @@ private fun DesktopSettingsScreen(
                             }
                         }
                     }
+                    val blurCovers by DesktopAppearanceSettings.blurCovers.collectAsState()
+                    SettingsToggle(
+                        DesktopStrings["blur_covers", "Blur album covers"],
+                        DesktopStrings[
+                            "blur_covers_subtitle",
+                            "Blurs artwork everywhere in the app — Home, Search, the player, Downloads — so nothing identifiable shows",
+                        ],
+                        blurCovers,
+                        DesktopAppearanceSettings::setBlurCovers,
+                    )
                     SettingsToggle(
                         DesktopStrings["full_screen_cover_art", "Full-screen cover art"],
                         DesktopStrings["full_screen_cover_art_subtitle", "Runs the cover to the edges of the player instead of a square sleeve"],
@@ -8179,6 +8195,19 @@ private fun DesktopSettingsScreen(
                         DesktopStrings["hide_volume_bar_subtitle", "Removes the volume slider from the main player"],
                         hideVolumeBar,
                         DesktopAppearanceSettings::setHideVolumeBar,
+                    )
+                    val replayGenres by DesktopScrobbleSettings.replayGenres.collectAsState()
+                    SettingsToggle(
+                        // The phone's own title for this row, already translated
+                        // wherever the desktop carries translations at all.
+                        DesktopStrings["work_out_genres", "Work out genres"],
+                        DesktopStrings[
+                            if (replayGenres) "replay_genres_enabled_subtitle" else "replay_genres_disabled_subtitle",
+                            if (replayGenres) "Asks Last.fm for an artist’s genres. Only the artist name is sent."
+                            else "The Replay genre chart stays hidden while this is off",
+                        ],
+                        replayGenres,
+                        DesktopScrobbleSettings::setReplayGenres,
                     )
                 }
             }
@@ -8388,11 +8417,11 @@ private fun DesktopSettingsFooter(onLicenses: () -> Unit) {
         DesktopAboutVersionTitle(version = version, color = DesktopForeground)
         Text(
             text = buildAnnotatedString {
-                withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx/BitChord", linkStyles)) {
+                withLink(LinkAnnotation.Url("https://github.com/kartik2005221/bitchord-desktop", linkStyles)) {
                     append("GitHub")
                 }
                 append("  ")
-                withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx", linkStyles)) {
+                withLink(LinkAnnotation.Url("https://github.com/kartik2005221", linkStyles)) {
                     append("Developer")
                 }
                 append("  ")

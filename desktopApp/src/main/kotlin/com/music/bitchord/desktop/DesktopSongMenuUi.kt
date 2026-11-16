@@ -44,12 +44,14 @@ import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbDownOffAlt
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -312,6 +314,16 @@ internal fun DesktopSongMenu(
             }
             DesktopMenuDivider()
         }
+        // A display preference rather than a song command, but it is
+        // exactly where someone staring at a cover they do not want to
+        // see will look for it. Reads the setting live and stays open,
+        // as the rating rows do.
+        val blurCovers by DesktopAppearanceSettings.blurCovers.collectAsState()
+        DesktopMenuRow(
+            icon = Icons.Rounded.VisibilityOff,
+            label = DesktopStrings["blur_covers", "Blur covers"],
+            selected = blurCovers,
+        ) { DesktopAppearanceSettings.setBlurCovers(!blurCovers) }
         run {
             DesktopMenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, DesktopStrings["add_to_playlist", "Add to playlist"], onClick = onAddToPlaylist)
         }
