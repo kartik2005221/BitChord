@@ -572,6 +572,7 @@ private fun MemberRow(member: PartyMember, isYou: Boolean, canKick: Boolean, onK
 @Composable
 private fun PartyAvatar(url: String?, size: Int, fallback: String = "") {
     if (url != null) {
+        // People, not music — the privacy mode has no quarrel with a face.
         DesktopArtwork(url, Modifier.size(size.dp).clip(CircleShape), px = size * 3, blur = false)
     } else {
         Box(

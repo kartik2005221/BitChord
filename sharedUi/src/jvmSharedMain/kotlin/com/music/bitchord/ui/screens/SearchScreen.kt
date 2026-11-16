@@ -100,6 +100,7 @@ import com.music.bitchord.ui.components.MessageState
 import com.music.bitchord.ui.components.PAGE_GUTTER
 import com.music.bitchord.ui.components.ArtworkHover
 import com.music.bitchord.ui.components.ArtworkHoverMode
+import com.music.bitchord.ui.components.CoverImage
 import com.music.bitchord.ui.components.RowMoreButton
 import com.music.bitchord.ui.components.ROW_DIVIDER_INSET
 import com.music.bitchord.ui.components.SearchField
