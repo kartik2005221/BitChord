@@ -30,6 +30,11 @@ internal object DesktopScrobbleSettings {
     private val _listenBrainzToken = text(KEY_LISTENBRAINZ_TOKEN)
     private val _listenBrainzPrimaryArtistOnly = flag(KEY_LISTENBRAINZ_PRIMARY_ARTIST, false)
 
+    // The Replay's genre chart asks Last.fm what kind of music an artist makes.
+    // On by default, as on Android — the request carries an artist's name and
+    // nothing else, no hint that anything was played.
+    private val _replayGenres = flag(KEY_REPLAY_GENRES, true)
+
     private val _minDuration = MutableStateFlow(persistence.int(KEY_MIN_DURATION, DEFAULT_MIN_DURATION))
     private val _delayPercent = MutableStateFlow(persistence.float(KEY_DELAY_PERCENT, DEFAULT_DELAY_PERCENT))
     private val _delaySeconds = MutableStateFlow(persistence.int(KEY_DELAY_SECONDS, DEFAULT_DELAY_SECONDS))
@@ -45,6 +50,8 @@ internal object DesktopScrobbleSettings {
     val listenBrainzToken: StateFlow<String> = _listenBrainzToken
     val listenBrainzPrimaryArtistOnly: StateFlow<Boolean> = _listenBrainzPrimaryArtistOnly
 
+    val replayGenres: StateFlow<Boolean> = _replayGenres
+
     val minDuration: StateFlow<Int> = _minDuration
     val delayPercent: StateFlow<Float> = _delayPercent
     val delaySeconds: StateFlow<Int> = _delaySeconds
@@ -58,6 +65,8 @@ internal object DesktopScrobbleSettings {
     fun setListenBrainzEnabled(value: Boolean) = write(_listenBrainzEnabled, KEY_LISTENBRAINZ_ENABLED, value)
     fun setListenBrainzPrimaryArtistOnly(value: Boolean) =
         write(_listenBrainzPrimaryArtistOnly, KEY_LISTENBRAINZ_PRIMARY_ARTIST, value)
+
+    fun setReplayGenres(value: Boolean) = write(_replayGenres, KEY_REPLAY_GENRES, value)
 
     fun setListenBrainzToken(value: String) {
         persistence.saveString(KEY_LISTENBRAINZ_TOKEN, value)
@@ -110,6 +119,7 @@ internal object DesktopScrobbleSettings {
     private const val KEY_LASTFM_SCROBBLE = "lastfm_scrobble_enabled"
     private const val KEY_LASTFM_NOW_PLAYING = "lastfm_now_playing"
     private const val KEY_LASTFM_PRIMARY_ARTIST = "lastfm_primary_artist_only"
+    private const val KEY_REPLAY_GENRES = "replay_genres"
     private const val KEY_LISTENBRAINZ_ENABLED = "listenbrainz_enabled"
     private const val KEY_LISTENBRAINZ_TOKEN = "listenbrainz_token"
     private const val KEY_LISTENBRAINZ_PRIMARY_ARTIST = "listenbrainz_primary_artist_only"
