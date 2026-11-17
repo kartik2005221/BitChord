@@ -6,10 +6,10 @@ import unittest
 from update import updated_pkgbuild, validated_release
 
 RECIPE = Path(__file__).with_name("PKGBUILD").read_text(encoding="utf-8")
-CURRENT_VERSION = re.search(r"(?m)^pkgver=([0-9]+[.][0-9]+[.][0-9]+)$", RECIPE).group(1)
+CURRENT_VERSION = re.search(r"(?m)^pkgver=([0-9]+(?:[.][0-9]+)+)$", RECIPE).group(1)
 CURRENT_HASH = re.search(r"(?m)^sha256sums=[(]'([0-9a-f]{64})'[)]$", RECIPE).group(1)
-MAJOR, MINOR, PATCH = map(int, CURRENT_VERSION.split("."))
-NEXT_VERSION = f"{MAJOR}.{MINOR}.{PATCH + 1}"
+SEGMENTS = CURRENT_VERSION.split(".")
+NEXT_VERSION = f"{SEGMENTS[0]}.{SEGMENTS[1]}.{int(SEGMENTS[2]) + 1}"
 NEW_HASH = "a" * 64 if CURRENT_HASH != "a" * 64 else "b" * 64
 
 
@@ -52,6 +52,19 @@ class AurUpdaterTests(unittest.TestCase):
         release = {"tag_name": f"v{NEXT_VERSION}", "draft": False, "prerelease": True, "assets": []}
         with self.assertRaisesRegex(ValueError, "published"):
             validated_release(release)
+
+    def test_four_segment_fork_releases_are_accepted(self):
+        version = f"{NEXT_VERSION}.1"
+        release = {
+            "tag_name": f"v{version}",
+            "draft": False,
+            "prerelease": False,
+            "assets": [{"name": f"BitChord-{version}-linux-amd64.deb", "digest": "sha256:" + NEW_HASH}],
+        }
+        self.assertEqual((version, NEW_HASH), validated_release(release))
+        changed = updated_pkgbuild(RECIPE, version, NEW_HASH)
+        self.assertIn(f"pkgver={version}", changed)
+        self.assertIn(f"sha256sums=('{NEW_HASH}')", changed)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,24 @@ class PrepareReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "MAJOR.MINOR.PATCH"):
             prepare_release.prepare("1.8.9;echo unsafe", Path("irrelevant.deb"))
 
+    def test_four_segment_release_versions_are_accepted(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            recipe = root / "PKGBUILD"
+            recipe.write_text(BASE_RECIPE, encoding="utf-8")
+            file = root / "BitChord-1.9.4.1-linux-amd64.deb"
+            file.write_bytes(b"test deb bytes with deterministic digest")
+            expected_sha = hashlib.sha256(file.read_bytes()).hexdigest()
+
+            with patch.object(prepare_release, "PKGBUILD", recipe):
+                cached, sha = prepare_release.prepare("1.9.4.1", file)
+
+            self.assertEqual(expected_sha, sha)
+            self.assertEqual(root / "bitchord-desktop-revived-bin-1.9.4.1.deb", cached)
+            updated = recipe.read_text(encoding="utf-8")
+            self.assertIn("pkgver=1.9.4.1", updated)
+            self.assertIn(f"sha256sums=('{expected_sha}')", updated)
+
 
 if __name__ == "__main__":
     unittest.main()

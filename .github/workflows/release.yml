@@ -133,7 +133,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${INPUT_VERSION:-${REF_NAME#v}}"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || exit 1
           test -f "dist/BitChord-$version-linux-amd64.deb"
           python packaging/aur/prepare_release.py \
             --version "$version" --deb "dist/BitChord-$version-linux-amd64.deb"
@@ -289,8 +289,8 @@ jobs:
           else
             version="$INPUT_VERSION"
           fi
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
-            echo "::error::Release version must be MAJOR.MINOR.PATCH with an optional prerelease suffix"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "::error::Release version must be MAJOR.MINOR.PATCH with an optional fourth segment and optional prerelease suffix"
             exit 1
           fi
           echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"

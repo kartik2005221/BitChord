@@ -20,9 +20,18 @@ class DesktopUpdateReliabilityTest {
     @Test fun semanticIdentifiersKeepTheirOrderingAndRejectInvalidVersions() {
         assertTrue(DesktopUpdateChecker.isNewer("1.8.5-x2", "1.8.5-x10"))
         assertTrue(DesktopUpdateChecker.isNewer("1.8.5-beta10", "1.8.5-beta2"))
-        for (invalid in listOf("01.8.5", "1.08.5", "1.8.05", "1.8.5.1", "1.8.5-beta.01", "1.8.5-a..b", "1.8.5+"))
+        for (invalid in listOf("01.8.5", "1.08.5", "1.8.05", "1.8.5-beta.01", "1.8.5-a..b", "1.8.5+"))
             assertNull(DesktopUpdateVersion.parse(invalid), invalid)
         assertEquals(0, DesktopUpdateVersion.parse("1.8.5+abc")!!.compareTo(DesktopUpdateVersion.parse("1.8.5+xyz")!!))
+    }
+    @Test fun fourSegmentForkReleasesOrderAboveTheirThreeSegmentBase() {
+        val four = DesktopUpdateVersion.parse("1.9.4.1")
+        assertNotNull(four, "the fork's own patch-of-a-patch tags must parse")
+        assertNotNull(DesktopUpdateVersion.parse("v1.9.4.1"), "the released tag carries a v prefix")
+        assertTrue(DesktopUpdateChecker.isNewer("1.9.4.1", "1.9.4"))
+        assertFalse(DesktopUpdateChecker.isNewer("1.9.4", "1.9.4.1"))
+        assertEquals(0, DesktopUpdateVersion.parse("1.9.4.0")!!.compareTo(DesktopUpdateVersion.parse("1.9.4")!!))
+        assertNull(DesktopUpdateVersion.parse("1.9.4.01"), "a fourth segment still may not carry a leading zero")
     }
     @Test fun assetsAndManifestsMustBelongToSelectedRelease() = runBlocking {
         val dir = Files.createTempDirectory("updater-origin")
