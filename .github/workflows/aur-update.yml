@@ -17,14 +17,17 @@ jobs:
     container: archlinux:base-devel
 
     steps:
+      # git must exist before checkout: without it actions/checkout only
+      # downloads a source archive, leaving no .git repository behind, and
+      # the pull request step at the end cannot commit or push.
+      - name: Install updater prerequisites
+        run: pacman -Syu --noconfirm --needed python git
+
       # Always update the active package recipe on main, not the release tag's
       # historical snapshot. Never publish to the AUR without review.
       - uses: actions/checkout@v4
         with:
           ref: main
-
-      - name: Install updater prerequisites
-        run: pacman -Syu --noconfirm --needed python git
 
       - name: Read release metadata and verify SHA-256
         id: update
