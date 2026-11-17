@@ -14,10 +14,10 @@ import re
 import urllib.parse
 import urllib.request
 
-REPO = "Bntagaaa/BitChord-Desktop-Revived"
+REPO = "kartik2005221/bitchord-desktop"
 PKGBUILD = Path(__file__).resolve().with_name("PKGBUILD")
 SHA_LINE = r"(?m)^sha256sums=\('([0-9a-f]{64})'\)$"
-VERSION_LINE = r"(?m)^pkgver=(\d+\.\d+\.\d+)$"
+VERSION_LINE = r"(?m)^pkgver=(\d+\.\d+\.\d+(?:\.\d+)?)$"
 
 
 def release_metadata(tag: str | None) -> dict:
@@ -38,7 +38,7 @@ def validated_release(release: dict) -> tuple[str, str]:
     if release.get("draft") or release.get("prerelease"):
         raise ValueError("Only published, non-prerelease versions may update the AUR recipe")
     tag = release.get("tag_name", "")
-    match = re.fullmatch(r"v(\d+\.\d+\.\d+)", tag)
+    match = re.fullmatch(r"v(\d+\.\d+\.\d+(?:\.\d+)?)", tag)
     if not match:
         raise ValueError(f"Unsupported release tag: {tag!r}")
     version = match.group(1)

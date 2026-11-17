@@ -1,6 +1,6 @@
 package com.music.bitchord.desktop
 
-/** SemVer ordering, also accepting historic beta1 tags and omitted patch numbers. */
+/** SemVer ordering, also accepting historic beta1 tags, omitted patch numbers, and the fork's four-segment releases. */
 internal data class DesktopUpdateVersion(val numbers: List<Int>, val pre: List<String>) : Comparable<DesktopUpdateVersion> {
     override fun compareTo(other: DesktopUpdateVersion): Int {
         for (i in 0 until maxOf(numbers.size, other.numbers.size)) {
@@ -18,7 +18,7 @@ internal data class DesktopUpdateVersion(val numbers: List<Int>, val pre: List<S
     }
     companion object {
         fun parse(raw: String): DesktopUpdateVersion? {
-            val match = Regex("^v?((?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$").matchEntire(raw) ?: return null
+            val match = Regex("^v?((?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?(?:\\.(?:0|[1-9][0-9]*))?)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$").matchEntire(raw) ?: return null
             val nums = match.groupValues[1].split('.').map { it.toIntOrNull() ?: return null }
             val label = match.groupValues[2]
             // Only the project's historic alpha1/beta1/rc1 convention is normalized.
