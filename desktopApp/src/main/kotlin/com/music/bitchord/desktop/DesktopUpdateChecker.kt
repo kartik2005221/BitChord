@@ -88,7 +88,7 @@ internal object DesktopUpdateChecker {
             ?: releases.maxByOrNull { DesktopUpdateVersion.parse(it.version)!! }
     }
 
-    const val REPOSITORY = "kartik2005221/bitchord-desktop"
+    const val REPOSITORY = "kartik2005221/BitChord"
     internal fun officialReleaseUrl(url: String): Boolean = runCatching {
         val uri = java.net.URI(url)
         uri.scheme == "https" && uri.host == "github.com" && uri.port == -1 && uri.userInfo == null &&

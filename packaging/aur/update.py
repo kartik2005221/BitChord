@@ -14,7 +14,7 @@ import re
 import urllib.parse
 import urllib.request
 
-REPO = "kartik2005221/bitchord-desktop"
+REPO = "kartik2005221/BitChord"
 PKGBUILD = Path(__file__).resolve().with_name("PKGBUILD")
 SHA_LINE = r"(?m)^sha256sums=\('([0-9a-f]{64})'\)$"
 VERSION_LINE = r"(?m)^pkgver=(\d+\.\d+\.\d+(?:\.\d+)?)$"

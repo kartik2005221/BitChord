@@ -8848,7 +8848,7 @@ private fun DesktopSettingsFooter(onLicenses: () -> Unit) {
         DesktopAboutVersionTitle(version = version, color = DesktopForeground)
         Text(
             text = buildAnnotatedString {
-                withLink(LinkAnnotation.Url("https://github.com/kartik2005221/bitchord-desktop", linkStyles)) {
+                withLink(LinkAnnotation.Url("https://github.com/kartik2005221/BitChord", linkStyles)) {
                     append("GitHub")
                 }
                 append("  ")

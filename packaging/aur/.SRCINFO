@@ -2,7 +2,7 @@ pkgbase = bitchord-desktop-revived-bin
 	pkgdesc = Community-maintained BitChord desktop music player
 	pkgver = 1.9.4
 	pkgrel = 1
-	url = https://github.com/kartik2005221/bitchord-desktop
+	url = https://github.com/kartik2005221/BitChord
 	arch = x86_64
 	license = GPL-3.0-only
 	makedepends = libarchive
@@ -27,7 +27,7 @@ pkgbase = bitchord-desktop-revived-bin
 	options = !strip
 	options = !debug
 	noextract = bitchord-desktop-revived-bin-1.9.4.deb
-	source = bitchord-desktop-revived-bin-1.9.4.deb::https://github.com/kartik2005221/bitchord-desktop/releases/download/v1.9.4/BitChord-1.9.4-linux-amd64.deb
+	source = bitchord-desktop-revived-bin-1.9.4.deb::https://github.com/kartik2005221/BitChord/releases/download/v1.9.4/BitChord-1.9.4-linux-amd64.deb
 	sha256sums = 22084174fb0eb31dd3c96a2918d5d8f5f4bf8d2e6ec0891bae59379e2ded534f
 
 pkgname = bitchord-desktop-revived-bin
