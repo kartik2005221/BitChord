@@ -32,7 +32,7 @@
 
 <div align="center">
 
-<img src="Banner.png" alt="BitChord desktop — the artist page, the frosted covers, the player" width="100%" />
+<img src="docs/images/readme-desktop-home.png" alt="BitChord desktop Home with black canvas, navy sidebar and player, and orange accents" width="100%" />
 
 <h1><a id="features"></a>Features</h1>
 
