@@ -15,13 +15,13 @@ import com.music.bitchord.ui.player.PlayerPlatform
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
-import kotlin.test.Test
 import org.junit.Assume.assumeTrue
+import org.junit.Test
 
 /** Opt-in release evidence: the actual application, not a palette or component fixture. */
 @OptIn(ExperimentalTestApi::class)
 class DesktopReleaseScreenshotTest {
-    @Test
+    @Test(timeout = 60_000)
     fun captureSettings() {
         assumeTrue(System.getenv("BITCHORD_RELEASE_SCREENSHOT") == "1")
         // Require the caller to opt into an isolated process, not just a different preferences node:
@@ -32,6 +32,8 @@ class DesktopReleaseScreenshotTest {
         AppUi.install(DesktopAppUiHost)
         DesktopTheme.selectMode(DesktopThemeMode.DARK)
         DesktopTheme.updatePitchBlack(true)
+        // This test API disposes the composition on exit, triggering the app's DisposableEffect
+        // cleanup (including playback release). CI also bounds the whole Gradle process.
         runDesktopComposeUiTest(width = 1440, height = 900) {
             setContent {
                 BitChordDesktopApp(DesktopWelcomeOnboarding.Launch(false, "screenshot"), DesktopPipHost())
