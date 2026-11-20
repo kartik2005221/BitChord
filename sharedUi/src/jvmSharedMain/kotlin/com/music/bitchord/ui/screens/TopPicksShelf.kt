@@ -1,5 +1,8 @@
 package com.music.bitchord.ui.screens
 
+import com.music.bitchord.ui.player.artworkPrivacyEnabled
+import com.music.bitchord.ui.player.artworkPrivacyBlurDp
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -431,7 +434,8 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
     var covered by remember { mutableFloatStateOf(0f) }
     // The privacy mode turns the whole card into the blur its foot always was:
     // backdrop and cover alike, the caption's own scrim doing the rest.
-    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
+    val blurredCovers = artworkPrivacyEnabled()
+    val privacyRadius = artworkPrivacyBlurDp()
     Box(modifier.background(Color.Black)) {
         AsyncImage(
             model = rememberBlurredBackdrop(url.croppedAt(BACKDROP_SOURCE_PX).whenArtworkReady()),
@@ -441,7 +445,7 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .fillMaxHeight(0.42f)
-                .thenIf(blurredCovers) { blur(28.dp) },
+                .thenIf(blurredCovers) { blur(privacyRadius) },
         )
         // Toned down toward the caption, as Apple does, so the white text reads
         // on any cover.
@@ -465,7 +469,7 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
                 // The privacy mode turns the square into the blur its foot
                 // always was; the caption's scrim and the black box behind do
                 // the rest, so this cover takes the blur and nothing else.
-                .thenIf(blurredCovers) { blur(28.dp) }
+                .thenIf(blurredCovers) { blur(privacyRadius) }
                 // Faded out over its last stretch, so the cover runs into the
                 // blur under it instead of ending on a hard line. Offscreen so
                 // the mask cuts the cover alone; the cover never animates, so
@@ -525,7 +529,7 @@ private fun CardMotion(
     if (source == null || !LocalArtworkImages.current) return
     // The privacy mode keeps the card on its blurred still; the clip's whole
     // purpose is to replace that still, so under the mode it never mounts.
-    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
+    val blurredCovers = artworkPrivacyEnabled()
     if (blurredCovers) return
     // Looked up whether or not the clip may play yet, so the answer is to hand
     // when it may, and the row knows which cards have one to give the slot to.

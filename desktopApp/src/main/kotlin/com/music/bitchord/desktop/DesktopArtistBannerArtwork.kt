@@ -2,6 +2,7 @@ package com.music.bitchord.desktop
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -19,6 +20,7 @@ internal fun DesktopAppleArtistHero(
     fallbackPx: Int,
     modifier: androidx.compose.ui.Modifier,
 ) {
+    val privacy by DesktopAppearanceSettings.artworkPrivacy(ArtworkPrivacyScope.BROWSING).collectAsState()
     val appleBitmap by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
         initialValue = null,
         key1 = appleUrl,
@@ -28,7 +30,7 @@ internal fun DesktopAppleArtistHero(
         }
     }
     DesktopArtwork(fallbackUrl, modifier, px = fallbackPx)
-    if (appleBitmap != null) {
+    if (!privacy && appleBitmap != null) {
         androidx.compose.foundation.Image(
             painter = androidx.compose.ui.graphics.painter.BitmapPainter(appleBitmap!!),
             contentDescription = null,
@@ -45,6 +47,7 @@ internal fun DesktopAppleArtistLogo(
     modifier: androidx.compose.ui.Modifier,
     fallback: @Composable () -> Unit,
 ) {
+    val privacy by DesktopAppearanceSettings.artworkPrivacy(ArtworkPrivacyScope.BROWSING).collectAsState()
     val bitmap by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
         initialValue = null,
         key1 = url,
@@ -53,7 +56,7 @@ internal fun DesktopAppleArtistLogo(
             DesktopArtworkCache.load(url)
         }
     }
-    if (bitmap != null) {
+    if (!privacy && bitmap != null) {
         androidx.compose.foundation.Image(
             painter = androidx.compose.ui.graphics.painter.BitmapPainter(bitmap!!),
             contentDescription = contentDescription,

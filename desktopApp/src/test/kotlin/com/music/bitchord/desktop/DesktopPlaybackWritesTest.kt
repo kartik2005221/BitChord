@@ -7,6 +7,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DesktopPlaybackWritesTest {
+    @Test fun `replaced keys run in their latest submission order`() {
+        val writer = DesktopPlaybackWriter()
+        val entered = CountDownLatch(1); val unblock = CountDownLatch(1)
+        val saved = mutableListOf<String>()
+        writer.submit("block") { entered.countDown(); unblock.await() }
+        assertTrue(entered.await(3, TimeUnit.SECONDS))
+        try {
+            writer.submit("queue") { saved += "old queue" }
+            writer.submit("position") { saved += "position" }
+            writer.submit("queue") { saved += "new queue" }
+        } finally { unblock.countDown() }
+        writer.flush()
+        assertEquals(listOf("position", "new queue"), saved)
+    }
     @Test fun `blocked old write cannot hold submit or overwrite the newest snapshot`() {
         val writer = DesktopPlaybackWriter()
         val entered = CountDownLatch(1); val unblock = CountDownLatch(1)

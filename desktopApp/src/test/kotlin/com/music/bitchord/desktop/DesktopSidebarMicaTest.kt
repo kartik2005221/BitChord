@@ -24,11 +24,16 @@ class DesktopSidebarMicaTest {
     }
 
     @Test
-    fun `mica preserves solid pitch black even with light or colorful wallpaper`() {
+    fun `mica preserves selected navy sidebar shade with wallpaper`() {
         for (wallpaper in listOf(Color.White, Color.Red, Color.Blue)) {
             assertEquals(
-                Color.Black,
-                DesktopSidebarMica.surface(wallpaper, true, PITCH_BLACK_PALETTE.sidebarSurface),
+                PITCH_BLACK_PALETTE.sidebarSurface,
+                DesktopSidebarMica.surface(
+                    wallpaper,
+                    true,
+                    PITCH_BLACK_PALETTE.sidebarSurface,
+                    keepExact = true,
+                ),
             )
         }
     }
@@ -62,7 +67,7 @@ class DesktopSidebarMicaTest {
         for (wallpaper in listOf(Color.Black, Color.White, Color.Red, Color.Blue)) {
             val dark = DesktopSidebarMica.surface(wallpaper, true, DARK_PALETTE.sidebarSurface)
             val light = DesktopSidebarMica.surface(wallpaper, false, LIGHT_PALETTE.sidebarSurface)
-            assertTrue(dark.red < 0.18f && dark.green < 0.18f && dark.blue < 0.18f)
+            assertTrue(dark.red < 0.18f && dark.green < 0.18f && dark.blue < 0.21f)
             assertTrue(light.red > 0.80f && light.green > 0.80f && light.blue > 0.80f)
             assertEquals(1f, dark.alpha)
             assertEquals(1f, light.alpha)

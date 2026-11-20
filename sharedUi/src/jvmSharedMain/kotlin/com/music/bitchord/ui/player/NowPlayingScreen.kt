@@ -813,7 +813,8 @@ fun NowPlayingScreen(
     // The privacy mode blurs the sleeve and its full-bleed expansion in one
     // stroke — they are the same image — and the empty-state note behind it
     // finishes the look the rows use.
-    val blurredCovers by PlayerSettings.blurCovers.collectAsStateWithLifecycle()
+    val blurredCovers by PlayerSettings.playerArtworkPrivacy.collectAsStateWithLifecycle()
+    val privacyRadius = artworkPrivacyBlurDp()
 
     // Animated cover art: the looping video some labels publish alongside a
     // release, laid over the sleeve. A miss is the normal answer — see
@@ -1780,7 +1781,7 @@ fun NowPlayingScreen(
         animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
         label = "playerTint",
     )
-    CompositionLocalProvider(LocalPlayerTint provides playerTint) {
+    CompositionLocalProvider(LocalPlayerTint provides playerTint, LocalArtworkScope provides SharedArtworkScope.PLAYER) {
         val videoLyricsPane: @Composable () -> Unit = {
             LandscapeLyricsPane(
                 hasLyrics = lyricsTranslation.displayedLyrics.isNotEmpty(),
@@ -3249,7 +3250,7 @@ fun NowPlayingScreen(
                                 // [PlayerArtwork.loaded] still flips the moment it does.
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .thenIf(blurredCovers) { blur(28.dp).scale(1.25f) }
+                                    .thenIf(blurredCovers) { blur(privacyRadius).scale(1.25f) }
                                     .drawWithContent { if (art.loaded || !canvasRendered) drawContent() },
                             )
 

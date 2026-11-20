@@ -48,6 +48,26 @@ jobs:
           BITCHORD_PIP_NATIVE_TEST: '1'
         run: xvfb-run -a ./gradlew :shared:jvmTest :sharedUi:jvmTest :desktopApp:test "-Pbitchord.version=test-visua"
 
+      # Separate opt-in run: a fresh home and preference root prevent account or user data
+      # from appearing in the real app screenshot. Failure does not gate normal CI.
+      - name: Capture fresh release screenshot
+        continue-on-error: true
+        run: |
+          export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          export BITCHORD_SCREENSHOT_HOME="$(mktemp -d)"
+          export HOME="$BITCHORD_SCREENSHOT_HOME"
+          export XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache" XDG_DATA_HOME="$HOME/data"
+          export JAVA_TOOL_OPTIONS="-Duser.home=$HOME -Djava.util.prefs.userRoot=$HOME/prefs"
+          export BITCHORD_RELEASE_SCREENSHOT=1
+          xvfb-run -a -s '-screen 0 1600x1000x24' ./gradlew --no-daemon :desktopApp:test --tests '*DesktopReleaseScreenshotTest' -Pbitchord.version=1.12.0
+
+      - name: Upload fresh release screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-v1.12-desktop-screenshot
+          path: desktopApp/build/reports/release-screenshot/v1.12.0-desktop.png
+          if-no-files-found: warn
+
       - name: Build the distributable
         run: ./gradlew :desktopApp:createDistributable "-Pbitchord.version=test-visua"
 

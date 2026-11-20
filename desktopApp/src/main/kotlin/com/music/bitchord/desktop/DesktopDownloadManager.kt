@@ -17,6 +17,8 @@ import java.nio.file.StandardOpenOption
 object DesktopDownloadManager {
     private val activeJobs = ConcurrentHashMap<String, Job>()
 
+    internal fun directory(): Path = Path.of(System.getProperty("user.home"), "Music", "BitChord")
+
     /** Keeps an interrupted transfer in place and resumes it when the user tries again. */
     suspend fun download(
         song: Song,
@@ -28,7 +30,7 @@ object DesktopDownloadManager {
         return try {
             require(song.localPath == null) { "This track is already local" }
             val stream = DesktopMusicSources.resolve(song, quality, forDownload = true).getOrThrow()
-            val directory = Path.of(System.getProperty("user.home"), "Music", "BitChord")
+            val directory = directory()
             Files.createDirectories(directory)
             val safeName = buildString {
                 append(song.artist)

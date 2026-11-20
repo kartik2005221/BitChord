@@ -14,4 +14,12 @@ object DesktopExternalLinks {
         check(Desktop.isDesktopSupported()) { "This desktop environment cannot open links" }
         Desktop.getDesktop().browse(URI(uri))
     }
+
+    fun openFolder(path: java.nio.file.Path): Result<Unit> = runCatching {
+        java.nio.file.Files.createDirectories(path)
+        check(Desktop.isDesktopSupported()) { "This desktop environment cannot open folders" }
+        val desktop = Desktop.getDesktop()
+        check(desktop.isSupported(Desktop.Action.OPEN)) { "Opening folders is not supported" }
+        desktop.open(path.toFile())
+    }
 }

@@ -1,5 +1,8 @@
 package com.music.bitchord.ui.components
 
+import com.music.bitchord.ui.player.artworkPrivacyEnabled
+import com.music.bitchord.ui.player.artworkPrivacyBlurDp
+
 import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.Image
 import androidx.compose.animation.core.spring
@@ -84,6 +87,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -287,7 +291,8 @@ fun CoverImage(
     contentScale: ContentScale = ContentScale.Crop,
     colorFilter: ColorFilter? = null,
 ) {
-    val blurred by PlayerSettings.blurCovers.collectAsState()
+    val blurred = artworkPrivacyEnabled()
+    val blurRadius = artworkPrivacyBlurDp()
     if (!blurred) {
         AsyncImage(
             model = model,
@@ -306,7 +311,7 @@ fun CoverImage(
             contentDescription = contentDescription,
             contentScale = contentScale,
             colorFilter = colorFilter,
-            modifier = Modifier.matchParentSize().blur(28.dp).scale(1.25f),
+            modifier = Modifier.matchParentSize().blur(blurRadius).scale(1.25f),
         )
         Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.16f)))
         Icon(
@@ -1070,3 +1075,6 @@ fun PillTextField(
 
 /** Public list accent retained for Android and desktop callers. */
 val PlayingAccent = Color(0xFFFB4A62)
+
+/** Host override for playing indicators; Android retains its original accent by default. */
+val LocalPlayingAccent = staticCompositionLocalOf { PlayingAccent }

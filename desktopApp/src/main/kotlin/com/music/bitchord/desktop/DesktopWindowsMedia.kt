@@ -1,6 +1,12 @@
 package com.music.bitchord.desktop
 
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 /**
  * Windows' System Media Transport Controls — the volume flyout's media card,
@@ -18,8 +24,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal object DesktopWindowsMedia {
 
     private val started = AtomicBoolean(false)
+    private val publicationGate = DesktopPublicationGate()
+    private val lifecycleLock = Any()
 
     private val shutdownHookAdded = AtomicBoolean(false)
+    private var privacyScope: CoroutineScope? = null
+    @Volatile private var lastState: DesktopPlaybackState? = null
 
     @Volatile
     private var controller: Controller? = null
@@ -40,15 +50,18 @@ internal object DesktopWindowsMedia {
             .isSuccess
     }
 
-    fun start(controller: Controller) {
+    fun start(controller: Controller): Unit = synchronized(lifecycleLock) { publicationGate.run {
         // Held whether or not the library is there, so what a button does is
         // decided in one place and can be checked without Windows.
         this.controller = controller
-        if (!available || !started.compareAndSet(false, true)) return
+        if (!available || !started.compareAndSet(false, true)) return@run
         if (!nativeStart()) {
             started.set(false)
             DesktopTrackLog.log("Windows media controls could not be created")
-            return
+            return@run
+        }
+        privacyScope = CoroutineScope(Dispatchers.IO + Job()).also { scope ->
+            scope.launch { DesktopAppearanceSettings.externalArtworkPrivacy.collect { republish() } }
         }
         // Quitting from the tray is exitProcess, which never reaches the window's onDispose. The
         // library's pump thread was then still running when the DLL unloaded, and destroying a
@@ -56,24 +69,42 @@ internal object DesktopWindowsMedia {
         if (shutdownHookAdded.compareAndSet(false, true)) {
             Runtime.getRuntime().addShutdownHook(Thread(::stop, "bitchord-smtc-stop"))
         }
-    }
+    } }
 
-    fun stop() {
-        if (!started.compareAndSet(true, false)) return
-        controller = null
-        runCatching { nativeStop() }
+    fun stop() = synchronized(lifecycleLock) {
+        val wasStarted = publicationGate.run {
+            if (!started.compareAndSet(true, false)) return@run false
+            controller = null
+            privacyScope?.cancel()
+            privacyScope = null
+            lastState = null
+            true
+        }
+        // A native callback may invoke player code. Never join its pump while holding the gate.
+        if (wasStarted) runCatching { nativeStop() }
+        Unit
     }
 
     /** Publishes the current track. Called on every change the shell would show. */
     fun publish(state: DesktopPlaybackState) {
+        publicationGate.run {
+            lastState = state
+            publishLocked()
+        }
+    }
+
+    private fun republish() = publicationGate.run { publishLocked() }
+
+    private fun publishLocked() {
         if (!started.get()) return
+        val state = lastState ?: return
         val song = state.song
         runCatching {
             nativeUpdate(
                 song?.title.orEmpty(),
                 song?.artist.orEmpty(),
                 song?.albumName.orEmpty(),
-                song?.thumbnailUrl.orEmpty(),
+                externalArtworkUrl(song?.thumbnailUrl, DesktopAppearanceSettings.externalArtworkPrivacy.value).orEmpty(),
                 state.isPlaying,
                 state.positionMs,
                 state.durationMs,

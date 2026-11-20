@@ -11,6 +11,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -48,7 +51,8 @@ internal object DesktopDiscordRpc {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var rpc: KizzyRPC? = null
     private var ipc: DesktopDiscordIpc? = null
-    private var lastKey: String? = null
+    @Volatile private var lastKey: String? = null
+    private val publishMutex = Mutex()
 
     private val _localClient = MutableStateFlow(false)
 
@@ -79,6 +83,16 @@ internal object DesktopDiscordRpc {
 
     private val _token = MutableStateFlow(DesktopPersistence().string(KEY_TOKEN, ""))
     val token: StateFlow<String> = _token
+
+    @Volatile private var lastPlayback: Pair<DesktopPlaybackState, Float>? = null
+
+    init {
+        scope.launch {
+            DesktopAppearanceSettings.externalArtworkPrivacy.collect {
+                lastPlayback?.let { (state, speed) -> onPlaybackStateChanged(state, speed) }
+            }
+        }
+    }
 
     /** Checks a token by asking Discord who it belongs to, then keeps it. */
     suspend fun signIn(candidate: String): Result<UserInfo> =
@@ -116,6 +130,7 @@ internal object DesktopDiscordRpc {
      * ignored that would finish its countdown mid-song.
      */
     fun onPlaybackStateChanged(state: DesktopPlaybackState, speed: Float) {
+        lastPlayback = state to speed
         if (!_enabled.value) return
         if (_token.value.isBlank() && ipc == null) return
         val song = state.song
@@ -126,12 +141,15 @@ internal object DesktopDiscordRpc {
         // The blur flag rides in the key: flipping it mid-track is what makes
         // the already-sent artwork re-push as nothing.
         val key = "${song.videoId}|${state.durationMs}|$speed|" +
-            DesktopAppearanceSettings.blurCovers.value
+            DesktopAppearanceSettings.externalArtworkPrivacy.value
         if (key == lastKey) return
         lastKey = key
         val position = state.positionMs
         val duration = state.durationMs.takeIf { it > 0 } ?: 0L
         scope.launch {
+            publishMutex.withLock {
+            // An older queued update must never overwrite a newer privacy decision.
+            if (lastKey != key) return@withLock
             val now = System.currentTimeMillis()
             val elapsed = (position / speed).toLong()
             val remaining = ((duration - position).coerceAtLeast(0L) / speed).toLong()
@@ -176,7 +194,7 @@ internal object DesktopDiscordRpc {
                     largeImage = RpcImage.ExternalImage(
                         song.artworkAt(ART_PX)
                             ?.takeIf { it.startsWith("http") }
-                            ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
+                            ?.takeIf { !DesktopAppearanceSettings.externalArtworkPrivacy.value }
                             ?: FALLBACK_ART_URL,
                     ),
                     smallImage = null,
@@ -199,6 +217,7 @@ internal object DesktopDiscordRpc {
                     applicationId = APPLICATION_ID,
                     status = DesktopDiscordSettings.status.value,
                 )
+            }
             }
         }
     }
@@ -236,7 +255,7 @@ internal object DesktopDiscordRpc {
                 "large_image",
                 song.artworkAt(ART_PX)
                     ?.takeIf { it.startsWith("http") }
-                    ?.takeIf { !DesktopAppearanceSettings.blurCovers.value }
+                    ?.takeIf { !DesktopAppearanceSettings.externalArtworkPrivacy.value }
                     ?: FALLBACK_ART_URL,
             )
             song.albumName?.let { put("large_text", it) }

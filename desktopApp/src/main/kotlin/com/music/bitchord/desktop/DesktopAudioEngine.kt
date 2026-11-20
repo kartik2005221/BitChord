@@ -338,7 +338,18 @@ class DesktopPlaybackEngine internal constructor(
         }
     }
 
+    private var startupRestoreAvailable = true
+
+    // Protected by this engine's monitor; only the matching selection may consume it.
+    private data class PendingSelection(val generation: Long, val playing: Boolean, val positionMs: Long)
+    private var pendingSelection: PendingSelection? = null
+
+    /** Deterministic install-boundary gate for local engine tests; never set by the app. */
+    internal var beforeSelectionInstall: (() -> Unit)? = null
+
+    @Synchronized
     fun load(song: Song, playWhenReady: Boolean = true, startAtMs: Long = 0L, requestedAtNanos: Long = System.nanoTime()) {
+        startupRestoreAvailable = false
         retryingSongId = null
         loadInternal(
             song,
@@ -349,6 +360,41 @@ class DesktopPlaybackEngine internal constructor(
         )
     }
 
+    /** Startup only: an active or previously selected deck cannot be replaced by metadata alone. */
+    @Synchronized
+    fun restorePaused(song: Song, positionMs: Long) {
+        check(running.get() && startupRestoreAvailable) { "restorePaused is only valid before playback or prefetch" }
+        startupRestoreAvailable = false
+        loadGeneration.incrementAndGet()
+        nextGeneration.incrementAndGet()
+        resolveJob?.cancel()
+        nextResolveJob?.cancel()
+        upgradeJob?.cancel()
+        recoveryJob?.cancel()
+        paused = true
+        val duration = song.durationText?.let(::parseDurationMs) ?: 0L
+        val position = positionMs.coerceIn(0L, Long.MAX_VALUE / 1_000L).let { if (duration > 0) it.coerceAtMost(duration) else it }
+        _state.value = DesktopPlaybackState(
+            song = song,
+            isPlaying = false,
+            isLoading = false,
+            positionMs = position,
+            positionSampledAtNanos = System.nanoTime(),
+            durationMs = duration,
+            volume = volume,
+        )
+    }
+
+    private fun parseDurationMs(text: String): Long? {
+        val tokens = text.split(':')
+        if (tokens.size !in 2..3) return null
+        val parts = tokens.map { it.toLongOrNull() ?: return null }
+        if (parts.any { it < 0 } || parts.drop(1).any { it >= 60 }) return null
+        return runCatching {
+            Math.multiplyExact(parts.fold(0L) { total, part -> Math.addExact(Math.multiplyExact(total, 60), part) }, 1_000L)
+        }.getOrNull()
+    }
+
     /**
      * Sources that handed over a URL they could not actually serve, by track.
      *
@@ -357,6 +403,7 @@ class DesktopPlaybackEngine internal constructor(
      */
     private val refusedSources = ConcurrentHashMap<String, String>()
 
+    @Synchronized
     private fun loadInternal(
         song: Song,
         playWhenReady: Boolean,
@@ -368,6 +415,7 @@ class DesktopPlaybackEngine internal constructor(
     ) {
         trace?.mark("engine")
         val requestGeneration = loadGeneration.incrementAndGet()
+        pendingSelection = PendingSelection(requestGeneration, playWhenReady, startAtMs)
         nextGeneration.incrementAndGet()
         nextSong = null
         nextLocalStream = null
@@ -379,7 +427,7 @@ class DesktopPlaybackEngine internal constructor(
         recoveryJob = null
         searchingBetterFor = null
         incomingSearchingFor = null
-        _state.value = DesktopPlaybackState(song = song, volume = volume, isLoading = true)
+        _state.value = DesktopPlaybackState(song = song, volume = volume, isLoading = true, positionMs = startAtMs)
         val resolve = { resolveJob = scope.launch {
             if (requestGeneration != loadGeneration.get() || !running.get()) return@launch
             // Only when the file is really there: a download record can outlive the file it names,
@@ -411,7 +459,7 @@ class DesktopPlaybackEngine internal constructor(
                         },
                         onFailure = { failure ->
                             if (requestGeneration == loadGeneration.get()) {
-                                retryAfterFailure(song, playWhenReady, live.stream, failure)
+                                retryAfterFailure(song, playWhenReady, live.stream, failure, requestGeneration, startAtMs)
                             } else {
                                 live.pendingSubstitute?.cancel()
                             }
@@ -421,11 +469,7 @@ class DesktopPlaybackEngine internal constructor(
                 onFailure = { failure ->
                     if (requestGeneration == loadGeneration.get()) {
                         val reported = priorFailure ?: failure
-                        _state.value = DesktopPlaybackState(
-                            song = song,
-                            volume = volume,
-                            error = reported.message ?: "Playback failed",
-                        )
+                        failSelection(song, requestGeneration, startAtMs, reported.message ?: "Playback failed")
                     }
                 },
             )
@@ -516,18 +560,21 @@ class DesktopPlaybackEngine internal constructor(
     /**
      * A source that cannot actually be decoded is struck off and the track asked for again, once.
      */
-    private fun retryAfterFailure(song: Song, playWhenReady: Boolean, stream: DesktopStream, failure: Throwable) {
+    @Synchronized
+    private fun retryAfterFailure(
+        song: Song, playWhenReady: Boolean, stream: DesktopStream, failure: Throwable,
+        generation: Long, startAtMs: Long,
+    ) {
+        if (generation != loadGeneration.get()) return
+        val intent = pendingSelection?.takeIf { it.generation == generation }
         if (retryingSongId != song.videoId) {
             retryingSongId = song.videoId
             DesktopTrackLog.log("could not decode '${song.title}' from ${DesktopMusicSources.sourceNameFor(stream)}: ${failure.message}")
             stream.sourceId?.let { refusedSources[song.videoId] = it }
-            loadInternal(song, playWhenReady, excludedSourceId = stream.sourceId, priorFailure = failure)
+            loadInternal(song, intent?.playing ?: playWhenReady, excludedSourceId = stream.sourceId,
+                startAtMs = intent?.positionMs ?: startAtMs, priorFailure = failure)
         } else {
-            _state.value = DesktopPlaybackState(
-                song = song,
-                volume = volume,
-                error = "Could not play this track: ${failure.message}",
-            )
+            failSelection(song, generation, startAtMs, "Could not play this track: ${failure.message}")
         }
     }
 
@@ -643,27 +690,49 @@ class DesktopPlaybackEngine internal constructor(
         }
     }
 
+    @Synchronized
     fun togglePlayPause() {
-        if (paused) play() else pause()
+        if (pendingSelection?.playing ?: !paused) pause() else play()
     }
 
+    @Synchronized
     fun play() {
+        startupRestoreAvailable = false
+        val snapshot = _state.value
+        if (snapshot.song != null && current == null && !snapshot.isLoading) {
+            load(snapshot.song, playWhenReady = true, startAtMs = snapshot.positionMs)
+            return
+        }
+        pendingSelection = pendingSelection?.copy(playing = true)
         paused = false
         _state.update { it.copy(isPlaying = true) }
     }
 
+    @Synchronized
     fun pause() {
+        pendingSelection = pendingSelection?.copy(playing = false)
         paused = true
         _state.update { it.copy(isPlaying = false) }
     }
 
+    @Synchronized
     fun seekTo(positionMs: Long) {
+        startupRestoreAvailable = false
         // TEMP seek diagnostics: who asked, so a seek undone by a second one shows up.
         DesktopTrackLog.log(
             "seek requested: ${positionMs}ms (at ${_state.value.positionMs}ms) from " +
                 Throwable().stackTrace.drop(1).take(6).joinToString(" < ") { "${it.fileName}:${it.lineNumber}" },
         )
-        commands += Command.SeekTo(positionMs.coerceAtLeast(0))
+        val duration = _state.value.durationMs
+        val position = positionMs.coerceIn(0L, Long.MAX_VALUE / 1_000L).let { if (duration > 0) it.coerceAtMost(duration) else it }
+        if (pendingSelection != null) {
+            pendingSelection = pendingSelection?.copy(positionMs = position)
+            _state.update { it.copy(positionMs = position, positionSampledAtNanos = System.nanoTime(), seeks = it.seeks + 1) }
+        } else if (_state.value.song != null && current == null && !_state.value.isLoading) {
+            _state.update { it.copy(positionMs = position, positionSampledAtNanos = System.nanoTime()) }
+        } else {
+            commands += Command.SeekTo(position)
+        }
     }
 
     fun setPlaybackSpeed(speed: Float) {
@@ -712,7 +781,9 @@ class DesktopPlaybackEngine internal constructor(
     }
 
     /** Resolves and prepares the next queue item without starting it. */
+    @Synchronized
     fun prepareNext(song: Song?) {
+        if (song != null) startupRestoreAvailable = false
         // Past the midpoint of a blend the player already shows the incoming song, and the app
         // answers that by asking for the track *after* it — which would clear the upcoming track
         // this blend is still playing. Held until the blend ends, and then carried out.
@@ -1754,10 +1825,10 @@ class DesktopPlaybackEngine internal constructor(
                     endBlend()
                     if (prepared != null) {
                         prepared.trace = command.trace
-                        startTrack(prepared, command.playWhenReady)
+                        startSelectedTrack(prepared, command.playWhenReady, command.generation)
                     } else command.resolve()
                 }
-                is Command.Start -> startTrack(command.track, command.playWhenReady)
+                is Command.Start -> startSelectedTrack(command.track, command.playWhenReady, command.generation)
                 is Command.ReplaceCurrent -> {
                     if (command.generation == loadGeneration.get()) replaceCurrent(command.track, command.playWhenReady)
                     else command.track.decoder.close()
@@ -1907,6 +1978,39 @@ class DesktopPlaybackEngine internal constructor(
         outgoingFilter.open()
         incomingFilter.open()
         startTrack(track, playWhenReady)
+    }
+
+    @Synchronized
+    private fun failSelection(song: Song, generation: Long, startAtMs: Long, error: String) {
+        if (generation != loadGeneration.get()) return
+        val intent = pendingSelection?.takeIf { it.generation == generation }
+        pendingSelection = null
+        paused = true
+        _state.value = DesktopPlaybackState(song = song, volume = volume,
+            positionMs = intent?.positionMs ?: startAtMs, error = error)
+    }
+
+    private fun startSelectedTrack(track: Track, playWhenReady: Boolean, generation: Long) {
+        beforeSelectionInstall?.invoke()
+        synchronized(this) {
+            if (generation != loadGeneration.get()) {
+                track.decoder.close()
+                return
+            }
+            val intent = pendingSelection?.takeIf { it.generation == generation }
+            val positionUs = (intent?.positionMs ?: track.startUs / 1_000L) * 1_000L
+            if (positionUs != track.startUs) {
+                // The decoder may already be open (or Start queued). Seek before any output.
+                if (!track.decoder.seek(positionUs)) {
+                    track.decoder.close()
+                    failSelection(track.song, generation, positionUs / 1_000L, "Could not seek selected track")
+                    return
+                }
+                track.startUs = positionUs
+            }
+            startTrack(track, intent?.playing ?: playWhenReady)
+            pendingSelection = null
+        }
     }
 
     private fun startTrack(track: Track, playWhenReady: Boolean) {

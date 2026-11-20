@@ -13,6 +13,8 @@ internal class DesktopPlaybackWriter(private val onFailure: (Throwable) -> Unit 
     }
 
     fun submit(key: String, write: () -> Unit) = synchronized(lock) {
+        // Replacement is a new event and must run after other pending keys.
+        pending.remove(key)
         pending[key] = write
         if (!scheduled) {
             scheduled = true

@@ -1,6 +1,9 @@
 package com.music.bitchord.ui.player
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntSize
@@ -181,7 +184,10 @@ internal fun MusicVideoSurface(
     modifier: Modifier = Modifier,
     fit: Boolean = true,
     onRenderedChanged: (Boolean) -> Unit = {},
-) = PlayerPlatform.host.MusicVideo(videoId, fit, onRenderedChanged, modifier)
+) {
+    val privateArtwork by PlayerSettings.hideVideoForArtworkPrivacy.collectAsState()
+    if (!privateArtwork) PlayerPlatform.host.MusicVideo(videoId, fit, onRenderedChanged, modifier)
+}
 
 private val NoWatch = MutableStateFlow(WatchOutputUi())
 
@@ -225,8 +231,14 @@ interface PlayerSettingsSource {
     val animatedCanvas: StateFlow<Boolean>
     val audioQualityCellular: StateFlow<AudioQuality>
     val audioQualityWifi: StateFlow<AudioQuality>
-    /** Every cover drawn as an unidentifiable blur — the privacy mode, never revealed. */
+    /** The legacy master; scoped implementations can override the effective flows below. */
     val blurCovers: StateFlow<Boolean>
+    /** Defaults retain Android's existing single privacy toggle and strength. */
+    val browsingArtworkPrivacy: StateFlow<Boolean> get() = blurCovers
+    val playerArtworkPrivacy: StateFlow<Boolean> get() = blurCovers
+    val artworkPrivacyStrength: StateFlow<Int> get() = DefaultArtworkPrivacyStrength
+    /** Opt-in because Android historically did not suppress music-video playback here. */
+    val hideVideoForArtworkPrivacy: StateFlow<Boolean> get() = DefaultHideVideoForArtworkPrivacy
     val canvasOverCellular: StateFlow<Boolean>
     val fullBleedArtwork: StateFlow<Boolean>
     val hideSongStatus: StateFlow<Boolean>
@@ -266,6 +278,25 @@ interface PlayerSettingsSource {
 
     fun setLastPlayerScreen(value: LastPlayerScreen)
     fun setLyricsOffsetMs(value: Int)
+}
+
+private val DefaultArtworkPrivacyStrength = MutableStateFlow(2)
+private val DefaultHideVideoForArtworkPrivacy = MutableStateFlow(false)
+enum class SharedArtworkScope { BROWSING, PLAYER }
+val LocalArtworkScope = staticCompositionLocalOf { SharedArtworkScope.BROWSING }
+
+@Composable
+fun artworkPrivacyEnabled(): Boolean {
+    val source = if (LocalArtworkScope.current == SharedArtworkScope.PLAYER)
+        PlayerSettings.playerArtworkPrivacy else PlayerSettings.browsingArtworkPrivacy
+    val enabled by source.collectAsState()
+    return enabled
+}
+
+@Composable
+fun artworkPrivacyBlurDp(): androidx.compose.ui.unit.Dp {
+    val strength by PlayerSettings.artworkPrivacyStrength.collectAsState()
+    return when (strength.coerceIn(1, 3)) { 1 -> 18; 3 -> 40; else -> 28 }.let { androidx.compose.ui.unit.Dp(it.toFloat()) }
 }
 
 /** The player's name for the installed host's settings, read where AppSettings used to be. */

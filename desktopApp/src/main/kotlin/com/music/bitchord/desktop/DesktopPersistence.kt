@@ -11,8 +11,17 @@ import java.util.UUID
 import java.util.prefs.Preferences
 
 /** Small OS-backed store for desktop state; no Android Context is required. */
-class DesktopPersistence {
-    internal val preferences = Preferences.userRoot().node("com.music.bitchord.desktop")
+class DesktopPersistence internal constructor(internal val preferences: Preferences) {
+    constructor() : this(Preferences.userRoot().node("com.music.bitchord.desktop"))
+    private val cache = synchronized(caches) { caches.getOrPut(preferences) { PlaybackCache() } }
+    private val playbackSnapshotLock get() = cache
+    private var latestQueue: Pair<List<Song>, Int?>?
+        get() = cache.queue
+        set(value) { cache.queue = value }
+    private var latestHistory: List<Song>?
+        get() = cache.history
+        set(value) { cache.history = value }
+    private fun playbackKey(key: String) = "${preferences.isUserNode}:${preferences.absolutePath()}:$key"
     private val sourceJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -71,27 +80,62 @@ class DesktopPersistence {
         val snapshot = songs.take(MAX_HISTORY)
         synchronized(playbackSnapshotLock) {
             latestHistory = snapshot
-            DesktopPlaybackWrites.submit(KEY_HISTORY) {
+            DesktopPlaybackWrites.submit(playbackKey(KEY_HISTORY)) {
                 DesktopPreferenceChunks.write(preferences, KEY_HISTORY, snapshot.map(::encodeSong).joinToString("\n"), flush = false)
                 preferences.flush()
             }
         }
     }
 
-    fun queue(): List<Song> = latestQueue?.first ?: readSongs(KEY_QUEUE)
+    fun queue(): List<Song> = latestQueue?.first ?: readSongs(KEY_QUEUE).take(MAX_QUEUE)
 
     fun saveQueue(songs: List<Song>, index: Int? = null) {
-        val snapshot = songs.take(MAX_QUEUE)
+        val safeIndex = index?.coerceIn(0, songs.lastIndex.coerceAtLeast(0))
+        // Keep the selected row even when a long playlist's cursor is beyond the persisted cap.
+        val start = if (safeIndex == null) 0 else minOf(
+            (safeIndex - MAX_QUEUE_HISTORY).coerceAtLeast(0),
+            (songs.size - MAX_QUEUE).coerceAtLeast(0),
+        )
+        val snapshot = if (safeIndex == null) songs.take(MAX_QUEUE) else
+            songs.subList(start, (start + MAX_QUEUE).coerceAtMost(songs.size)).toList()
+        val storedIndex = safeIndex?.minus(start)
         synchronized(playbackSnapshotLock) {
-            latestQueue = snapshot to index
-            DesktopPlaybackWrites.submit(KEY_QUEUE) {
+            latestQueue = snapshot to storedIndex
+            cache.queueSourceStart = start
+            DesktopPlaybackWrites.submit(playbackKey(KEY_QUEUE)) {
                 // Queue and cursor belong to one ordered snapshot; serialize only on the writer.
                 DesktopPreferenceChunks.write(preferences, KEY_QUEUE, snapshot.map(::encodeSong).joinToString("\n"), flush = false)
-                if (index != null) DesktopPreferenceChunks.write(preferences, "queue_index", index.toString(), flush = false)
+                if (storedIndex != null) DesktopPreferenceChunks.write(preferences, "queue_index", storedIndex.toString(), flush = false)
                 preferences.flush()
             }
         }
     }
+
+    /** Cheap playhead checkpoint. Queue and cursor are updated together in the same serial lane. */
+    fun saveResumePosition(songId: String, positionMs: Long, index: Int) {
+        synchronized(playbackSnapshotLock) {
+            val queue = latestQueue
+            val translatedIndex = index.toLong() - cache.queueSourceStart
+            val candidate = translatedIndex.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt() ?: -1
+            val safeIndex = if (queue != null && queue.first.getOrNull(candidate)?.videoId == songId) candidate else
+                queue?.first?.indexOfFirst { it.videoId == songId }?.takeIf { it >= 0 } ?: index.coerceAtLeast(0)
+            DesktopPlaybackWrites.submit(playbackKey(KEY_RESUME_POSITION)) {
+                if (queue != null && queue.first.getOrNull(safeIndex)?.videoId == songId) {
+                    DesktopPreferenceChunks.write(preferences, "queue_index", safeIndex.toString(), flush = false)
+                }
+                DesktopPreferenceChunks.write(preferences, KEY_RESUME_ID, songId, flush = false)
+                DesktopPreferenceChunks.write(preferences, KEY_RESUME_POSITION, positionMs.coerceAtLeast(0).toString(), flush = false)
+                preferences.flush()
+            }
+        }
+    }
+
+    fun resumePosition(): Long = string(KEY_RESUME_POSITION, "0").toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    fun resumeSongId(): String = string(KEY_RESUME_ID)
+
+    /** Whether the personal queue/playhead is reinstated on the next launch. */
+    fun restoreLastSession(): Boolean = boolean(KEY_RESTORE_LAST_SESSION, true)
+    fun saveRestoreLastSession(enabled: Boolean) = saveBoolean(KEY_RESTORE_LAST_SESSION, enabled)
 
     /** Tracks pinned to YouTube's own upload — see [DesktopOriginalVersion]. */
     internal fun originalVersionIds(): Set<String> = readLines(KEY_ORIGINAL_VERSIONS).toSet()
@@ -315,9 +359,12 @@ class DesktopPersistence {
         runCatching { String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8) }.getOrDefault("")
 
     private companion object {
-        private val playbackSnapshotLock = Any()
-        @Volatile private var latestQueue: Pair<List<Song>, Int?>? = null
-        @Volatile private var latestHistory: List<Song>? = null
+        private class PlaybackCache {
+            @Volatile var queue: Pair<List<Song>, Int?>? = null
+            @Volatile var history: List<Song>? = null
+            var queueSourceStart: Int = 0
+        }
+        private val caches = java.util.WeakHashMap<Preferences, PlaybackCache>()
         const val KEY_LIKED_IDS = "liked_ids"
         const val KEY_DISLIKED_IDS = "disliked_ids"
         const val KEY_HISTORY = "history"
@@ -332,6 +379,10 @@ class DesktopPersistence {
         const val KEY_SOURCE_CONFIGS_PROTECTED = "source_configs_dpapi_v1"
         const val MAX_HISTORY = 100
         const val MAX_QUEUE = 200
+        const val MAX_QUEUE_HISTORY = 25
+        const val KEY_RESUME_POSITION = "resume_position_ms"
+        const val KEY_RESUME_ID = "resume_song_id"
+        const val KEY_RESTORE_LAST_SESSION = "restore_last_session"
         const val DELIMITER = "|"
         const val PLAYLIST_DELIMITER = "#"
         const val SONG_DELIMITER = ";"
