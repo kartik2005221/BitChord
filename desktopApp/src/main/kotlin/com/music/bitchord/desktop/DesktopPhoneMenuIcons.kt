@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 /**
  * Desktop-native vector equivalents of the BitChord Android/iOS context menu symbols.
  * Uses Compose geometry rather than the Android-only SF Symbols package.
- * The existing shared BitChordIcons.Star / StarFilled are used directly for Like.
+ * Material thumbs-up icons are used directly for Like.
  */
 internal object DesktopPhoneMenuIcons {
     private val ink = SolidColor(Color.Black)

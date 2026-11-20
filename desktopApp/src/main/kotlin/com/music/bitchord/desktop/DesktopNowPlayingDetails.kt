@@ -28,8 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -213,7 +215,7 @@ internal fun DesktopNowPlayingDetailsPanel(
                     if (showLike) {
                         DesktopToolbarButton(onClick = onToggleLike, size = 32.dp) {
                             Icon(
-                                imageVector = if (liked) BitChordIcons.StarFilled else BitChordIcons.Star,
+                                imageVector = if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                                 contentDescription = if (liked) "Remove from liked" else "Add to liked",
                                 tint = if (liked) DesktopAccent else Color.White,
                                 modifier = Modifier.size(19.dp),
@@ -263,7 +265,7 @@ internal fun DesktopNowPlayingDetailsPanel(
                 if (showLike) {
                     DesktopToolbarButton(onClick = onToggleLike, size = 34.dp) {
                         Icon(
-                            imageVector = if (liked) BitChordIcons.StarFilled else BitChordIcons.Star,
+                            imageVector = if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                             contentDescription = if (liked) "Remove from liked" else "Add to liked",
                             tint = if (liked) DesktopAccent else secondary,
                             modifier = Modifier.size(19.dp),

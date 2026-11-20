@@ -1768,9 +1768,9 @@ class PlaybackService : MediaLibraryService() {
     private fun notificationButtons(): List<CommandButton> {
         val favorite = CommandButton.Builder(
             if (LikeState.overrides.value[player?.currentMediaItem?.mediaId] == LikeStatus.LIKE) {
-                CommandButton.ICON_HEART_FILLED
+                CommandButton.ICON_THUMB_UP_FILLED
             } else {
-                CommandButton.ICON_HEART_UNFILLED
+                CommandButton.ICON_THUMB_UP_UNFILLED
             },
         )
             .setSessionCommand(favoriteCommand)
@@ -5236,7 +5236,7 @@ class PlaybackService : MediaLibraryService() {
         // LikeState only knows ratings this process has seen: a fresh service
         // started from the widget or a restart has none until something seeds
         // it. Unknown is not "not liked", so keep what was last published for
-        // this same track rather than emptying a heart that was right.
+        // this same track rather than clearing a like that was right.
         val liked = LikeState.overrides.value[song.videoId]?.let { it == LikeStatus.LIKE }
             ?: MediaWidgetSnapshot.load(this).takeIf { it.mediaId == song.videoId }?.isLiked
             ?: false
