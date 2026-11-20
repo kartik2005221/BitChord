@@ -68,6 +68,9 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -299,7 +302,7 @@ internal fun DesktopSongMenu(
             DesktopMenuDivider()
         }
 
-        // Mobile's three horizontal actions, using the native BitChord star glyphs.
+        // Mobile's three horizontal song actions.
         // Ratings stay open so a change can be reverted in the same menu.
         if (!isOffline) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -762,7 +765,8 @@ internal fun DesktopMoreButton(onClick: () -> Unit, modifier: Modifier = Modifie
             .clip(RoundedCornerShape(17.dp))
             .background(hoverColor)
             .hoverable(interaction)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "More options" },
         contentAlignment = Alignment.Center,
     ) {
         // Three dots drawn rather than taken from the icon set.
