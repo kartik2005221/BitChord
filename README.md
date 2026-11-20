@@ -32,7 +32,7 @@
 
 <div align="center">
 
-<img src="docs/images/readme-desktop-home.png" alt="BitChord desktop Home with black canvas, navy sidebar and player, and orange accents" width="100%" />
+<img src="docs/images/v1.12.0-artist-page.png" alt="BitChord desktop artist page featuring A. R. Rahman" width="100%" />
 
 <h1><a id="features"></a>Features</h1>
 
