@@ -185,4 +185,6 @@ Approved controls:
 6. The user subsequently authorized **v1.12.0 draft preparation**: after green
    checks and merge, tag the merged release commit, run the release pipeline,
    attach the new notes and all six platform binaries plus checksums, verify
-   `draft=true`, and stop without publishing. Use a fresh actual-app screenshot.
+   `draft=true`, and stop without publishing. The user will provide screenshots
+   later; automated release-screenshot capture is removed entirely and images
+   must not delay the draft. Do not reuse a previous release's image.
