@@ -11,9 +11,9 @@
 
 <br/>
 
-[![Latest release](https://img.shields.io/github/v/release/kartik2005221/bitchord-desktop?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/bitchord-desktop/releases)
-[![License](https://img.shields.io/github/license/kartik2005221/bitchord-desktop?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/bitchord-desktop/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/kartik2005221/bitchord-desktop/total?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/bitchord-desktop/releases)
+[![Latest release](https://img.shields.io/github/v/release/kartik2005221/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/BitChord/releases)
+[![License](https://img.shields.io/github/license/kartik2005221/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/BitChord/blob/master/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/kartik2005221/BitChord/total?style=for-the-badge&labelColor=0d1117)](https://github.com/kartik2005221/BitChord/releases)
 
 <br/>
 
@@ -85,10 +85,10 @@
 
 <h1><a id="download"></a>Download</h1>
 
-<a href="https://github.com/kartik2005221/bitchord-desktop/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-windows.svg" alt="Download for Windows" height="48"/></a>
-<a href="https://github.com/kartik2005221/bitchord-desktop/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-linux.svg" alt="Download for Linux" height="48"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-windows.svg" alt="Download for Windows" height="48"/></a>
+<a href="https://github.com/kartik2005221/BitChord/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/tribgames/mixdog@main/docs/assets/download-linux.svg" alt="Download for Linux" height="48"/></a>
 
-Grab the latest installer — **msi/setup/portable** for Windows, **deb/rpm/AppImage** for Linux — from the [Releases](https://github.com/kartik2005221/bitchord-desktop/releases) page.
+Grab the latest installer — **msi/setup/portable** for Windows, **deb/rpm/AppImage** for Linux — from the [Releases](https://github.com/kartik2005221/BitChord/releases) page.
 
 <a href="https://github.com/kushagrasinghx/BitChord/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/android/cozy.svg" alt="Download for Android" height="55"/></a>
 
@@ -126,7 +126,7 @@ We welcome contributions to BitChord! Please review our [Contributing Guide](CON
 
 ### Thanks to all contributors ❤
 
-See everyone who built BitChord in the [contributors graph](https://github.com/kartik2005221/bitchord-desktop/graphs/contributors).
+See everyone who built BitChord in the [contributors graph](https://github.com/kartik2005221/BitChord/graphs/contributors).
 
 </div>
 
