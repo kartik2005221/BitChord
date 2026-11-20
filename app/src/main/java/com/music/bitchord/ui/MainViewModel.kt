@@ -626,7 +626,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      *
      * Written to the screen first and rolled back if YouTube refuses. A rating
      * is a one-tap, low-stakes action taken while a song is playing; waiting
-     * on a round trip before the heart fills reads as the tap not having
+     * on a round trip before the like icon fills reads as the tap not having
      * registered, and people tap again.
      */
     fun setLike(videoId: String, status: LikeStatus) {
@@ -640,7 +640,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     // Liked Music is now out of date either way.
                     libraryStale = true
                     if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
-                    // Clearing the heart means forgetting the song, not
+                    // Clearing the like means forgetting the song, not
                     // demoting it — see [forgetFromLibrary].
                     val unliked = previous == LikeStatus.LIKE &&
                         status == LikeStatus.INDIFFERENT
@@ -660,11 +660,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Liking and saving are two independent flags on YouTube's side, and
      * clearing only the first leaves the song saved — still feeding the
      * Library tab's Artists shelf, still in the library feeds, with nowhere
-     * left in this app to reach it and finish the job. Clearing the heart
+     * left in this app to reach it and finish the job. Clearing the like
      * reads as "forget this song", so it clears both.
      *
      * The token is fetched here rather than taken from [songMenu] because the
-     * heart in the player never opens a menu, so there is often nothing
+     * Like button in the player never opens a menu, so there is often nothing
      * cached to take. One extra request, on an action nobody performs in bulk.
      * A song that was never saved has no removal token and this is a no-op.
      */
@@ -709,7 +709,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The heart: liked becomes neutral, anything else becomes liked. */
+    /** A liked song becomes neutral. Any other rating becomes liked. */
     fun toggleLike(videoId: String) = setLike(
         videoId,
         if (likeStatusOf(videoId) == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE,

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BugReport
@@ -35,8 +36,6 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Person
@@ -45,6 +44,7 @@ import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbDownOffAlt
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
@@ -264,7 +264,7 @@ fun SongActionsSheet(
 
         if (signedIn && !isOffline) {
             ActionRow(
-                icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                icon = if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                 label = if (liked) stringResource(R.string.remove_from_liked) else stringResource(R.string.like),
                 tint = if (liked) palette.accent else null,
                 accent = palette.accent,
@@ -777,7 +777,7 @@ private fun sleepTimerCountdown(): String? {
  * two sheets read as the same control rather than as two lists that happen to
  * look alike.
  *
- * [tint] is for rows whose icon carries state — a filled heart on a liked
+ * [tint] is for rows whose icon carries state — a filled thumb on a liked
  * track — and is otherwise the ordinary foreground. [accent] colours the
  * trailing [value], and defaults to the app's own red: a sheet tinted from
  * artwork passes the artwork's accent instead, so the row belongs to the sheet

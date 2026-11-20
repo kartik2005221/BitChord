@@ -34,7 +34,7 @@ internal data class MediaWidgetSnapshot(
     val isPlaying: Boolean,
     val hasPrevious: Boolean,
     val hasNext: Boolean,
-    /** Whether the track is liked. Drawn by the 4×1 widget's heart. */
+    /** Whether the track is liked. Drawn by the 4×1 widget's thumb. */
     val isLiked: Boolean = false,
     /** Whether shuffle is on. Drawn by the 4×1 widget's Shuffle. */
     val shuffleEnabled: Boolean = false,

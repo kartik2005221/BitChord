@@ -436,42 +436,8 @@ object BitChordIcons {
     }
 
     /**
-     * The player's like control, in two weights.
-     *
-     * Filled rather than merely tinted when set: the player draws every glyph
-     * white on artwork, where a colour change alone is the one signal the
-     * backdrop can swallow. A shape change survives any album cover.
-     */
-    val Heart: ImageVector by lazy { heart("bc_heart", filled = false) }
-
-    val HeartFilled: ImageVector by lazy { heart("bc_heart_filled", filled = true) }
-
-    private fun heart(name: String, filled: Boolean): ImageVector =
-        ImageVector.Builder(
-            name = name,
-            defaultWidth = 24.dp, defaultHeight = 24.dp,
-            viewportWidth = 24f, viewportHeight = 24f,
-        ).apply {
-            path(
-                stroke = stroke,
-                strokeLineWidth = STROKE,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-                fill = if (filled) stroke else null,
-            ) {
-                // Two lobes meeting at the top notch, falling to a single point.
-                moveTo(12f, 20f)
-                curveTo(12f, 20f, 3.2f, 14.6f, 3.2f, 8.9f)
-                arcToRelative(4.5f, 4.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 8.8f, -1.5f)
-                arcToRelative(4.5f, 4.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 8.8f, 1.5f)
-                curveTo(20.8f, 14.6f, 12f, 20f, 12f, 20f)
-                close()
-            }
-        }.build()
-
-    /**
      * Favorite, the way Apple Music draws it: a five-point star with softened tips.
-     * Filled when set so the liked state remains visible over any artwork.
+     * Filled when set so the favorite state remains visible over any artwork.
      */
     val Star: ImageVector by lazy { star("bc_star", filled = false) }
 
