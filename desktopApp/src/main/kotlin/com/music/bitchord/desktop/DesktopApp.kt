@@ -126,6 +126,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -161,6 +162,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
@@ -9722,7 +9724,7 @@ private fun DesktopCollectionSongRow(
             onToggleLike?.let { onLike ->
                 IconButton(onClick = { onLike(song) }, modifier = Modifier.size(34.dp)) {
                     Icon(
-                        if (liked) BitChordIcons.HeartFilled else BitChordIcons.Heart,
+                        if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                         "Favorite",
                         tint = if (liked) DesktopAccent else DesktopSecondary,
                         modifier = Modifier.size(18.dp),
@@ -10148,7 +10150,7 @@ private fun DesktopSongRow(
             }
         }
         if (onToggleLike != null) {
-            IconButton(onClick = { onToggleLike(song) }) { Icon(if (liked) BitChordIcons.HeartFilled else BitChordIcons.Heart, "Favorite", tint = if (liked) DesktopAccent else DesktopSecondary) }
+            IconButton(onClick = { onToggleLike(song) }) { Icon(if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp, "Favorite", tint = if (liked) DesktopAccent else DesktopSecondary) }
         }
         if (onDownload != null) {
             if (downloadInProgress) {
