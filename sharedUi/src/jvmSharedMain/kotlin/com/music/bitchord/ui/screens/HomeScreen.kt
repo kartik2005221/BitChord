@@ -197,6 +197,11 @@ fun HomeScreen(
     contentPadding: PaddingValues,
     /** The page's heading, or null for none — the desktop's pages carry no heading. */
     title: String?,
+    /**
+     * Controls drawn at the trailing edge of the heading — the desktop's refresh
+     * button. Null leaves the heading as it is everywhere else.
+     */
+    titleActions: (@Composable () -> Unit)? = null,
     signedIn: Boolean = true,
     onSignIn: (() -> Unit)? = null,
     /**
@@ -273,7 +278,7 @@ fun HomeScreen(
             },
         ) {
             if (title != null) {
-                item { HomeTitle(title) }
+                item { HomeTitle(title, actions = titleActions) }
             }
             if (!signedIn && onSignIn != null) {
                 item {
@@ -656,7 +661,7 @@ fun CompactTrackRow(
  * system font scale.
  */
 @Composable
-private fun HomeTitle(title: String, modifier: Modifier = Modifier) {
+private fun HomeTitle(title: String, modifier: Modifier = Modifier, actions: (@Composable () -> Unit)? = null) {
     val compactHeadings = LocalDesktopCompactHeadings.current
     val style = if (compactHeadings) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayLarge
     val logoHeight = with(LocalDensity.current) { (style.fontSize * LOGO_TO_FONT).toDp() }
@@ -672,12 +677,16 @@ private fun HomeTitle(title: String, modifier: Modifier = Modifier) {
                     .aspectRatio(LOGO_ASPECT),
             )
         }
-        Text(
-            text = title,
-            style = style,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                style = style,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            // Drawn after the wordmark so a refresh never pushes the heading apart.
+            actions?.invoke()
+        }
     }
 }
 

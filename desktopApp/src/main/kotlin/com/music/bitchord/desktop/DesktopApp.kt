@@ -599,6 +599,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var showMoodGrid by remember { mutableStateOf(false) }
     var stationJob by remember { mutableStateOf<Job?>(null) }
     var homeState by remember { mutableStateOf<UiState<List<HomeShelf>>>(UiState.Loading) }
+    // True while the header's refresh is in flight; the page itself stays as it was.
+    var homeRefreshing by remember { mutableStateOf(false) }
     // The home feed is paged: `FEmusic_home` answers with a couple of shelves and a token, and
     // everything else arrives by following it.
     var homeContinuation by remember { mutableStateOf<String?>(null) }
@@ -2791,6 +2793,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun loadHome() {
         topPicks = null
+        homeRefreshing = false
         if (!youtubeSourceEnabled) {
             homeState = UiState.Error("YouTube Music is disabled")
             return
@@ -2836,6 +2839,83 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 launch {
                     DesktopSearchClient.homeSupplement(browseId).onSuccess { shelves ->
                         if (generation == homeGeneration) publishHomeShelves(shelves)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The header's refresh: a fresh feed without sending the page back to its skeleton, as the
+     * phone's `refreshHome` does. The old cards stay until the new core feed lands and replaces
+     * them outright; only then are Recently Played and the supplement shelves asked for, so they
+     * append to the page this refresh laid down rather than racing it. The old shelves are not
+     * merged over: [publishHomeShelves] skips headings it has seen, and everything on the page
+     * has been seen, which would hand the reader the same morning feed all evening.
+     */
+    fun refreshHome() {
+        if (homeRefreshing) return
+        if (!youtubeSourceEnabled) {
+            loadHome()
+            return
+        }
+        val generation = ++homeGeneration
+        val signedIn = DesktopYouTubeAuth.isSignedIn
+        homeIdentity = "$signedIn/${DesktopAccounts.activeAccountId()}"
+        homeRefreshing = true
+        homeContinuation = null
+        homeLoadingMore = false
+        homeRecentsLoading = signedIn
+        homeRenderedLogged = false
+        homeJob?.cancel()
+        // Recently Played is memoised for two minutes in the repository; a refresh is exactly the
+        // case that memo was not meant to hold back.
+        YtMusicRepository.invalidateHistoryCache()
+        homeJob = scope.launch {
+            val feed = DesktopSearchClient.home().getOrElse { failure ->
+                if (generation == homeGeneration) {
+                    homeRefreshing = false
+                    homeRecentsLoading = false
+                    if (homeState !is UiState.Success) {
+                        homeState = UiState.Error(failure.message ?: "Could not load Home")
+                    } else {
+                        DesktopPlayerHost.showMessage("Could not refresh Home")
+                    }
+                }
+                return@launch
+            }
+            if (generation != homeGeneration) return@launch
+            homeContinuation = feed.continuation
+            val shelves = refreshedHomeShelves(feed.shelves, homeSeenTitles)
+            if (shelves.isEmpty() && homeState is UiState.Success) {
+                // Nothing worth replacing the page with; keep what it had, and let the
+                // supplements below append beside the headings that are still on it.
+                homeSeenTitles.clear()
+                (homeState as UiState.Success<List<HomeShelf>>).data.forEach { homeSeenTitles.add(it.title.lowercase()) }
+                homeRefreshing = false
+                return@launch
+            }
+            homeState = UiState.Success(shelves)
+            homeRefreshing = false
+            if (!homeRenderedLogged && shelves.isNotEmpty()) {
+                homeRenderedLogged = true
+                DesktopStartupDiagnostics.record(DesktopStartupDiagnostics.Milestone.HOME_FEED_RENDERED)
+            }
+            if (signedIn) {
+                launch {
+                    YtMusicRepository.homeRecentlyPlayed()
+                        .onSuccess { shelf ->
+                            if (generation != homeGeneration) return@onSuccess
+                            homeRecentsLoading = false
+                            shelf?.let { publishHomeShelves(listOf(it), prepend = true) }
+                        }
+                        .onFailure { if (generation == homeGeneration) homeRecentsLoading = false }
+                }
+            }
+            DesktopSearchClient.HOME_SUPPLEMENT_BROWSE_IDS.forEach { browseId ->
+                launch {
+                    DesktopSearchClient.homeSupplement(browseId).onSuccess { supplements ->
+                        if (generation == homeGeneration) publishHomeShelves(supplements)
                     }
                 }
             }
@@ -5107,11 +5187,12 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             listState = homeListState,
                             onItemClick = { item, shelfTitle -> openShelfItem(item, shelfTitle) },
                             onRetry = ::loadHome,
-                            refreshing = false,
-                            onRefresh = ::loadHome,
+                            refreshing = homeRefreshing,
+                            onRefresh = ::refreshHome,
                             pullState = rememberPullToRefreshState(),
                             contentPadding = sharedPagePadding,
                             title = "Home",
+                            titleActions = { DesktopHomeRefreshButton(homeRefreshing, ::refreshHome) },
                             signedIn = true,
                             onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
                             onLoadMore = ::loadMoreHome,
