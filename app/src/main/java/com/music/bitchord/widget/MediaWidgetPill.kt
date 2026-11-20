@@ -165,7 +165,7 @@ class MediaWidgetPill : AppWidgetProvider() {
             )
             views.setImageViewResource(
                 R.id.widget_like,
-                if (snapshot.isLiked) R.drawable.ic_widget_heart_filled else R.drawable.ic_widget_heart,
+                if (snapshot.isLiked) R.drawable.ic_widget_thumb_up_filled else R.drawable.ic_widget_thumb_up,
             )
             views.setContentDescription(
                 R.id.widget_like,

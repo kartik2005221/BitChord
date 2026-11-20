@@ -1040,7 +1040,7 @@
 
     <string name="auto_empty_liked_title">No liked songs</string>
 
-    <string name="auto_empty_liked_subtitle">Tap the heart on a song to save it here</string>
+    <string name="auto_empty_liked_subtitle">Like a song to save it here</string>
 
     <string name="auto_empty_offline_title">No offline songs</string>
 

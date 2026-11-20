@@ -994,7 +994,7 @@
 
     <string name="auto_empty_liked_title">Beğenilen şarkı yok</string>
 
-    <string name="auto_empty_liked_subtitle">Bir şarkıyı buraya kaydetmek için kalbe dokunun</string>
+    <string name="auto_empty_liked_subtitle">Bir şarkıyı buraya kaydetmek için beğenin</string>
 
     <string name="auto_empty_offline_title">Çevrimdışı şarkı yok</string>
 

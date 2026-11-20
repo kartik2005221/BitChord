@@ -44,7 +44,7 @@
     <string name="auto_empty_playlists_title">No playlists available</string>
     <string name="auto_empty_playlists_subtitle">Check your connection and try again</string>
     <string name="auto_empty_liked_title">No liked songs</string>
-    <string name="auto_empty_liked_subtitle">Tap the heart on a song to save it here</string>
+    <string name="auto_empty_liked_subtitle">Like a song to save it here</string>
     <string name="auto_empty_offline_title">No offline songs</string>
     <string name="auto_empty_offline_subtitle">Download songs on your phone to listen here</string>
     <string name="auto_unavailable_title">Content unavailable</string>

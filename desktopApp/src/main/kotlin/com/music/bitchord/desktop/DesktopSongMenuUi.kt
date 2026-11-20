@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bedtime
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbDownOffAlt
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -104,7 +106,7 @@ internal data class DesktopSongActions(
     val onSwitchMediaVersion: (() -> Unit)? = null,
 )
 
-/** The "…" beside the player's heart, and the menu it opens. */
+/** The "…" beside the player's Like button, and the menu it opens. */
 @Composable
 internal fun DesktopSongMenuAnchor(
     song: Song,
@@ -304,7 +306,7 @@ internal fun DesktopSongMenu(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (signedIn) {
                     DesktopMenuQuickAction(
-                        if (liked) BitChordIcons.StarFilled else BitChordIcons.Star,
+                        if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                         "Like", liked, Modifier.weight(1f), onToggleLike)
                     DesktopMenuQuickAction(
                         if (disliked) DesktopPhoneMenuIcons.BrokenHeartFilled else DesktopPhoneMenuIcons.BrokenHeart,
@@ -744,7 +746,7 @@ private fun DesktopMenuRow(
     }
 }
 
-/** The "…" the menu hangs off, sized and tinted to sit beside the player's heart. */
+/** The "…" the menu hangs off, sized and tinted to sit beside the player's Like button. */
 @Composable
 internal fun DesktopMoreButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
