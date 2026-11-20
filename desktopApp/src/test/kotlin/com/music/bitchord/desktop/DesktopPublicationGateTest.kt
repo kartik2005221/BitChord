@@ -29,7 +29,7 @@ class DesktopPublicationGateTest {
         release.countDown()
         old.join(5_000)
         assertFalse(old.isAlive)
-        assertEquals(listOf(null, null), sent)
+        assertEquals(listOf<String?>(null, null), sent)
     }
 
     @Test fun clearWaitsForInFlightSendAndStopPreventsLaterSend() {
