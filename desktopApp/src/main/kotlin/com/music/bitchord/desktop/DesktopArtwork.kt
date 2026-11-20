@@ -6,6 +6,8 @@ import com.music.bitchord.ui.components.ArtworkHoverMode
 import com.music.bitchord.ui.graphics.argbPixels
 import com.music.bitchord.ui.graphics.imageBitmapOf
 import com.music.bitchord.ui.icons.BitChordIcons
+import com.music.bitchord.ui.player.LocalArtworkScope
+import com.music.bitchord.ui.player.SharedArtworkScope
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
@@ -17,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -88,16 +91,18 @@ internal object DesktopBlurredArtworkCache {
 
     fun clear() = images.clear()
 
-    suspend fun load(url: String?): ImageBitmap? {
+    suspend fun load(url: String?, strength: Int = 2): ImageBitmap? {
         if (url.isNullOrBlank()) return null
-        images.get(url)?.let { return it }
+        val passes = artworkPrivacyStrength(strength) + 1
+        val cacheKey = "$passes|$url"
+        images.get(cacheKey)?.let { return it }
         val small = runCatching {
             URI(url).toURL().openConnection().apply {
                 connectTimeout = 10_000
                 readTimeout = 10_000
             }.getInputStream().use { stream -> stream.readBytes().decodeToImageBitmap() }
         }.getOrNull() ?: return null
-        return small.boxBlurred(BLUR_PASSES).also { images.put(url, it) }
+        return small.boxBlurred(passes).also { images.put(cacheKey, it) }
     }
 
     /** Three small box passes approximate a broad Gaussian blur at thumbnail scale. */
@@ -157,7 +162,6 @@ internal object DesktopBlurredArtworkCache {
     private fun argb(red: Int, green: Int, blue: Int): Int =
         0xFF000000.toInt() or (red shl 16) or (green shl 8) or blue
 
-    private const val BLUR_PASSES = 3
 }
 
 /**
@@ -201,16 +205,23 @@ fun DesktopArtwork(
     hovered: Boolean? = null,
     /** Faces of people, not of music, ride out the privacy mode: avatars pass false. */
     blur: Boolean = true,
+    scope: ArtworkPrivacyScope? = null,
 ) {
-    val coversBlur by DesktopAppearanceSettings.blurCovers.collectAsState()
+    val chosenScope = scope ?: if (LocalArtworkScope.current == SharedArtworkScope.PLAYER)
+        ArtworkPrivacyScope.PLAYER else ArtworkPrivacyScope.BROWSING
+    val coversBlur by DesktopAppearanceSettings.artworkPrivacy(chosenScope).collectAsState()
+    val strength by DesktopAppearanceSettings.artworkStrength.collectAsState()
     val blurredCovers = blur && coversBlur
     // The blur reads a deliberately tiny decode of its own — a blob needs no
     // detail, and a 96px download costs a fraction of what the sharp one did.
     val shown = if (blurredCovers) url?.artworkAt(BLUR_PX) else if (px != null) url.artworkAt(px) else url
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = shown, key2 = blurredCovers) {
-        value = withContext(Dispatchers.IO) {
-            if (blurredCovers) DesktopBlurredArtworkCache.load(shown) else DesktopArtworkCache.load(shown)
+    val bitmap = key(shown, blurredCovers, strength) {
+        val loaded by produceState<ImageBitmap?>(initialValue = null) {
+            value = withContext(Dispatchers.IO) {
+                if (blurredCovers) DesktopBlurredArtworkCache.load(shown, strength) else DesktopArtworkCache.load(shown)
+            }
         }
+        loaded
     }
 
     if (hoverMode == null) {

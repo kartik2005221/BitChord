@@ -72,8 +72,13 @@ internal fun DesktopPipUi(
 ) {
     BoxWithConstraints(Modifier.fillMaxSize().testTag("pip-root")) {
         val layout = DesktopPipLayout.at(maxWidth.value, maxHeight.value)
-        val art = rememberPipArtwork(state.song?.thumbnailUrl)
-        PipBackground(state.song?.thumbnailUrl, art, reduceBlur, reduceAnimation)
+        // PiP is a separate window and its image loader does not use DesktopArtwork.
+        // Suppress both its foreground and background when privacy is enabled.
+        val privacy by DesktopAppearanceSettings.externalArtworkPrivacy.collectAsState()
+        val artworkUrl = state.song?.thumbnailUrl.takeUnless { privacy }
+        val art = rememberPipArtwork(artworkUrl)
+        if (privacy) Box(Modifier.fillMaxSize().background(Color(0xFF16161C)))
+        else PipBackground(artworkUrl, art, reduceBlur, reduceAnimation)
         CompositionLocalProvider(LocalContentColor provides Color.White,
             LocalMinimumInteractiveComponentSize provides 0.dp) {
             Column(Modifier.fillMaxSize().padding(layout.padding.dp), verticalArrangement = Arrangement.spacedBy(layout.gap.dp)) {

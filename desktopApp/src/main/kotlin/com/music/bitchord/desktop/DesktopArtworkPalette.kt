@@ -13,7 +13,7 @@ data class DesktopArtworkPalette(
     val secondary: Color,
 ) {
     companion object {
-        val Default = DesktopArtworkPalette(Color(0xFFFF375F), Color(0xFF4E6DFF))
+        val Default = DesktopArtworkPalette(Color(0xFFFF6500), Color(0xFF1E3E62))
     }
 }
 

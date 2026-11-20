@@ -5,6 +5,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Each area has a separate persisted preference. Existing installations keep their previous
@@ -108,8 +114,76 @@ internal object DesktopAppearanceSettings {
     private val _enableOldTopMusicPlayerStyle = flag(KEY_ENABLE_OLD_TOP_MUSIC_PLAYER_STYLE, false)
     // v1.8 Explore cards remain the default; the classic v1.7 sleeve can be opted into.
     private val _useOldExploreCards = flag(KEY_USE_OLD_EXPLORE_CARDS, false)
-    // The privacy mode: every sleeve drawn as an unidentifiable blur.
+    // The persisted master; scope, strength and transient reveal are independent.
     private val _blurCovers = flag(KEY_BLUR_COVERS, false)
+    private val artworkPreferences = ArtworkPrivacyPreferences(DesktopPersistence())
+    private val scopePreferences = ArtworkPrivacyScope.entries.associateWith { MutableStateFlow(artworkPreferences.scope(it)) }
+    private val _artworkStrength = MutableStateFlow(artworkPreferences.strength())
+    private val effectivePrivacy = ArtworkPrivacyScope.entries.associateWith { MutableStateFlow(false) }
+    private val _externalArtworkPrivacy = MutableStateFlow(false)
+    private val _artworkRevealed = MutableStateFlow(false)
+    private val privacyTimer = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var revealJob: Job? = null
+    private var revealUntil = Long.MIN_VALUE
+
+    init { updateArtworkPrivacy() }
+
+    private fun monotonicMs(): Long = System.nanoTime() / 1_000_000L
+
+    @Synchronized
+    private fun updateArtworkPrivacy() {
+        val now = monotonicMs()
+        _artworkRevealed.value = _blurCovers.value && now < revealUntil
+        ArtworkPrivacyScope.entries.forEach { scope ->
+            effectivePrivacy.getValue(scope).value = artworkPrivacyActive(
+                _blurCovers.value, scopePreferences.getValue(scope).value, revealUntil, now,
+                external = scope == ArtworkPrivacyScope.AUXILIARY,
+            )
+        }
+        _externalArtworkPrivacy.value = effectivePrivacy.getValue(ArtworkPrivacyScope.AUXILIARY).value
+    }
+
+    fun artworkScopePreference(scope: ArtworkPrivacyScope): StateFlow<Boolean> = scopePreferences.getValue(scope)
+    fun artworkPrivacy(scope: ArtworkPrivacyScope): StateFlow<Boolean> = effectivePrivacy.getValue(scope)
+    val externalArtworkPrivacy: StateFlow<Boolean> = _externalArtworkPrivacy
+    val artworkStrength: StateFlow<Int> = _artworkStrength
+    val artworkRevealed: StateFlow<Boolean> = _artworkRevealed
+
+    @Synchronized
+    fun setArtworkScope(scope: ArtworkPrivacyScope, enabled: Boolean) {
+        artworkPreferences.setScope(scope, enabled)
+        scopePreferences.getValue(scope).value = enabled
+        updateArtworkPrivacy()
+    }
+
+    fun setArtworkStrength(value: Int) {
+        val bounded = artworkPrivacyStrength(value)
+        artworkPreferences.setStrength(bounded)
+        _artworkStrength.value = bounded
+    }
+
+    @Synchronized
+    fun revealArtwork() {
+        if (!_blurCovers.value) return
+        revealJob?.cancel()
+        revealUntil = monotonicMs() + ARTWORK_REVEAL_MS
+        val deadline = revealUntil
+        updateArtworkPrivacy()
+        revealJob = privacyTimer.launch {
+            delay(ARTWORK_REVEAL_MS)
+            synchronized(this@DesktopAppearanceSettings) {
+                if (revealUntil == deadline) hideArtworkNow()
+            }
+        }
+    }
+
+    @Synchronized
+    fun hideArtworkNow() {
+        revealJob?.cancel()
+        revealJob = null
+        revealUntil = Long.MIN_VALUE
+        updateArtworkPrivacy()
+    }
 
     /** Freezes the main player's gradient instead of drifting. */
     val reduceAnimation: StateFlow<Boolean> = _reduceAnimation
@@ -144,7 +218,7 @@ internal object DesktopAppearanceSettings {
     /** Switches Explore category artwork between current and classic v1.7 cards. */
     val useOldExploreCards: StateFlow<Boolean> = _useOldExploreCards
 
-    /** Draws every cover as an unidentifiable blur — a privacy mode, never revealed. */
+    /** Persisted privacy master, independent of the temporary main-window reveal. */
     val blurCovers: StateFlow<Boolean> = _blurCovers
 
     /** Whether the lyrics pane carries its own log console. */
@@ -171,7 +245,12 @@ internal object DesktopAppearanceSettings {
     fun setUseOldExploreCards(value: Boolean) =
         write(KEY_USE_OLD_EXPLORE_CARDS, value, _useOldExploreCards)
 
-    fun setBlurCovers(value: Boolean) = write(KEY_BLUR_COVERS, value, _blurCovers)
+    @Synchronized
+    fun setBlurCovers(value: Boolean) {
+        if (!value) hideArtworkNow()
+        write(KEY_BLUR_COVERS, value, _blurCovers)
+        updateArtworkPrivacy()
+    }
 
 
     private fun write(key: String, value: Boolean, into: MutableStateFlow<Boolean>) {

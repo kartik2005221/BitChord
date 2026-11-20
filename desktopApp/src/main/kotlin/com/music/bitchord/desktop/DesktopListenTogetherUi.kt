@@ -107,7 +107,7 @@ internal fun DesktopListenTogetherDialog(autoplayEnabled: Boolean, onDismiss: ()
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                // A page is left by the window's back, as every other page is.
+                // Settings pages have a shared back control; the standalone card has Close.
                 if (!LocalDesktopPanelIsPage.current) {
                     IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "Close") }
                 }

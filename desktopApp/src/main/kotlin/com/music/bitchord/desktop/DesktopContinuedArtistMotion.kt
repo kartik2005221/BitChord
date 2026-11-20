@@ -2,6 +2,7 @@ package com.music.bitchord.desktop
 
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,10 +36,11 @@ fun DesktopContinuedArtistMotionView(
     /** Off for clips that are not the playing track's, so the player's backdrop is left alone. */
     publishBackdrop: Boolean = true,
 ) {
+    val privacy by DesktopAppearanceSettings.artworkPrivacy(ArtworkPrivacyScope.BROWSING).collectAsState()
     var frame by remember(url) { mutableStateOf<ImageBitmap?>(null) }
 
-    LaunchedEffect(url, fallbackUrl, isPlaying, maxEdge, publishBackdrop) {
-        if (!isPlaying) return@LaunchedEffect
+    LaunchedEffect(url, fallbackUrl, isPlaying, maxEdge, publishBackdrop, privacy) {
+        if (!isPlaying || privacy) return@LaunchedEffect
         // Round and round until the track ends or the player is closed. A canvas is a few seconds
         // long, so one pass through it is not the feature — and the decoder cannot be relied on to
         // rewind itself: its own seek does not take on an HLS manifest, which is what Apple serves,
@@ -100,7 +102,7 @@ fun DesktopContinuedArtistMotionView(
 
     // Nothing at all until the first frame: a placeholder here would flash between the still cover
     // and the clip on every track change.
-    frame?.let {
+    frame?.takeUnless { privacy }?.let {
         Image(
             bitmap = it,
             contentDescription = null,
@@ -109,4 +111,3 @@ fun DesktopContinuedArtistMotionView(
         )
     }
 }
-

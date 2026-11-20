@@ -2,6 +2,12 @@ package com.music.bitchord.desktop
 
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.durationMillis
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.TypeRef
 import org.freedesktop.dbus.annotations.DBusInterfaceName
@@ -83,6 +89,9 @@ internal class DesktopMprisController(
     private val onSeek: (Long) -> Unit,
 ) {
     private val lock = Any()
+    // Always acquire publicationGate before lock; never wait for it while holding lock.
+    private val publicationGate = DesktopPublicationGate()
+    private val privacyScope = CoroutineScope(Dispatchers.IO + Job())
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "BitChord-MPRIS").apply { isDaemon = true }
     }
@@ -93,6 +102,7 @@ internal class DesktopMprisController(
     private var loopStatus = "None"
     private var rate = 1.0
     private var publishedSongId: String? = null
+    private var publishedArtworkPrivacy: Boolean? = null
     private var publishedPlaybackStatus: String? = null
     private var publishedShuffle = false
     private var publishedLoopStatus = "None"
@@ -102,14 +112,19 @@ internal class DesktopMprisController(
     fun start() {
         if (!isLinux() || synchronized(lock) { started }) return
         synchronized(lock) { started = true }
+        privacyScope.launch {
+            DesktopAppearanceSettings.externalArtworkPrivacy.collect { publish(force = false) }
+        }
         worker.execute {
             runCatching {
                 // Not shared.
                 val bus = DBusConnectionBuilder.forSessionBus().withShared(false).build()
                 bus.requestBusName(MPRIS_BUS_NAME)
                 bus.exportObject(MPRIS_OBJECT_PATH, ExportedPlayer(this@DesktopMprisController))
-                synchronized(lock) { connection = bus }
-                publish(force = true)
+                val accepted = synchronized(lock) {
+                    if (started) { connection = bus; true } else false
+                }
+                if (accepted) publish(force = true) else bus.close()
             }.onFailure { failure ->
                 synchronized(lock) {
                     connection?.close()
@@ -122,13 +137,16 @@ internal class DesktopMprisController(
     }
 
     fun stop() {
-        val bus = synchronized(lock) {
-            started = false
-            val current = connection
-            connection = null
-            current
+        val bus = publicationGate.run {
+            synchronized(lock) {
+                started = false
+                val current = connection
+                connection = null
+                current
+            }
         }
         runCatching { bus?.close() }
+        privacyScope.cancel()
         worker.shutdownNow()
     }
 
@@ -147,14 +165,15 @@ internal class DesktopMprisController(
         publish(force = false)
     }
 
-    private fun publish(force: Boolean) {
+    private fun publish(force: Boolean) = publicationGate.run {
         val currentConnection: DBusConnection
         val changed: MutableMap<String, Variant<*>>
         synchronized(lock) {
-            currentConnection = connection ?: return
+            currentConnection = connection ?: return@run
             val playbackStatus = playbackStatus(state)
             changed = linkedMapOf()
-            if (force || publishedSongId != state.song?.videoId) {
+            val artworkPrivacy = DesktopAppearanceSettings.externalArtworkPrivacy.value
+            if (force || publishedSongId != state.song?.videoId || publishedArtworkPrivacy != artworkPrivacy) {
                 changed["Metadata"] = variant(metadata(state.song), "a{sv}")
             }
             if (force || publishedPlaybackStatus != playbackStatus) {
@@ -173,13 +192,14 @@ internal class DesktopMprisController(
                 changed["Volume"] = variant(state.volume.toDouble().coerceIn(0.0, 1.0))
             }
             publishedSongId = state.song?.videoId
+            publishedArtworkPrivacy = artworkPrivacy
             publishedPlaybackStatus = playbackStatus
             publishedShuffle = shuffle
             publishedLoopStatus = loopStatus
             publishedRate = rate
             publishedVolume = state.volume.toDouble()
         }
-        if (changed.isEmpty()) return
+        if (changed.isEmpty()) return@run
         runCatching {
             currentConnection.sendMessage(
                 Properties.PropertiesChanged(
@@ -258,7 +278,8 @@ internal class DesktopMprisController(
             durationMs(current, state.durationMs).takeIf { it > 0L }?.let {
                 put("mpris:length", variant(it * 1_000L))
             }
-            current.thumbnailUrl?.takeIf(String::isNotBlank)?.let { put("mpris:artUrl", variant(it)) }
+            externalArtworkUrl(current.thumbnailUrl, DesktopAppearanceSettings.externalArtworkPrivacy.value)
+                ?.let { put("mpris:artUrl", variant(it)) }
             current.localUri?.takeIf(String::isNotBlank)?.let { put("xesam:url", variant(it)) }
         }
     } ?: emptyMap()

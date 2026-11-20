@@ -301,7 +301,8 @@ internal fun LandscapeArtwork(
     val casts = artLoaded || canvasRendered
     // The privacy mode blurs the still and leaves it at that — the sleeve's own
     // empty-state note behind it finishes the look the rows use.
-    val blurredCovers by PlayerSettings.blurCovers.collectAsState()
+    val blurredCovers by PlayerSettings.playerArtworkPrivacy.collectAsState()
+    val privacyRadius = artworkPrivacyBlurDp()
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -342,7 +343,7 @@ internal fun LandscapeArtwork(
                 // portrait sleeve's note on TextureView stacking order.
                 modifier = Modifier
                     .fillMaxSize()
-                    .thenIf(blurredCovers) { blur(28.dp).scale(1.25f) }
+                    .thenIf(blurredCovers) { blur(privacyRadius).scale(1.25f) }
                     .drawWithContent { if (artLoaded || !canvasRendered) drawContent() },
             )
             // Blur mode suppresses the motion art entirely — see the portrait

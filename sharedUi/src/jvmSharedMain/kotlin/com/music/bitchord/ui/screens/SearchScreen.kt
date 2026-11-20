@@ -1,6 +1,6 @@
 package com.music.bitchord.ui.screens
 
-import com.music.bitchord.ui.components.PlayingAccent
+import com.music.bitchord.ui.components.LocalPlayingAccent
 
 
 import com.music.bitchord.ui.components.trackArtSize
@@ -566,7 +566,7 @@ private fun LazyListScope.librarySearchResults(
                     isCurrent = song.isSameTrackAs(currentSong),
                     isPlaying = isPlaying && song.isSameTrackAs(currentSong),
                     searchPlayingStyle = true,
-                    activeTint = PlayingAccent,
+                    activeTint = LocalPlayingAccent.current,
 
                 )
                 if (index < tracks.lastIndex) {
@@ -982,7 +982,7 @@ private fun RecentSearchEntityRow(
             Text(
                 text = entity.title,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (isCurrent) PlayingAccent else MaterialTheme.colorScheme.onBackground,
+                color = if (isCurrent) LocalPlayingAccent.current else MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

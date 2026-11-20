@@ -12,6 +12,216 @@ import kotlin.test.*
 
 /** Real FFmpeg and decode worker with a collecting output (not a claim of audible playback). */
 class DesktopInstantPlaybackEngineTest {
+    @Test fun `unavailable restored source fails only on play without losing the playhead`() {
+        val output = Output(); val requests = CopyOnWriteArrayList<String>()
+        val engine = DesktopPlaybackEngine({}, {}, output, null) { song, _, _, _ ->
+            requests += song.videoId
+            Result.failure(IllegalStateException("unavailable"))
+        }.also { engines += it }
+        engine.restorePaused(song("unavailable"), 4200)
+        assertNull(engine.state.value.error)
+        assertTrue(requests.isEmpty())
+        assertFalse(output.isOpen)
+        engine.play()
+        waitFor("source failure") { engine.state.value.error != null }
+        assertEquals(listOf("unavailable"), requests.toList())
+        assertEquals(4200L, engine.state.value.positionMs)
+        assertFalse(output.isOpen)
+    }
+    @Test fun `restore is rejected after playback selection without interrupting active deck`() {
+        val stream = tone(); val output = Output()
+        val engine = engine(output) { stream }
+        engine.load(song("active"))
+        waitFor("active PCM") { output.writes > 0 }
+        assertFailsWith<IllegalStateException> { engine.restorePaused(song("stale"), 0) }
+        assertEquals("active", engine.state.value.song?.videoId)
+        assertTrue(engine.state.value.isPlaying)
+    }
+
+    @Test fun `restore rejects obsolete pending selection before it can resolve`() {
+        val stream = tone(); val output = Output(); val entered = CountDownLatch(1)
+        val engine = engine(output) { entered.countDown(); delay(200); stream }
+        engine.load(song("pending"))
+        assertFailsWith<IllegalStateException> { engine.restorePaused(song("stale"), 0) }
+        assertTrue(entered.await(3, TimeUnit.SECONDS))
+        waitFor("selected PCM") { output.writes > 0 }
+        assertEquals("pending", engine.state.value.song?.videoId)
+    }
+    @Test fun `restored metadata and seek stay silent until toggle play`() {
+        val stream = tone(); val output = Output(); val requests = CopyOnWriteArrayList<String>()
+        val engine = engine(output) { requests += it.videoId; stream }
+        engine.restorePaused(song("restored").copy(durationText = "0:06"), 9000)
+        assertEquals(6000L, engine.state.value.positionMs)
+        assertFalse(engine.state.value.isPlaying)
+        assertFalse(engine.state.value.isLoading)
+        engine.seekTo(2500)
+        assertEquals(2500L, engine.state.value.positionMs)
+        assertTrue(requests.isEmpty())
+        assertFalse(output.isOpen)
+        assertEquals(0, output.writes)
+        engine.togglePlayPause()
+        waitFor("restored PCM") { output.writes > 0 && engine.state.value.positionMs >= 2400 }
+        assertEquals(listOf("restored"), requests.toList())
+    }
+    @Test fun `resolution failure retains seek edited while loading`() {
+        val output = Output(); val entered = CountDownLatch(1)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val engine = DesktopPlaybackEngine({}, {}, output, null) { _, _, _, _ ->
+            entered.countDown(); release.await()
+            Result.failure(IllegalStateException("unavailable"))
+        }.also { engines += it }
+        engine.restorePaused(song("failed-resolution"), 1200)
+        engine.play()
+        assertTrue(entered.await(3, TimeUnit.SECONDS))
+        engine.seekTo(3400)
+        release.complete(Unit)
+        waitFor("edited resolution failure") { engine.state.value.error != null }
+        assertEquals(3400L, engine.state.value.positionMs)
+        assertFalse(engine.state.value.isPlaying)
+        assertFalse(output.isOpen)
+    }
+
+    @Test fun `restored first play then pause or toggle stays paused after slow resolution`() {
+        for (toggle in listOf(false, true)) {
+            val stream = tone(); val output = Output(); val entered = CountDownLatch(1)
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val engine = engine(output) { entered.countDown(); release.await(); stream }
+            engine.restorePaused(song("paused-$toggle"), 1200)
+            engine.play()
+            assertTrue(entered.await(3, TimeUnit.SECONDS))
+            if (toggle) engine.togglePlayPause() else engine.pause()
+            release.complete(Unit)
+            waitFor("paused selection installed") { !engine.state.value.isLoading }
+            assertFalse(engine.state.value.isPlaying)
+            assertEquals(1200L, engine.state.value.positionMs)
+            assertEquals(0, output.writes)
+            engine.play()
+            waitFor("explicit resume PCM") { output.writes > 0 }
+        }
+    }
+
+    @Test fun `seek during restored resolution is applied before playback`() {
+        val stream = tone(); val output = Output(); val entered = CountDownLatch(1)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val engine = engine(output) { entered.countDown(); release.await(); stream }
+        engine.restorePaused(song("seek-loading"), 1000)
+        engine.play()
+        assertTrue(entered.await(3, TimeUnit.SECONDS))
+        engine.seekTo(3500)
+        engine.pause()
+        release.complete(Unit)
+        waitFor("edited selection installed") { !engine.state.value.isLoading }
+        assertEquals(3500L, engine.state.value.positionMs)
+        assertEquals(0, output.writes)
+        engine.play()
+        waitFor("edited PCM") { output.writes > 0 && engine.state.value.positionMs >= 3500 }
+    }
+
+    @Test fun `intent changed after decoder open is applied before installation`() {
+        val stream = tone(); val output = Output(); val ready = CountDownLatch(1)
+        val install = CountDownLatch(1)
+        val engine = engine(output) { stream }
+        engine.beforeSelectionInstall = {
+            ready.countDown()
+            check(install.await(5, TimeUnit.SECONDS))
+        }
+        try {
+            engine.restorePaused(song("opened"), 1000)
+            engine.play()
+            assertTrue(ready.await(3, TimeUnit.SECONDS))
+            engine.seekTo(3800)
+            engine.togglePlayPause()
+        } finally { install.countDown() }
+        waitFor("opened selection installed") { !engine.state.value.isLoading }
+        assertFalse(engine.state.value.isPlaying)
+        assertEquals(3800L, engine.state.value.positionMs)
+        assertEquals(0, output.writes)
+    }
+
+    @Test fun `obsolete opened selection cannot consume replacement intent`() {
+        val stream = tone(); val output = Output(); val ready = CountDownLatch(1)
+        val install = CountDownLatch(1); val calls = java.util.concurrent.atomic.AtomicInteger()
+        val engine = engine(output) { stream }
+        engine.beforeSelectionInstall = {
+            if (calls.incrementAndGet() == 1) {
+                ready.countDown()
+                check(install.await(5, TimeUnit.SECONDS))
+            }
+        }
+        try {
+            engine.restorePaused(song("obsolete-opened"), 1000)
+            engine.play()
+            assertTrue(ready.await(3, TimeUnit.SECONDS))
+            engine.load(song("replacement"), startAtMs = 2000)
+            engine.seekTo(4100)
+            engine.pause()
+        } finally { install.countDown() }
+        waitFor("replacement installed") { !engine.state.value.isLoading && engine.state.value.song?.videoId == "replacement" }
+        assertEquals(4100L, engine.state.value.positionMs)
+        assertFalse(engine.state.value.isPlaying)
+        assertEquals(0, output.writes)
+    }
+
+    @Test fun `decoder fallback retains original and edited restored positions`() {
+        for (edit in listOf(false, true)) {
+            val stream = tone(); val output = Output(); val fallback = CountDownLatch(1)
+            val first = CountDownLatch(1)
+            val releaseFirst = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val requests = java.util.concurrent.atomic.AtomicInteger()
+            val engine = engine(output) {
+                if (requests.incrementAndGet() == 1) {
+                    first.countDown(); releaseFirst.await(); invalidStream()
+                } else {
+                    fallback.countDown(); release.await(); stream
+                }
+            }
+            engine.restorePaused(song("fallback-$edit"), 1800)
+            engine.play()
+            assertTrue(first.await(3, TimeUnit.SECONDS))
+            if (edit) engine.seekTo(3600)
+            engine.pause()
+            releaseFirst.complete(Unit)
+            assertTrue(fallback.await(3, TimeUnit.SECONDS))
+            release.complete(Unit)
+            waitFor("fallback installed") { !engine.state.value.isLoading }
+            assertNull(engine.state.value.error)
+            assertEquals(if (edit) 3600L else 1800L, engine.state.value.positionMs)
+            assertFalse(engine.state.value.isPlaying)
+            assertEquals(0, output.writes)
+        }
+    }
+
+    @Test fun `terminal decoder failure retains latest restored playhead`() {
+        for (edit in listOf(false, true)) {
+            val output = Output(); val fallback = CountDownLatch(1)
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val requests = java.util.concurrent.atomic.AtomicInteger()
+            val bad = invalidStream()
+            val engine = engine(output) {
+                if (requests.incrementAndGet() > 1) { fallback.countDown(); release.await() }
+                bad
+            }
+            engine.restorePaused(song("failed-$edit"), 1900)
+            engine.play()
+            assertTrue(fallback.await(3, TimeUnit.SECONDS))
+            if (edit) engine.seekTo(3900)
+            release.complete(Unit)
+            waitFor("terminal decoder failure") { engine.state.value.error != null }
+            assertEquals(if (edit) 3900L else 1900L, engine.state.value.positionMs)
+            assertFalse(engine.state.value.isPlaying)
+            assertFalse(output.isOpen)
+        }
+    }
+
+    private fun invalidStream(): DesktopStream {
+        val file = File.createTempFile("bitchord-invalid-", ".wav").also {
+            files += it
+            it.writeText("not an audio file")
+        }
+        return DesktopStream(file.absolutePath)
+    }
+
     private val files = mutableListOf<File>()
     private val engines = mutableListOf<DesktopPlaybackEngine>()
     @AfterTest fun cleanup() {

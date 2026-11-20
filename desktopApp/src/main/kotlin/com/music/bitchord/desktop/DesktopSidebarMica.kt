@@ -70,9 +70,9 @@ internal object DesktopSidebarMica {
     }
 
     /** An opaque color with restrained wallpaper influence and legible foreground contrast. */
-    fun surface(wallpaper: Color?, dark: Boolean, fallback: Color): Color {
-        // Explicit pitch black must stay black, even with wallpaper-tinted Mica on Windows.
-        if (wallpaper == null || (dark && fallback == Color.Black)) return fallback
+    fun surface(wallpaper: Color?, dark: Boolean, fallback: Color, keepExact: Boolean = false): Color {
+        // The selected near-black palette shade should not acquire an extra wallpaper tint.
+        if (wallpaper == null || keepExact) return fallback
         // Keep the existing themed fallback and a restrained wallpaper influence so navigation
         // remains readable in normal dark and light appearance.
         return lerp(fallback, wallpaper, if (dark) 0.030f else 0.060f).copy(alpha = 1f)

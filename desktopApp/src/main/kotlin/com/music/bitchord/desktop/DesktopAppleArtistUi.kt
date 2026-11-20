@@ -105,14 +105,15 @@ internal fun DesktopAppleArtistHeader(
     onInfo: () -> Unit,
 ) {
     val reducedBlur by DesktopAppearanceSettings.reduceDynamicBlur.collectAsState()
+    val privacy by DesktopAppearanceSettings.artworkPrivacy(ArtworkPrivacyScope.BROWSING).collectAsState()
     val background = appleArtistWash(art?.background)
     val controlColor = art?.keyColor?.let { Color(it) } ?: Color.White
     val heroResult by artistHeaderImage(art?.heroUrl ?: fallbackImageUrl)
     val logoResult by artistHeaderImage(art?.logoUrl)
     val portraitResult by artistHeaderImage(art?.portraitUrl)
-    val hero = heroResult?.getOrNull()
-    val logo = logoResult?.getOrNull()
-    val portrait = portraitResult?.getOrNull()
+    val hero = heroResult?.getOrNull().takeUnless { privacy }
+    val logo = logoResult?.getOrNull().takeUnless { privacy }
+    val portrait = portraitResult?.getOrNull().takeUnless { privacy }
     var menu by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val headerWidth = maxWidth
@@ -181,7 +182,7 @@ internal fun DesktopAppleArtistHeader(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 val mark = logo
-                val logoMissing = art?.logoUrl == null || logoResult?.isFailure == true
+                val logoMissing = privacy || art?.logoUrl == null || logoResult?.isFailure == true
                 val signature by produceState<Result<ImageBitmap?>?>(null, name, logoMissing) {
                     value = if (logoMissing) Result.success(DesktopArtistSignatures.signatureFor(name)) else null
                 }
