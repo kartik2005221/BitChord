@@ -261,13 +261,13 @@ jobs:
           fi
           echo "RELEASE_NOTES_PATH=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
 
-      - name: Draft the release
+      - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
           name: BitChord ${{ env.RELEASE_TAG }}
-          draft: true
+          draft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ env.IS_PRERELEASE == 'true' }}
           body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: dist/*
