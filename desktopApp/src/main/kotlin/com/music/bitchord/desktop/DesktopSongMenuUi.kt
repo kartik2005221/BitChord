@@ -443,7 +443,7 @@ internal fun DesktopCollectionContextMenu(
         actions.onPin?.let { pin ->
             DesktopMenuRow(
                 icon = Icons.Rounded.PushPin,
-                label = if (actions.pinned) "Unpin playlist" else "Pin playlist",
+                label = if (actions.pinned) "Unpin from sidebar" else "Pin to sidebar",
                 selected = actions.pinned,
             ) { onDismiss(); pin() }
         }
