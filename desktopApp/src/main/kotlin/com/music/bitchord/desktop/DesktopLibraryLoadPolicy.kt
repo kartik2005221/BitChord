@@ -10,5 +10,6 @@ internal object DesktopLibraryLoadPolicy {
         hasLoadedLibrary: Boolean,
         playlistDialogOpen: Boolean,
         libraryVisible: Boolean,
-    ): Boolean = accountChanged || !hasLoadedLibrary || (playlistDialogOpen && !libraryVisible)
+        refreshRequested: Boolean = false,
+    ): Boolean = refreshRequested || accountChanged || !hasLoadedLibrary || (playlistDialogOpen && !libraryVisible)
 }
