@@ -22,6 +22,17 @@ class DesktopLibraryLoadPolicyTest {
     }
 
     @Test
+    fun `manual refresh fetches the account library even when its shelves are already loaded`() {
+        assertTrue(DesktopLibraryLoadPolicy.shouldFetch(
+            accountChanged = false,
+            hasLoadedLibrary = true,
+            playlistDialogOpen = false,
+            libraryVisible = true,
+            refreshRequested = true,
+        ))
+    }
+
+    @Test
     fun `account changes and missing library data request another fetch`() {
         assertTrue(DesktopLibraryLoadPolicy.shouldFetch(true, true, false, false))
         assertTrue(DesktopLibraryLoadPolicy.shouldFetch(false, false, false, true))
