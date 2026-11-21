@@ -30,6 +30,13 @@ data class DesktopPlaylistDownload(
     val updatedAt: Long,
 )
 
+internal fun List<DesktopPlaylistDownload>.sortedForDownloads(sort: DesktopLibrarySort) = when (sort) {
+    DesktopLibrarySort.DATE_ADDED -> sortedByDescending(DesktopPlaylistDownload::createdAt)
+    DesktopLibrarySort.DATE_MODIFIED -> sortedByDescending(DesktopPlaylistDownload::updatedAt)
+    DesktopLibrarySort.TITLE_ASC -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, DesktopPlaylistDownload::title))
+    DesktopLibrarySort.TITLE_DESC -> sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER, DesktopPlaylistDownload::title))
+}
+
 /**
  * The store behind playlist-level Downloads, over the same Java-Preferences
  * ground every other desktop store stands on — no database, chunked lines,
