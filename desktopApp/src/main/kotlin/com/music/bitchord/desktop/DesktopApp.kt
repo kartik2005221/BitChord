@@ -4,7 +4,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import com.music.bitchord.ui.components.LocalShelfRowChrome
 import com.music.bitchord.ui.components.ShelfRowChrome
 import com.music.bitchord.ui.components.ShelfRow
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
@@ -131,7 +130,6 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -304,6 +302,7 @@ import bitchord.desktopapp.generated.resources.sf_pro_display_medium
 import bitchord.desktopapp.generated.resources.sf_pro_display_regular
 import bitchord.desktopapp.generated.resources.sf_pro_display_semibold
 import com.music.bitchord.sharedui.resources.Res as SharedUiRes
+import com.music.bitchord.sharedui.resources.on_device
 import com.music.bitchord.sharedui.resources.spotify_logo
 import com.music.bitchord.data.model.ArtistPage
 import com.music.bitchord.data.model.BrowseItem
@@ -375,6 +374,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The margin every page keeps from the window's edge.
@@ -608,9 +608,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var topPicks by remember { mutableStateOf<List<TopPick>?>(null) }
     var topPicksLoading by remember { mutableStateOf(false) }
     var showMoodGrid by remember { mutableStateOf(false) }
+    var libraryDrillDown by remember { mutableStateOf<DesktopLibraryDrillDown?>(null) }
     var stationJob by remember { mutableStateOf<Job?>(null) }
     var homeState by remember { mutableStateOf<UiState<List<HomeShelf>>>(UiState.Loading) }
-    // True while the header's refresh is in flight; the page itself stays as it was.
+    // A manual refresh keeps the old feed visible while it fetches a new one.
     var homeRefreshing by remember { mutableStateOf(false) }
     // The home feed is paged: `FEmusic_home` answers with a couple of shelves and a token, and
     // everything else arrives by following it.
@@ -630,10 +631,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     val spotifyGridState = rememberLazyGridState()
     /** A Library shelf's "Show all", open as a grid in place of the page. */
     var libraryShowAll by remember { mutableStateOf<HomeShelf?>(null) }
-    /** Where the one back button in the top bar goes: every place visited, oldest first. */
+    /** The places the window has visited, oldest first. */
     val navHistory = remember { mutableStateListOf<DesktopNavEntry>() }
-    /** Set while [goBack] puts a place back, so that move is not itself recorded as a visit. */
-    val navRestoring = remember { booleanArrayOf(false) }
+    /** A restored destination does not count as a new visit. */
+    val navRestoring = remember { arrayOfNulls<List<Any?>>(1) }
     /** Opens a song's menu at the pointer; set by the pages' menu host once it is in place. */
     var pageMenu by remember { mutableStateOf<(Song) -> Unit>({}) }
     val homeSeenTitles = remember { HashSet<String>() }
@@ -823,6 +824,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var youtubeSignedIn by remember { mutableStateOf(false) }
     // Set by an edit that the library feed has not caught up with yet.
     var libraryStale by remember { mutableStateOf(false) }
+    var libraryReloads by remember { mutableStateOf(0) }
+    var libraryRefreshing by remember { mutableStateOf(false) }
     // Bumped when the session changes underneath, so the loader below re-runs without anything it
     // is keyed on having to change to something and back.
     var sessionRevision by remember { mutableStateOf(0) }
@@ -862,7 +865,13 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun reloadLibrary() {
         libraryState = UiState.Loading
-        sessionRevision++
+        libraryReloads++
+    }
+
+    fun refreshLibrary() {
+        if (!youtubeSignedIn || libraryRefreshing || libraryState is UiState.Loading) return
+        libraryRefreshing = true
+        libraryReloads++
     }
 
     /** Edits the Playlists shelf in place, without re-fetching it. */
@@ -2302,9 +2311,16 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     }
     // Refetched on opening the page rather than cached for the session: the
     // point of it is that something played elsewhere shows up here.
-    LaunchedEffect(destination, youtubeSignedIn, sessionRevision) {
+    var historyReloads by remember { mutableStateOf(0) }
+    var historyLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(destination, youtubeSignedIn, sessionRevision, historyReloads) {
         if (destination != DesktopDestination.HISTORY || !youtubeSignedIn) return@LaunchedEffect
-        DesktopSearchClient.history().onSuccess { remoteHistory = it }
+        historyLoading = true
+        try {
+            DesktopSearchClient.history().onSuccess { remoteHistory = it }
+        } finally {
+            historyLoading = false
+        }
     }
     var miniPlayerMenuOpen by remember(
         selectedSong?.videoId, activeAccountId, activeProfileId, overlays.nowPlaying, oldTopPlayerEnabled,
@@ -2596,8 +2612,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         searchTypeahead = emptyList()
     }
 
-    fun search() {
-        val typedHit = searchTypeahead.firstNotNullOfOrNull { row ->
+    fun runPageSearch(refresh: Boolean) {
+        val typedHit = searchTypeahead.takeUnless { refresh }?.firstNotNullOfOrNull { row ->
             when (row) {
                 is SearchResult.TopTrack -> row.song
                 is SearchResult.Track -> row.song
@@ -2615,7 +2631,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         searchSuggestions = emptyList()
         searchTypeahead = emptyList()
         searchFocusRequested = false
-        searchScrollReset++
+        if (!refresh) searchScrollReset++
         searchJob = scope.launch {
             try {
                 val result = DesktopMusicSources.search(request.query, request.filter)
@@ -2623,7 +2639,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 result.fold(
                     onSuccess = { rows ->
                         if (searchSession.complete(request, rows)) {
-                            if (typedHit == null) rows.firstNotNullOfOrNull { row ->
+                            if (!refresh && typedHit == null) rows.firstNotNullOfOrNull { row ->
                                 when (row) {
                                     is SearchResult.TopTrack -> row.song
                                     is SearchResult.Track -> row.song
@@ -2737,6 +2753,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         runSearch(requested)
     }
 
+    fun search() = runPageSearch(refresh = false)
+
     fun selectDestination(next: DesktopDestination) {
         val page = if (next == DesktopDestination.EXPLORE) DesktopDestination.SEARCH else next
         val alreadyOnSearch = destination == DesktopDestination.SEARCH && selectedMoodGenre == null &&
@@ -2752,6 +2770,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         overlays.replay = false
         overlays.settingsPage = null
         selectedMoodGenre = null
+        showMoodGrid = false
+        libraryDrillDown = null
         libraryShowAll = null
         if (page == DesktopDestination.SEARCH) {
             if (!alreadyOnSearch) {
@@ -2847,6 +2867,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
      * account — the desktop's counterpart of the phone's downloaded releases, and like them
      * reachable from nowhere else.
      */
+    val libraryOnDeviceTitle = stringResource(SharedUiRes.string.on_device)
     val libraryDeviceItems = remember(playlists) {
         playlists.map { playlist ->
             ShelfItem(
@@ -2991,7 +3012,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     }
 
     /**
-     * The header's refresh: a fresh feed without sending the page back to its skeleton, as the
+     * A manual refresh: a fresh feed without sending the page back to its skeleton, as the
      * phone's `refreshHome` does. The old cards stay until the new core feed lands and replaces
      * them outright; only then are Recently Played and the supplement shelves asked for, so they
      * append to the page this refresh laid down rather than racing it. The old shelves are not
@@ -3033,14 +3054,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             homeContinuation = feed.continuation
             val shelves = refreshedHomeShelves(feed.shelves, homeSeenTitles)
             if (shelves.isEmpty() && homeState is UiState.Success) {
-                // Nothing worth replacing the page with; keep what it had, and let the
-                // supplements below append beside the headings that are still on it.
-                homeSeenTitles.clear()
+                // Keep the current shelves and let the fresh recents and supplements follow.
                 (homeState as UiState.Success<List<HomeShelf>>).data.forEach { homeSeenTitles.add(it.title.lowercase()) }
-                homeRefreshing = false
-                return@launch
+            } else {
+                homeState = UiState.Success(shelves)
             }
-            homeState = UiState.Success(shelves)
             homeRefreshing = false
             if (!homeRenderedLogged && shelves.isNotEmpty()) {
                 homeRenderedLogged = true
@@ -3209,16 +3227,19 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             localScanJob?.cancel()
             localScanJob = scope.launch {
                 localMusicLoading = true
-                val scanned = withContext(Dispatchers.IO) { DesktopLocalMusic.scan() }
-                localSongs = scanned
-                localMusicLoaded = true
-                localMusicLoading = false
-                DesktopStartupDiagnostics.record(
-                    DesktopStartupDiagnostics.Milestone.LOCAL_MUSIC_SCAN,
-                    "${scanned.size} songs",
-                )
-                DesktopLocalMusicWatcher.restart()
-                DesktopStartupDiagnostics.record(DesktopStartupDiagnostics.Milestone.LOCAL_MUSIC_WATCHER)
+                try {
+                    val scanned = withContext(Dispatchers.IO) { DesktopLocalMusic.scan() }
+                    localSongs = scanned
+                    localMusicLoaded = true
+                    DesktopStartupDiagnostics.record(
+                        DesktopStartupDiagnostics.Milestone.LOCAL_MUSIC_SCAN,
+                        "${scanned.size} songs",
+                    )
+                    DesktopLocalMusicWatcher.restart()
+                    DesktopStartupDiagnostics.record(DesktopStartupDiagnostics.Milestone.LOCAL_MUSIC_WATCHER)
+                } finally {
+                    if (currentCoroutineContext().isActive) localMusicLoading = false
+                }
             }
         }
     }
@@ -3226,9 +3247,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     // Watcher change listener: updates localSongs when filesystem edits occur
     LaunchedEffect(Unit) {
         DesktopLocalMusicWatcher.changes.collect {
-            if (localMusicLoaded) {
+            if (localMusicLoaded && !localMusicLoading) {
+                val scanRevision = localMusicRevision
                 val scanned = withContext(Dispatchers.IO) { DesktopLocalMusic.scan() }
-                localSongs = scanned
+                if (scanRevision == localMusicRevision) localSongs = scanned
             }
         }
     }
@@ -3432,16 +3454,18 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
      * the Playlists shelf on Home and every other destination, not just after visiting Library.
      * Account switches, playlist-picker refreshes and explicit retries still reload it.
      */
-    LaunchedEffect(activeAccountId, activeProfileId, sessionRevision, destination == DesktopDestination.LIBRARY, overlays.playlistDialog) {
+    LaunchedEffect(activeAccountId, activeProfileId, sessionRevision, libraryReloads, destination == DesktopDestination.LIBRARY, overlays.playlistDialog) {
         youtubeSignedIn = DesktopYouTubeAuth.isSignedIn
         if (!DesktopYouTubeAuth.isSignedIn) {
             libraryState = UiState.Success(LibraryPage(emptyList(), emptyList(), emptyList()))
             loadedAccountId = null
             loadedProfileId = null
+            libraryRefreshing = false
             return@LaunchedEffect
         }
         val accountChanged = loadedAccountId != activeAccountId || loadedProfileId != activeProfileId
-        if (!DesktopLibraryLoadPolicy.shouldFetch(
+        val manualRefresh = libraryRefreshing && !accountChanged
+        if (!manualRefresh && !DesktopLibraryLoadPolicy.shouldFetch(
                 accountChanged = accountChanged,
                 hasLoadedLibrary = libraryState is UiState.Success,
                 playlistDialogOpen = overlays.playlistDialog,
@@ -3450,13 +3474,24 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         ) {
             return@LaunchedEffect
         }
-        libraryState = UiState.Loading
-        DesktopSearchClient.library().fold(
+        if (!manualRefresh) libraryState = UiState.Loading
+        val result = DesktopSearchClient.library()
+        currentCoroutineContext().ensureActive()
+        result.fold(
             onSuccess = { page ->
                 // The continuation is a job to run, not page state — it is consumed below.
                 libraryState = UiState.Success(page.copy(likedContinuation = null))
                 loadedAccountId = activeAccountId
                 loadedProfileId = activeProfileId
+                libraryStale = false
+                // A Show All grid is another view of the account shelf, so update it in place.
+                libraryShowAll?.let { shelf ->
+                    if (shelf.title != libraryOnDeviceTitle) {
+                        libraryShowAll = page.shelves.firstOrNull { it.title == shelf.title }
+                            ?: shelf.copy(items = emptyList())
+                    }
+                }
+                libraryRefreshing = false
                 DesktopStartupDiagnostics.record(DesktopStartupDiagnostics.Milestone.LIBRARY_LOADED)
                 DesktopTrackLog.log(
                     "library: ${page.likedSongs.size} liked, ${page.librarySongs.size} added, " +
@@ -3488,7 +3523,15 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     }
                 }
             },
-            onFailure = { libraryState = UiState.Error(it.message ?: "Could not load your library") },
+            onFailure = {
+                libraryRefreshing = false
+                val message = it.message ?: "Could not load your library"
+                if (manualRefresh && libraryState is UiState.Success) {
+                    DesktopPlayerHost.showMessage(message)
+                } else {
+                    libraryState = UiState.Error(message)
+                }
+            },
         )
         // A session refused mid-flight is dropped by the request itself, so the answer to "are we
         // signed in" is only settled once the call is over.
@@ -3503,6 +3546,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         browse = openedBrowse,
         mood = selectedMoodGenre,
         showAll = libraryShowAll,
+        moodGrid = showMoodGrid,
+        libraryDrillDown = libraryDrillDown,
         replay = overlays.replay,
         settings = overlays.settingsPage,
         settingsParents = settingsParents.toList(),
@@ -3515,13 +3560,14 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         snapshotFlow { here() }.collect { now ->
             val before = last
             if (before != null) {
-                when (desktopHistoryTransition(before.key == now.key, navRestoring[0], before.settings, now.settings)) {
-                    DesktopHistoryTransition.RESTORED -> navRestoring[0] = false
+                val restoring = navRestoring[0] == now.key
+                navRestoring[0] = null
+                when (desktopHistoryTransition(before.key == now.key, restoring, before.settings, now.settings)) {
                     DesktopHistoryTransition.RECORD -> {
                         navHistory.add(before)
                         if (navHistory.size > NAV_HISTORY_LIMIT) navHistory.removeAt(0)
                     }
-                    DesktopHistoryTransition.UNCHANGED, DesktopHistoryTransition.SETTINGS_CHILD -> Unit
+                    DesktopHistoryTransition.UNCHANGED, DesktopHistoryTransition.RESTORED, DesktopHistoryTransition.SETTINGS_CHILD -> Unit
                 }
             }
             // The newest copy of the same place, so an album that has paged in more tracks comes
@@ -3540,11 +3586,13 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             }
             return
         }
-        var entry = navHistory.removeLastOrNull() ?: return
-        while (entry.key == here().key) entry = navHistory.removeLastOrNull() ?: return
-        navRestoring[0] = true
+        val entryIndex = desktopBackIndex(navHistory, here().key) { it.key }
+        if (entryIndex < 0) return
+        val entry = navHistory[entryIndex]
+        navRestoring[0] = entry.key
         Snapshot.withMutableSnapshot {
-            destination = if (entry.destination == DesktopDestination.EXPLORE) DesktopDestination.SEARCH else entry.destination
+            navHistory.subList(entryIndex, navHistory.size).clear()
+            destination = entry.destination
             overlays.replay = entry.replay
             settingsParents.clear()
             settingsParents.addAll(entry.settingsParents)
@@ -3554,6 +3602,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             openedCollectionPinScope = entry.collectionPinScope
             openedBrowse = entry.browse
             libraryShowAll = entry.showAll
+            showMoodGrid = entry.moodGrid
+            libraryDrillDown = entry.libraryDrillDown
             if (entry.mood != selectedMoodGenre) {
                 selectedMoodGenre = entry.mood
                 moodGenreShelves = UiState.Loading
@@ -3565,6 +3615,14 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     artistReloads++
                 }
             }
+        }
+    }
+
+    fun changeLibraryDrillDown(next: DesktopLibraryDrillDown?) {
+        if (next == null && libraryDrillDown != null) {
+            goBack()
+        } else {
+            libraryDrillDown = next
         }
     }
 
@@ -3895,6 +3953,91 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         overlays.lastfmLogin || overlays.listenBrainzToken || overlays.discordToken ||
         overlays.listenTogether || overlays.audioOutput || overlays.pipeline || playerMenuOpen
 
+    var sidebarActionsFocused by remember { mutableStateOf(false) }
+    val navigationBlocked = shortcutBlockedByModal || overlays.shortcuts || overlays.quickSearch ||
+        overlays.nowPlaying || menuPortal.entry.value != null
+    val settingsBackParent = settingsParentForBack(overlays.settingsPage, settingsParents)
+    val canGoBack = !navigationBlocked && (settingsBackParent != null ||
+        desktopBackIndex(navHistory, here().key) { it.key } >= 0)
+
+    fun goBackFromSidebar(): Boolean {
+        if (!canGoBack) return false
+        sidebarDrawerOpen = false
+        goBack()
+        return true
+    }
+
+    fun refreshSpotifyLibrary() {
+        if (spotifyCanvasCookie.isBlank() || spotifyLoading) return
+        spotifyLoading = true
+        DesktopSpotifyLibraryAuth.invalidate()
+        spotifyReloads++
+    }
+
+    // Match the visible page order so a detail never refreshes whichever tab lies underneath it.
+    val pageRefresh = when {
+        navigationBlocked || overlays.settingsPage != null || overlays.replay -> null
+        openedBrowse != null -> if (youtubeSourceEnabled) {
+            DesktopPageRefresh(browseState is UiState.Loading) {
+                browseState = UiState.Loading
+                browseReloads++
+            }
+        } else null
+        openedArtist != null -> if (youtubeSourceEnabled) {
+            DesktopPageRefresh(artistState is UiState.Loading) {
+                artistState = UiState.Loading
+                artistReloads++
+            }
+        } else null
+        openedCollection != null -> openedCollection?.let { collection ->
+            val spotify = collection.browseId.startsWith(SPOTIFY_PAGE_PREFIX)
+            val remote = if (spotify) spotifyCanvasCookie.isNotBlank()
+                else youtubeSourceEnabled && playlists.none { it.id == collection.browseId }
+            if (remote) {
+                DesktopPageRefresh((collection.loading && collectionError == null) || collectionLoadingMore) {
+                    collectionError = null
+                    openedCollection = collection.copy(loading = true)
+                    collectionReloads++
+                }
+            } else null
+        }
+        destination == DesktopDestination.LISTEN_NOW && !showMoodGrid && youtubeSourceEnabled ->
+            DesktopPageRefresh(homeRefreshing || homeState is UiState.Loading, ::refreshHome)
+        destination == DesktopDestination.NEW && youtubeSourceEnabled ->
+            DesktopPageRefresh(newState is UiState.Loading) {
+                newState = UiState.Loading
+                newReloads++
+            }
+        (destination == DesktopDestination.SEARCH || destination == DesktopDestination.EXPLORE) &&
+            selectedMoodGenre != null -> if (youtubeSourceEnabled) {
+                DesktopPageRefresh(moodGenreShelves is UiState.Loading) {
+                    moodGenreShelves = UiState.Loading
+                    moodGenreReloads++
+                }
+            } else null
+        destination == DesktopDestination.SEARCH && searchCommitted && query.isNotBlank() ->
+            DesktopPageRefresh(searchLoading) { runPageSearch(refresh = true) }
+        (destination == DesktopDestination.SEARCH || destination == DesktopDestination.EXPLORE) &&
+            !searchCommitted && youtubeSourceEnabled -> DesktopPageRefresh(exploreState is UiState.Loading) {
+                exploreState = UiState.Loading
+                exploreReloads++
+            }
+        destination == DesktopDestination.LIBRARY && youtubeSignedIn &&
+            libraryShowAll?.title != libraryOnDeviceTitle ->
+            DesktopPageRefresh(libraryRefreshing || libraryState is UiState.Loading, ::refreshLibrary)
+        destination == DesktopDestination.SPOTIFY && spotifyCanvasCookie.isNotBlank() ->
+            DesktopPageRefresh(spotifyLoading, ::refreshSpotifyLibrary)
+        destination == DesktopDestination.HISTORY && youtubeSignedIn -> DesktopPageRefresh(historyLoading) {
+            historyLoading = true
+            YtMusicRepository.invalidateHistoryCache()
+            historyReloads++
+        }
+        destination == DesktopDestination.LOCAL_MUSIC -> DesktopPageRefresh(localMusicLoading) {
+            localMusicLoading = true
+            localMusicRevision++
+        }
+        else -> null
+    }
     val playerBackDepth = PlayerBack.depth.value
     var previousPlayerBackDepth by remember { mutableStateOf(playerBackDepth) }
     var shortcutNowPlayingWasOpen by remember { mutableStateOf(overlays.nowPlaying) }
@@ -4194,12 +4337,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                     playPrevious()
                                     true
                                 }
-                                Key.DirectionLeft -> if (event.isAltPressed && !overlays.nowPlaying) {
-                                    goBack()
-                                    true
-                                } else {
-                                    false
-                                }
+                                Key.DirectionLeft -> event.isAltPressed && goBackFromSidebar()
                                 // One layer at a time, innermost first. A text editor is a layer too:
                                 // Escape leaves it without navigating away, then keyboard shortcuts
                                 // immediately belong to the app again.
@@ -4238,6 +4376,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 else -> false
                             }
                         }
+
+                        if (sidebarActionsFocused && event.key == Key.Spacebar &&
+                            !shortcutKey.ctrl && !shortcutKey.alt && !shortcutKey.shift
+                        ) return@onPreviewKeyEvent false
 
                         val shortcut = shortcutDispatcher.dispatch(
                             shortcutKey,
@@ -4282,6 +4424,19 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                         onToggleCollapse = onToggleCollapse,
                         destination = destination,
                         settingsOpen = overlays.settingsPage != null,
+                        backLabel = if (settingsBackParent == null) DesktopStrings["back", "Back"]
+                            else settingsBackLabel(settingsBackParent),
+                        onActionFocusChanged = { sidebarActionsFocused = it },
+                        canGoBack = canGoBack,
+                        refresh = pageRefresh,
+                        onBack = { goBackFromSidebar() },
+                        onRefresh = {
+                            val refresh = pageRefresh
+                            if (refresh != null && !refresh.loading) {
+                                dismissDrawer()
+                                refresh.run()
+                            }
+                        },
                         accountPlaylists = currentSidebarAccountPlaylists,
                         pinnedPlaylists = visiblePlaylistPins,
                         onOpenPinnedPlaylist = { pin ->
@@ -4971,15 +5126,6 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             Modifier.fillMaxSize().padding(bottom = contentPadding.calculateBottomPadding()),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            if (overlays.settingsPage != DesktopSettingsPage.MAIN) {
-                                Box(Modifier.widthIn(max = DesktopSettingsPageWidth).fillMaxWidth().padding(start = DesktopSettingsPageGutter, top = 8.dp)) {
-                                    TextButton(onClick = ::goBack) {
-                                        Icon(Icons.Rounded.ArrowBack, contentDescription = null)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(settingsBackLabel(settingsParentForBack(overlays.settingsPage, settingsParents)))
-                                    }
-                                }
-                            }
                             Box(Modifier.weight(1f).fillMaxWidth()) {
                             CompositionLocalProvider(LocalDesktopPanelIsPage provides true) {
                             when (val settingsPage = overlays.settingsPage!!) {
@@ -5376,7 +5522,6 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             contentPadding = contentPadding,
                         )
                         destination == DesktopDestination.LISTEN_NOW && showMoodGrid -> Column(Modifier.fillMaxSize()) {
-                            TextButton(onClick = { showMoodGrid = false }) { Text("Back to Home") }
                             MoodGridPage(
                                 gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
                                 onClick = { mood, label -> openTopPick(TopPicks.moodStation(mood), label) },
@@ -5401,7 +5546,6 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             pullState = rememberPullToRefreshState(),
                             contentPadding = sharedPagePadding,
                             title = "Home",
-                            titleActions = { DesktopHomeRefreshButton(homeRefreshing, ::refreshHome) },
                             signedIn = true,
                             onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
                             onLoadMore = ::loadMoreHome,
@@ -5589,12 +5733,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             contentPadding = sharedPagePadding,
                             onConnect = { openSettingsPage(DesktopSettingsPage.SPOTIFY_CANVAS) },
                             onManageAccount = { openSettingsPage(DesktopSettingsPage.INTEGRATIONS) },
-                            onRetry = {
-                                // Revalidate the session and re-harvest a bearer on Refresh; the old
-                                // handler reused a failed/stale token and reproduced the same error.
-                                DesktopSpotifyLibraryAuth.invalidate()
-                                spotifyReloads++
-                            },
+                            onRetry = ::refreshSpotifyLibrary,
                             onOpenPlaylist = { playlist ->
                                 openCollection(
                                     browseId = SPOTIFY_PAGE_PREFIX + playlist.id,
@@ -5665,8 +5804,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             },
                             onSignIn = { overlays.accounts = true },
                             onRetry = ::reloadLibrary,
-                            refreshing = false,
-                            onRefresh = ::reloadLibrary,
+                            refreshing = libraryRefreshing,
+                            onRefresh = ::refreshLibrary,
                             pullState = rememberPullToRefreshState(),
                             contentPadding = sharedPagePadding,
                             links = libraryLinks,
@@ -5694,6 +5833,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 downloadedIds = downloads.map(Song::videoId).toSet(),
                                 downloadInProgress = downloadInProgress,
                                 playlistStaleIds = stalePlaylistDownloads,
+                                drillDown = libraryDrillDown,
+                                onDrillDownChange = ::changeLibraryDrillDown,
                                 onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["downloads", "Downloads"], PlaybackSourceType.BROWSE)) },
                                 onOpenPlaylist = { record -> openCollection(record.id, record.toBrowseItem()) },
                                 onUpdatePlaylist = ::updatePlaylistDownload,
@@ -5719,6 +5860,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 DesktopLocalMusic.withDownloadedArtwork(localSongs, downloads)
                             },
                             loading = localMusicLoading,
+                            drillDown = libraryDrillDown,
+                            onDrillDownChange = ::changeLibraryDrillDown,
                             onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["local_music", "Local Music"], PlaybackSourceType.BROWSE)) },
                             contentPadding = contentPadding,
                             menu = { song -> songMenu(song) },
@@ -6128,6 +6271,12 @@ private fun DesktopSidebar(
     onToggleCollapse: () -> Unit,
     destination: DesktopDestination,
     settingsOpen: Boolean,
+    backLabel: String,
+    canGoBack: Boolean,
+    refresh: DesktopPageRefresh?,
+    onActionFocusChanged: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
     accountPlaylists: List<ShelfItem>,
     localPlaylists: List<DesktopPlaylist>,
     pinnedPlaylists: List<DesktopPlaylistPin>,
@@ -6225,6 +6374,16 @@ private fun DesktopSidebar(
                     Icon(Icons.Rounded.ChevronLeft, "Collapse sidebar", tint = DesktopSecondary, modifier = Modifier.size(20.dp))
                 }
             }
+            DesktopSidebarActions(
+                collapsed = collapsed,
+                backLabel = backLabel,
+                canGoBack = canGoBack,
+                refresh = refresh,
+                onBack = onBack,
+                onRefresh = onRefresh,
+                onFocusChanged = onActionFocusChanged,
+            )
+            Spacer(Modifier.height(6.dp))
             val playlistNavState = rememberLazyListState()
             LazyColumn(
                 state = playlistNavState,
@@ -7642,13 +7801,15 @@ private data class DesktopNavEntry(
     val browse: DesktopBrowseTarget?,
     val mood: MoodGenre?,
     val showAll: HomeShelf?,
+    val moodGrid: Boolean,
+    val libraryDrillDown: DesktopLibraryDrillDown?,
     val replay: Boolean,
     val settings: DesktopSettingsPage?,
     val settingsParents: List<DesktopSettingsPage>,
 ) {
     /** What makes two entries the same place: an album that paged in more tracks has not moved. */
     val key: List<Any?>
-        get() = listOf(destination, artist?.browseId, collection?.browseId, collectionPinScope, browse?.browseId, browse?.params, mood?.browseId, mood?.params, showAll?.title, replay, settings)
+        get() = listOf(destination, artist?.browseId, collection?.browseId, collectionPinScope, browse?.browseId, browse?.params, mood?.browseId, mood?.params, showAll?.title, moodGrid, libraryDrillDown, replay, settings)
 }
 
 /** Deep enough for any way back anyone takes; the oldest fall off. */
@@ -7707,6 +7868,8 @@ internal fun DesktopDownloadsPage(
     downloadedIds: Set<String>,
     downloadInProgress: Set<String>,
     playlistStaleIds: Set<String>,
+    drillDown: DesktopLibraryDrillDown? = null,
+    onDrillDownChange: (DesktopLibraryDrillDown?) -> Unit = {},
     onSongClick: (Song) -> Unit,
     onOpenPlaylist: (DesktopPlaylistDownload) -> Unit,
     onUpdatePlaylist: (DesktopPlaylistDownload) -> Unit,
@@ -7717,6 +7880,8 @@ internal fun DesktopDownloadsPage(
     DesktopLocalMusicPage(
         persistence = persistence,
         songs = downloads,
+        drillDown = drillDown,
+        onDrillDownChange = onDrillDownChange,
         onSongClick = onSongClick,
         contentPadding = contentPadding,
         menu = menu,
@@ -7993,6 +8158,8 @@ internal enum class DownloadsTab(val label: String) {
     ALBUMS("Albums"),
 }
 
+internal data class DesktopLibraryDrillDown(val tab: DownloadsTab, val name: String)
+
 /** A local-music page's tab kinds in order — the Downloads page carries a Playlists tab between Songs and Artists. */
 internal fun downloadsTabs(withPlaylists: Boolean): List<DownloadsTab> = buildList {
     add(DownloadsTab.SONGS)
@@ -8009,6 +8176,8 @@ internal fun downloadsDefaultTabIndex(tabs: List<DownloadsTab>): Int =
 private fun DesktopLocalMusicPage(
     persistence: DesktopPersistence,
     songs: List<Song>,
+    drillDown: DesktopLibraryDrillDown?,
+    onDrillDownChange: (DesktopLibraryDrillDown?) -> Unit,
     onSongClick: (Song) -> Unit,
     contentPadding: PaddingValues,
     loading: Boolean = false,
@@ -8030,7 +8199,11 @@ private fun DesktopLocalMusicPage(
     val tabs = downloadsTabs(playlistsTab != null)
     val downloadsSettings = remember { DesktopDownloadsSettings(persistence.preferences) }
     var selectedTab by remember(persistenceKey) {
-        mutableStateOf(if (playlistsTab != null) tabs.indexOf(downloadsSettings.initialTab()).coerceAtLeast(0) else downloadsDefaultTabIndex(tabs))
+        mutableStateOf(when {
+            drillDown != null -> tabs.indexOf(drillDown.tab)
+            playlistsTab != null -> tabs.indexOf(downloadsSettings.initialTab()).coerceAtLeast(0)
+            else -> downloadsDefaultTabIndex(tabs)
+        })
     }
     LaunchedEffect(persistenceKey, playlistsTab != null) {
         if (playlistsTab != null) snapshotFlow { selectedTab }.drop(1).collect { index ->
@@ -8054,7 +8227,6 @@ private fun DesktopLocalMusicPage(
             }.getOrDefault(DesktopLibrarySort.TITLE_ASC),
         )
     }
-    var drillDown by remember(persistenceKey) { mutableStateOf<Pair<String, List<Song>>?>(null) }
     val filteredSongs = remember(songs, sort, searchQuery) {
         songs.sortedForDesktopLibrary(sort).filter { song ->
             searchQuery.isBlank() || song.title.contains(searchQuery, true) || song.artist.contains(searchQuery, true) ||
@@ -8107,6 +8279,7 @@ private fun DesktopLocalMusicPage(
                 tabs.forEachIndexed { index, tab ->
                     Tab(selected = selectedTab == index, onClick = {
                         selectedTab = index
+                        onDrillDownChange(null)
                     }, text = { Text(tab.label) })
                 }
             }
@@ -8116,12 +8289,11 @@ private fun DesktopLocalMusicPage(
             } else if (songs.isEmpty() && playlistsTab == null) {
                 DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
             } else if (drillDown != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { drillDown = null }) { Icon(Icons.Rounded.ArrowBack, DesktopStrings["back", "Back"]) }
-                    Text(drillDown!!.first, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                }
+                val groups = if (drillDown.tab == DownloadsTab.ARTISTS) artists else albums
+                val groupSongs = groups.firstOrNull { it.key == drillDown.name }?.value.orEmpty()
+                Text(drillDown.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
-                DesktopLibrarySongContent(drillDown!!.second, view, onSongClick, menu)
+                DesktopLibrarySongContent(groupSongs, view, onSongClick, menu)
             } else when (tabs[selectedTab]) {
                 DownloadsTab.SONGS -> DesktopLibrarySongContent(
                     filteredSongs,
@@ -8134,8 +8306,12 @@ private fun DesktopLocalMusicPage(
                 DownloadsTab.PLAYLISTS ->
                     playlistsTab?.invoke(view, sort, searchQuery)
                         ?: DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
-                DownloadsTab.ARTISTS -> DesktopLibraryGroupingContent(artists, view, onGroupClick = { drillDown = it })
-                DownloadsTab.ALBUMS -> DesktopLibraryGroupingContent(albums, view, onGroupClick = { drillDown = it })
+                DownloadsTab.ARTISTS -> DesktopLibraryGroupingContent(artists, view, onGroupClick = {
+                    onDrillDownChange(DesktopLibraryDrillDown(DownloadsTab.ARTISTS, it.first))
+                })
+                DownloadsTab.ALBUMS -> DesktopLibraryGroupingContent(albums, view, onGroupClick = {
+                    onDrillDownChange(DesktopLibraryDrillDown(DownloadsTab.ALBUMS, it.first))
+                })
             }
         }
     }
