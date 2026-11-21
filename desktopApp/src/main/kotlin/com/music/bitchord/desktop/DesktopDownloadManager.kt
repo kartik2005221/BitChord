@@ -12,6 +12,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 
 /** Downloads resolved audio into the user's own BitChord folder. */
 object DesktopDownloadManager {
@@ -44,7 +45,7 @@ object DesktopDownloadManager {
             val target = directory.resolve("$safeName.$extension")
             val temporary = directory.resolve(".$safeName.$extension.part")
             if (Files.isRegularFile(target) && Files.size(target) > 0L) {
-                return Result.success(song.copy(localUri = target.toUri().toString(), localPath = target.toString()))
+                return Result.success(song.onDisk(target))
             }
 
             if (manifest) {
@@ -61,7 +62,7 @@ object DesktopDownloadManager {
                 }
                 check(Files.size(temporary) > 0L) { "Download failed: nothing was sent" }
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
-                return Result.success(song.copy(localUri = target.toUri().toString(), localPath = target.toString()))
+                return Result.success(song.onDisk(target))
             }
 
             val existing = if (Files.isRegularFile(temporary)) Files.size(temporary) else 0L
@@ -113,7 +114,7 @@ object DesktopDownloadManager {
             }.getOrElse {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
             }
-            Result.success(song.copy(localUri = target.toUri().toString(), localPath = target.toString()))
+            Result.success(song.onDisk(target))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
@@ -153,7 +154,21 @@ object DesktopDownloadManager {
      * A claim that has just been shown to be false is not worth keeping to be shown false again on
      * the next play.
      */
-    fun verified(downloads: List<Song>): List<Song> = downloads.filter(::isSaved)
+    fun verified(downloads: List<Song>): List<Song> = downloads.mapNotNull { song ->
+        savedFile(song)?.let { song.onDisk(it) }
+    }
+
+    private fun Song.onDisk(path: Path): Song {
+        val attributes = runCatching { Files.readAttributes(path, BasicFileAttributes::class.java) }.getOrNull()
+        val modified = attributes?.lastModifiedTime()?.toInstant()?.epochSecond
+        val created = attributes?.creationTime()?.toInstant()?.epochSecond?.takeIf { it > 0 }
+        return copy(
+            localUri = path.toUri().toString(),
+            localPath = path.toString(),
+            localDateAddedSeconds = localDateAddedSeconds ?: created ?: modified,
+            localDateModifiedSeconds = modified ?: localDateModifiedSeconds,
+        )
+    }
 
     /** Deletes the file saved for [song]. Returns whether there was one to delete. */
     fun delete(song: Song): Boolean {

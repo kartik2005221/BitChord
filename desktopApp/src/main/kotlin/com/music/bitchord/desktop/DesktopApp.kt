@@ -3180,14 +3180,21 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         DesktopHorizontalScroll.install()
         // Run download verification in background so startup UI isn't blocked
         scope.launch(Dispatchers.IO) {
-            val onDisk = DesktopDownloadManager.verified(downloads)
-            if (onDisk.size != downloads.size) {
-                DesktopTrackLog.log(
-                    "downloads: ${downloads.size - onDisk.size} recorded file(s) are gone; forgetting them",
-                )
+            val downloadsAtStartup = withContext(Dispatchers.Main) { downloads }
+            val onDisk = DesktopDownloadManager.verified(downloadsAtStartup)
+            if (onDisk != downloadsAtStartup) {
+                val missingCount = downloadsAtStartup.size - onDisk.size
+                if (missingCount > 0) {
+                    DesktopTrackLog.log("downloads: $missingCount recorded file(s) are gone; forgetting them")
+                }
                 withContext(Dispatchers.Main) {
-                    downloads = onDisk
-                    persistence.saveDownloads(onDisk)
+                    // Keep downloads completed while the on-disk check was running.
+                    val checked = downloadsAtStartup.toSet()
+                    val verified = onDisk.associateBy(Song::videoId)
+                    downloads = downloads.mapNotNull { song ->
+                        if (song in checked) verified[song.videoId] else song
+                    }
+                    persistence.saveDownloads(downloads)
                 }
             }
             DesktopStartupDiagnostics.record(DesktopStartupDiagnostics.Milestone.DOWNLOAD_VERIFY)
@@ -8233,13 +8240,13 @@ private fun DesktopLocalMusicPage(
                 song.albumName.orEmpty().contains(searchQuery, true)
         }
     }
-    val artists = remember(filteredSongs) {
+    val artists = remember(filteredSongs, sort) {
         filteredSongs.groupBy { it.artist.ifBlank { "On This Computer" } }
-            .entries.sortedBy { it.key.lowercase() }
+            .entries.toList().sortedForDesktopGroups(sort)
     }
-    val albums = remember(filteredSongs) {
+    val albums = remember(filteredSongs, sort) {
         filteredSongs.groupBy { it.albumName?.takeIf(String::isNotBlank) ?: "Unknown Album" }
-            .entries.sortedBy { it.key.lowercase() }
+            .entries.toList().sortedForDesktopGroups(sort)
     }
     DesktopPageScaffold(contentPadding) {
         Column(

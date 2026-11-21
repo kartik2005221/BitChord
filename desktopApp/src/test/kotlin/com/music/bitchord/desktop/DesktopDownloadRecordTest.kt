@@ -2,6 +2,8 @@ package com.music.bitchord.desktop
 
 import com.music.bitchord.data.model.Song
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,6 +76,17 @@ class DesktopDownloadRecordTest {
         val gone = song("gone", scratch.resolve("gone.m4a").toString())
         val never = song("never", null)
         assertEquals(listOf("here"), DesktopDownloadManager.verified(listOf(here, gone, never)).map { it.videoId })
+    }
+
+    @Test
+    fun `verification adds file dates to older download records`() {
+        val oldRecord = song("legacy", realFile("legacy.m4a"))
+        val modified = FileTime.fromMillis(1_700_000_000_000)
+        Files.setLastModifiedTime(Path.of(oldRecord.localPath!!), modified)
+        val verified = DesktopDownloadManager.verified(listOf(oldRecord)).single()
+
+        assertTrue((verified.localDateAddedSeconds ?: 0) > 0)
+        assertEquals(modified.toInstant().epochSecond, verified.localDateModifiedSeconds)
     }
 
     @Test

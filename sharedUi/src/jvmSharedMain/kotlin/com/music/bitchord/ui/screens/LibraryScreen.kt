@@ -220,7 +220,7 @@ fun LibraryScreen(
                                     onItemLongPress = onShelfItemLongPress,
                                     onNewPlaylist = onNewPlaylist,
                                     onImportSpotifyPlaylist = onImportSpotifyPlaylist,
-                                    onShowAll = { onShowAll(pinnedFirst) },
+                                    onShowAll = { onShowAll(shelf) },
                                     pinnedPlaylists = pinnedPlaylists,
                                 )
                             } else {
