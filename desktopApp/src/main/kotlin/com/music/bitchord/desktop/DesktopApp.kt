@@ -6421,6 +6421,14 @@ private fun DesktopSidebar(
                 onFocusChanged = onActionFocusChanged,
             )
             Spacer(Modifier.height(6.dp))
+            val unpinnedAccountPlaylists = remember(accountPlaylists, pinnedPlaylists) {
+                val ids = pinnedPlaylists.filter { it.scope != null }.mapTo(mutableSetOf()) { it.identity.first }
+                accountPlaylists.filterNot { it.browseId?.removePrefix("VL") in ids }
+            }
+            val unpinnedLocalPlaylists = remember(localPlaylists, pinnedPlaylists) {
+                val ids = pinnedPlaylists.filter { it.scope == null }.mapTo(mutableSetOf()) { it.browseId }
+                localPlaylists.filterNot { it.id in ids }
+            }
             val playlistNavState = rememberLazyListState()
             LazyColumn(
                 state = playlistNavState,
@@ -6491,7 +6499,7 @@ private fun DesktopSidebar(
                         onUnpin = { onUnpinPlaylist(pin) },
                     )
                 }
-                if (pinnedPlaylists.isNotEmpty()) {
+                if (pinnedPlaylists.isNotEmpty() && (collapsed || unpinnedAccountPlaylists.isNotEmpty() || unpinnedLocalPlaylists.isNotEmpty())) {
                     item(key = "pinned-divider") {
                         Spacer(Modifier.height(6.dp))
                         HorizontalDivider(color = desktopChromeDivider())
@@ -6505,14 +6513,14 @@ private fun DesktopSidebar(
                         }
                     }
                 } else {
-                    items(accountPlaylists, key = { "account:${it.browseId}" }) { playlist ->
+                    items(unpinnedAccountPlaylists, key = { "account:${it.browseId}" }) { playlist ->
                         DesktopSidebarItem(
                             Icons.AutoMirrored.Rounded.PlaylistPlay,
                             playlist.title,
                             !settingsOpen && openedCollectionId == playlist.browseId,
                         ) { onOpenAccountPlaylist(playlist) }
                     }
-                    items(localPlaylists, key = { "local:${it.id}" }) { playlist ->
+                    items(unpinnedLocalPlaylists, key = { "local:${it.id}" }) { playlist ->
                         DesktopSidebarItem(
                             Icons.AutoMirrored.Rounded.PlaylistPlay,
                             playlist.title,
