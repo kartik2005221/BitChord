@@ -220,7 +220,7 @@ fun LibraryScreen(
                                     onItemLongPress = onShelfItemLongPress,
                                     onNewPlaylist = onNewPlaylist,
                                     onImportSpotifyPlaylist = onImportSpotifyPlaylist,
-                                    onShowAll = { onShowAll(pinnedFirst) },
+                                    onShowAll = { onShowAll(shelf) },
                                     pinnedPlaylists = pinnedPlaylists,
                                 )
                             } else {
@@ -270,12 +270,10 @@ private fun LibraryLinkList(links: List<LibraryLink>, onClick: (ShelfItem) -> Un
                     .padding(horizontal = PAGE_GUTTER),
             ) {
                 if (link.logo != null) {
-                    // A mark, not a glyph: white on dark, black on light, with
-                    // its cut-outs left clear.
                     Icon(
                         painter = painterResource(link.logo),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onBackground,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(LINK_ICON_SIZE),
                     )
                 } else {

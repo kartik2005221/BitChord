@@ -28,7 +28,15 @@ data class DesktopPlaylistDownload(
     val songs: List<Song>,
     val createdAt: Long,
     val updatedAt: Long,
+    internal val pinOwner: String? = null,
 )
+
+internal fun List<DesktopPlaylistDownload>.sortedForDownloads(sort: DesktopLibrarySort) = when (sort) {
+    DesktopLibrarySort.DATE_ADDED -> sortedByDescending(DesktopPlaylistDownload::createdAt)
+    DesktopLibrarySort.DATE_MODIFIED -> sortedByDescending(DesktopPlaylistDownload::updatedAt)
+    DesktopLibrarySort.TITLE_ASC -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, DesktopPlaylistDownload::title))
+    DesktopLibrarySort.TITLE_DESC -> sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER, DesktopPlaylistDownload::title))
+}
 
 /**
  * The store behind playlist-level Downloads, over the same Java-Preferences
@@ -84,10 +92,16 @@ object DesktopPlaylistDownloads {
      * the snapshot's copies that are already on disk — a collection whose songs
      * were saved one by one is still, in its own way, already partly offline.
      */
-    fun remember(collection: DesktopCollection, downloaded: List<Song>): DesktopPlaylistDownload {
+    fun remember(
+        collection: DesktopCollection,
+        downloaded: List<Song>,
+        pinOwner: String? = null,
+    ): DesktopPlaylistDownload {
         val now = System.currentTimeMillis()
         val record: DesktopPlaylistDownload = synchronized(lock) {
-            val existing = _records.value.firstOrNull { it.id == collection.browseId }
+            val existing = _records.value.firstOrNull {
+                it.id == collection.browseId && (pinOwner == null || it.pinOwner == pinOwner)
+            }
             val snapshot = mergedSnapshot(existing?.songs.orEmpty(), collection.songs)
                 .map { song -> downloaded.firstOrNull { it.videoId == song.videoId } ?: song }
             val merged = DesktopPlaylistDownload(
@@ -99,6 +113,7 @@ object DesktopPlaylistDownloads {
                 songs = snapshot,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
+                pinOwner = pinOwner,
             )
             save(_records.value.filterNot { it.id == merged.id } + merged)
             merged
@@ -245,6 +260,7 @@ internal fun DesktopPlaylistDownload.toPreferenceLine(): String = listOf(
     encode(createdAt.toString()),
     encode(updatedAt.toString()),
     songs.joinToString(";") { song -> encodeSongLine(song) },
+    encode(pinOwner.orEmpty()),
 ).joinToString("#")
 
 internal fun decodeRecord(value: String): DesktopPlaylistDownload? {
@@ -264,6 +280,7 @@ internal fun decodeRecord(value: String): DesktopPlaylistDownload? {
         createdAt = header[5].toLongOrNull() ?: 0L,
         updatedAt = header[6].toLongOrNull() ?: 0L,
         songs = songs,
+        pinOwner = parts.getOrNull(8)?.let(::decode)?.ifBlank { null },
     )
 }
 

@@ -220,20 +220,26 @@ fun LocalMusicScreen(
         }
     }
 
-    // When non-null, we are showing a drill-down list for that artist or album.
-    var drillDownLabel by remember { mutableStateOf<String?>(null) }
-    var drillDownSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    // The release's own cover, for the drill-down header. Only a downloaded
-    // album or playlist has one worth showing — a tag-derived grouping's
-    // "artwork" is just whichever of its rows happened to be first.
-    var drillDownArt by remember { mutableStateOf<String?>(null) }
-
+    val artistGroups = remember(sortedSongs, sortOrder) {
+        sortedSongs.groupBy(Song::artist).entries
+            .sortedWith(sortOrder.collectionComparator({ it.key }, { it.value }))
+    }
+    val albums = remember(sortedSongs, collections, sortOrder) {
+        albumEntries(sortedSongs, collections, sortOrder)
+    }
+    var drillDownArtist by remember { mutableStateOf<String?>(null) }
+    var drillDownAlbumKey by remember { mutableStateOf<String?>(null) }
+    val drillDownAlbum = albums.firstOrNull { it.key == drillDownAlbumKey }
+    val drillDownLabel = drillDownArtist ?: drillDownAlbum?.title
+    val drillDownSongs = artistGroups.firstOrNull { it.key == drillDownArtist }?.value
+        ?: drillDownAlbum?.songs.orEmpty()
+    var drillDownQuery by remember(drillDownArtist, drillDownAlbumKey) { mutableStateOf("") }
+    val matchingDrillDownSongs = drillDownSongs.filter { drillDownQuery.isBlank() || it.matchesSearch(drillDownQuery) }
     val inDrillDown = drillDownLabel != null
 
     val leaveDrillDown = {
-        drillDownLabel = null
-        drillDownSongs = emptyList()
-        drillDownArt = null
+        drillDownArtist = null
+        drillDownAlbumKey = null
     }
 
     BackHandler(enabled = selectingDownloads) {
@@ -287,9 +293,10 @@ fun LocalMusicScreen(
                 ),
             )
         } else LocalSearchField(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
+            query = if (inDrillDown) drillDownQuery else searchQuery,
+            onQueryChange = { if (inDrillDown) drillDownQuery = it else searchQuery = it },
             sortOrder = sortOrder,
+            showSort = drillDownAlbum?.asked != true,
             onSortOrderChange = {
                 if (isDownloads) AppSettings.setDownloadedMusicSort(it)
                 else AppSettings.setLocalMusicSort(it)
@@ -386,8 +393,8 @@ fun LocalMusicScreen(
                     // Drill-down song list for artist / album
                     DrillDownSongList(
                         label = drillDownLabel ?: "",
-                        artworkUrl = drillDownArt,
-                        songs = drillDownSongs,
+                        artworkUrl = drillDownAlbum?.thumbnailUrl,
+                        songs = matchingDrillDownSongs,
                         viewType = viewType,
                         selectedIds = selectedDownloadIds,
                         currentSong = currentSong,
@@ -444,19 +451,14 @@ fun LocalMusicScreen(
                 }
 
                 key == "tab:$LOCAL_TAB_ARTISTS" -> {
-                    val artists = remember(sortedSongs, searchQuery) {
-                        sortedSongs.groupBy { it.artist }
-                            .entries
-                            .filter { searchQuery.isBlank() || it.key.contains(searchQuery, ignoreCase = true) }
-                            .sortedBy { it.key.lowercase(Locale.ROOT) }
+                    val matchingArtists = artistGroups.filter {
+                        searchQuery.isBlank() || it.key.contains(searchQuery, ignoreCase = true)
                     }
                     ArtistsTab(
-                        artists = artists,
+                        artists = matchingArtists,
                         viewType = viewType,
-                        onArtistClick = { artist, artistSongs ->
-                            drillDownLabel = artist
-                            drillDownSongs = artistSongs
-                            drillDownArt = null
+                        onArtistClick = { artist, _ ->
+                            drillDownArtist = artist
                         },
                         onArtistLongPress = onCollectionLongPress,
                         contentPadding = bodyContentPadding,
@@ -465,24 +467,20 @@ fun LocalMusicScreen(
 
                 else -> {
                     // LOCAL_TAB_ALBUMS
-                    val albums = remember(sortedSongs, collections, searchQuery) {
-                        albumEntries(sortedSongs, collections).filter {
-                            searchQuery.isBlank() ||
-                                it.title.contains(searchQuery, ignoreCase = true) ||
-                                it.artist.contains(searchQuery, ignoreCase = true)
-                        }
+                    val matchingAlbums = albums.filter {
+                        searchQuery.isBlank() ||
+                            it.title.contains(searchQuery, ignoreCase = true) ||
+                            it.artist.contains(searchQuery, ignoreCase = true)
                     }
                     AlbumsTab(
-                        albums = albums,
+                        albums = matchingAlbums,
                         viewType = viewType,
                         selectedKeys = selectedAlbumKeys,
                         onAlbumClick = { entry ->
                             if (selectingDownloads) {
                                 toggleAlbumSelection(entry)
                             } else {
-                                drillDownLabel = entry.title
-                                drillDownSongs = entry.songs
-                                drillDownArt = entry.thumbnailUrl
+                                drillDownAlbumKey = entry.key
                             }
                         },
                         onAlbumLongPress = { entry ->
@@ -907,6 +905,7 @@ private class AlbumEntry(
 private fun albumEntries(
     songs: List<Song>,
     collections: List<DownloadedCollection>,
+    sort: LocalMusicSort,
 ): List<AlbumEntry> {
     val asked = collections.map { collection ->
         AlbumEntry(
@@ -940,7 +939,7 @@ private fun albumEntries(
             )
         }
     return (asked + derived).sortedWith(
-        compareByDescending<AlbumEntry> { it.asked }.thenBy { it.title.lowercase(Locale.ROOT) },
+        compareByDescending(AlbumEntry::asked).then(sort.collectionComparator(AlbumEntry::title, AlbumEntry::songs)),
     )
 }
 
@@ -1488,6 +1487,20 @@ private fun List<Song>.sortedForLibrary(order: LocalMusicSort): List<Song> = whe
     )
 }
 
+internal fun <T> LocalMusicSort.collectionComparator(
+    title: (T) -> String,
+    songs: (T) -> List<Song>,
+): Comparator<T> = when (this) {
+    LocalMusicSort.TITLE_ASC -> compareBy(String.CASE_INSENSITIVE_ORDER, title)
+    LocalMusicSort.TITLE_DESC -> compareByDescending(String.CASE_INSENSITIVE_ORDER, title)
+    LocalMusicSort.DATE_ADDED -> compareByDescending<T> { group ->
+        songs(group).mapNotNull(Song::localDateAddedSeconds).maxOrNull() ?: Long.MIN_VALUE
+    }.thenBy(String.CASE_INSENSITIVE_ORDER, title)
+    LocalMusicSort.DATE_MODIFIED -> compareByDescending<T> { group ->
+        songs(group).mapNotNull(Song::localDateModifiedSeconds).maxOrNull() ?: Long.MIN_VALUE
+    }.thenBy(String.CASE_INSENSITIVE_ORDER, title)
+}
+
 /**
  * The filter box above the tab row.
  *
@@ -1500,6 +1513,7 @@ private fun LocalSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     sortOrder: LocalMusicSort,
+    showSort: Boolean,
     onSortOrderChange: (LocalMusicSort) -> Unit,
     viewType: LibraryViewType,
     onViewTypeToggle: () -> Unit,
@@ -1577,45 +1591,47 @@ private fun LocalSearchField(
                 modifier = Modifier.size(19.dp),
             )
         }
-        Spacer(Modifier.width(2.dp))
-        Box {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .clickable { sortMenuOpen = true },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Sort,
-                    contentDescription = stringResource(R.string.sort_music),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(19.dp),
-                )
-            }
-            DropdownMenu(
-                expanded = sortMenuOpen,
-                onDismissRequest = { sortMenuOpen = false },
-            ) {
-                LocalMusicSort.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.localizedLabel()) },
-                        trailingIcon = if (option == sortOrder) {
-                            {
-                                Icon(
-                                    Icons.Rounded.Check,
-                                    contentDescription = stringResource(R.string.selected),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                        onClick = {
-                            onSortOrderChange(option)
-                            sortMenuOpen = false
-                        },
+        if (showSort) {
+            Spacer(Modifier.width(2.dp))
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable { sortMenuOpen = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.Sort,
+                        contentDescription = stringResource(R.string.sort_music),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(19.dp),
                     )
+                }
+                DropdownMenu(
+                    expanded = sortMenuOpen,
+                    onDismissRequest = { sortMenuOpen = false },
+                ) {
+                    LocalMusicSort.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.localizedLabel()) },
+                            trailingIcon = if (option == sortOrder) {
+                                {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = stringResource(R.string.selected),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onClick = {
+                                onSortOrderChange(option)
+                                sortMenuOpen = false
+                            },
+                        )
+                    }
                 }
             }
         }

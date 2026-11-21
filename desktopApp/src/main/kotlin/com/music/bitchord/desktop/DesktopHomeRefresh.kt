@@ -1,15 +1,5 @@
 package com.music.bitchord.desktop
 
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.music.bitchord.data.model.HomeShelf
 
 /**
@@ -25,24 +15,4 @@ import com.music.bitchord.data.model.HomeShelf
 internal fun refreshedHomeShelves(shelves: List<HomeShelf>, seen: MutableSet<String>): List<HomeShelf> {
     seen.clear()
     return shelves.filter { it.items.isNotEmpty() && seen.add(it.title.lowercase()) }
-}
-
-/** Home's refresh: the page keeps its cards and its place while a fresh feed is fetched. */
-@Composable
-internal fun DesktopHomeRefreshButton(refreshing: Boolean, onRefresh: () -> Unit) {
-    IconButton(onClick = onRefresh, enabled = !refreshing) {
-        if (refreshing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Rounded.Refresh,
-                contentDescription = "Refresh recommendations",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
 }

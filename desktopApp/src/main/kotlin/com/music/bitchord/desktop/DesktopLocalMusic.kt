@@ -200,15 +200,27 @@ enum class DesktopLibraryView {
     GRID,
 }
 
-fun List<Song>.sortedForDesktopLibrary(sort: DesktopLibrarySort): List<Song> = when (sort) {
-    DesktopLibrarySort.TITLE_ASC -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, Song::title))
-    DesktopLibrarySort.TITLE_DESC -> sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER, Song::title))
-    DesktopLibrarySort.DATE_ADDED -> sortedWith(
-        compareByDescending<Song> { it.localDateAddedSeconds ?: Long.MIN_VALUE }
-            .thenBy(String.CASE_INSENSITIVE_ORDER, Song::title),
-    )
-    DesktopLibrarySort.DATE_MODIFIED -> sortedWith(
-        compareByDescending<Song> { it.localDateModifiedSeconds ?: Long.MIN_VALUE }
-            .thenBy(String.CASE_INSENSITIVE_ORDER, Song::title),
-    )
+fun List<Song>.sortedForDesktopLibrary(sort: DesktopLibrarySort): List<Song> =
+    sortedWith(sort.comparator(Song::title, Song::localDateAddedSeconds, Song::localDateModifiedSeconds))
+
+internal fun List<Map.Entry<String, List<Song>>>.sortedForDesktopGroups(
+    sort: DesktopLibrarySort,
+): List<Map.Entry<String, List<Song>>> =
+    sortedWith(sort.comparator(
+        title = { it.key },
+        added = { group -> group.value.mapNotNull(Song::localDateAddedSeconds).maxOrNull() },
+        modified = { group -> group.value.mapNotNull(Song::localDateModifiedSeconds).maxOrNull() },
+    ))
+
+private fun <T> DesktopLibrarySort.comparator(
+    title: (T) -> String,
+    added: (T) -> Long?,
+    modified: (T) -> Long?,
+): Comparator<T> = when (this) {
+    DesktopLibrarySort.TITLE_ASC -> compareBy(String.CASE_INSENSITIVE_ORDER, title)
+    DesktopLibrarySort.TITLE_DESC -> compareByDescending(String.CASE_INSENSITIVE_ORDER, title)
+    DesktopLibrarySort.DATE_ADDED -> compareByDescending<T> { added(it) ?: Long.MIN_VALUE }
+        .thenBy(String.CASE_INSENSITIVE_ORDER, title)
+    DesktopLibrarySort.DATE_MODIFIED -> compareByDescending<T> { modified(it) ?: Long.MIN_VALUE }
+        .thenBy(String.CASE_INSENSITIVE_ORDER, title)
 }
