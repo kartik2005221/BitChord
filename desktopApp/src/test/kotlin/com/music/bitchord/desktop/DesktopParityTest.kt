@@ -26,6 +26,23 @@ class DesktopParityTest {
     }
 
     @Test
+    fun localLibraryGroupsSortByNameOrMostRecentTrackDate() {
+        val groups = listOf(
+            Song("1", "Track 1", "Zulu", null, localDateAddedSeconds = 1, localDateModifiedSeconds = 4),
+            Song("2", "Track 2", "alpha", null, localDateAddedSeconds = 2, localDateModifiedSeconds = 5),
+            Song("3", "Track 3", "Zulu", null, localDateAddedSeconds = 3, localDateModifiedSeconds = 1),
+            Song("4", "Track 4", "Bravo", null),
+        ).groupBy(Song::artist).entries.toList()
+
+        fun titles(sort: DesktopLibrarySort) = groups.sortedForDesktopGroups(sort).map { it.key }
+
+        assertEquals(listOf("alpha", "Bravo", "Zulu"), titles(DesktopLibrarySort.TITLE_ASC))
+        assertEquals(listOf("Zulu", "Bravo", "alpha"), titles(DesktopLibrarySort.TITLE_DESC))
+        assertEquals(listOf("Zulu", "alpha", "Bravo"), titles(DesktopLibrarySort.DATE_ADDED))
+        assertEquals(listOf("alpha", "Zulu", "Bravo"), titles(DesktopLibrarySort.DATE_MODIFIED))
+    }
+
+    @Test
     fun unknownArtistMetadataDoesNotBlockAQualifiedSourceMatch() {
         val target = Song(
             videoId = "youtube-id",
