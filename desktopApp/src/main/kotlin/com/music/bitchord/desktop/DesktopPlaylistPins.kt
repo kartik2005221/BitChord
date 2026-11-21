@@ -1,5 +1,7 @@
 package com.music.bitchord.desktop
 
+import com.music.bitchord.data.spotify.SPOTIFY_PAGE_PREFIX
+import com.music.bitchord.data.spotify.SpotifyLibrary
 import java.security.MessageDigest
 import java.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,7 +41,8 @@ internal data class DesktopPlaylistPin(
 
 /** Spotify and YouTube's built-in lists can resolve to account-relative content. */
 internal fun requiresPlaylistDownloadOwner(browseId: String): Boolean =
-    browseId.startsWith("spotify:playlist:") || browseId.removePrefix("VL") in accountRelativeYouTubePlaylists
+    browseId == SPOTIFY_PAGE_PREFIX + SpotifyLibrary.LIKED_ID ||
+        browseId.removePrefix("VL") in accountRelativeYouTubePlaylists
 
 private val accountRelativeYouTubePlaylists = setOf("LM", "SE")
 

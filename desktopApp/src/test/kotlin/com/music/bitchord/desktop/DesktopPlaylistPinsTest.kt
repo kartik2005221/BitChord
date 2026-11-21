@@ -109,6 +109,10 @@ class DesktopPlaylistPinsTest {
         val playlist = liked.copy(browseId = "PL123")
         val oldSnapshot = likedSnapshot.copy(id = "VLPL123", pinOwner = null)
         assertEquals(oldSnapshot, playlist.downloadedSnapshot(listOf(oldSnapshot)))
+
+        val spotifyPlaylist = playlist.copy(browseId = "spotify:playlist:regular")
+        val oldSpotifySnapshot = oldSnapshot.copy(id = spotifyPlaylist.browseId)
+        assertEquals(oldSpotifySnapshot, spotifyPlaylist.downloadedSnapshot(listOf(oldSpotifySnapshot)))
     }
 
 }
