@@ -13,11 +13,14 @@ import androidx.compose.ui.test.*
 import com.music.bitchord.data.NerdStats
 import com.music.bitchord.data.model.Song
 import org.junit.Test
+import kotlin.test.BeforeTest
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class DesktopMiniPlayerLikeTest {
+    @BeforeTest fun installHost() { com.music.bitchord.ui.player.PlayerPlatform.install(DesktopPlayerHost) }
+
     @Test fun likeAndMoreStayClickableInCompactDockWithoutExpanding() = runDesktopComposeUiTest(width = 480, height = 100) {
         var liked by mutableStateOf(false)
         var expanded = 0
