@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import com.music.bitchord.data.model.Song
 import java.util.UUID
@@ -18,14 +20,16 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class DesktopDownloadsViewTest {
     @Test
-    fun `playlist rows switch to tiles and back from the downloads toolbar`() {
+    fun `playlist sorting applies to rows and tiles from the downloads toolbar`() {
         val prefs = Preferences.userRoot().node("com.music.bitchord.tests/downloads-view-${UUID.randomUUID()}")
         try {
             val persistence = DesktopPersistence(prefs)
             persistence.saveString("downloaded_view", "LIST")
+            persistence.saveString("downloaded_sort", "DATE_ADDED")
             val song = Song("track", "Track", "Artist", null)
-            val first = DesktopPlaylistDownload("VLfirst", "First playlist", "", null, true, listOf(song), 0, 0)
-            val second = first.copy(id = "VLsecond", title = "Second playlist")
+            val first = DesktopPlaylistDownload("VLfirst", "alpha", "", null, true, listOf(song), 1, 5)
+            val second = first.copy(id = "VLsecond", title = "Bravo", createdAt = 3, updatedAt = 3)
+            val third = first.copy(id = "VLthird", title = "Charlie", createdAt = 2, updatedAt = 4)
             var opened: DesktopPlaylistDownload? = null
 
             runDesktopComposeUiTest(width = 800, height = 600) {
@@ -34,7 +38,7 @@ class DesktopDownloadsViewTest {
                         DesktopDownloadsPage(
                             persistence = persistence,
                             downloads = emptyList(),
-                            playlistRecords = listOf(first, second),
+                            playlistRecords = listOf(first, second, third),
                             downloadedIds = setOf(song.videoId),
                             downloadInProgress = emptySet(),
                             playlistStaleIds = emptySet(),
@@ -48,21 +52,40 @@ class DesktopDownloadsViewTest {
                 }
 
                 onNodeWithText("Playlists").assertIsSelected()
-                val firstPlaylist = onNodeWithText(first.title)
-                val secondPlaylist = onNodeWithText(second.title)
-                val changeView = onNodeWithContentDescription("Change view")
-                assertTrue(firstPlaylist.fetchSemanticsNode().boundsInRoot.bottom <
-                    secondPlaylist.fetchSemanticsNode().boundsInRoot.top)
+                fun assertOrder(vararg titles: String, grid: Boolean = false) {
+                    val displayed = titles.map { onNodeWithText(it).fetchSemanticsNode().boundsInRoot }
+                    displayed.zipWithNext().forEach { (before, after) ->
+                        assertTrue(if (grid) before.right < after.left else before.bottom < after.top)
+                    }
+                }
 
+                assertOrder(second.title, third.title, first.title)
+                onNodeWithText("Added").performClick()
+                assertOrder(first.title, third.title, second.title)
+                onNodeWithText("Modified").performClick()
+                assertOrder(first.title, second.title, third.title)
+                onNodeWithText("A–Z").performClick()
+                assertOrder(third.title, second.title, first.title)
+                onNodeWithText("Z–A").performClick()
+                assertOrder(second.title, third.title, first.title)
+
+                val changeView = onNodeWithContentDescription("Change view")
                 changeView.performClick()
-                assertTrue(firstPlaylist.fetchSemanticsNode().boundsInRoot.right <
-                    secondPlaylist.fetchSemanticsNode().boundsInRoot.left)
+                assertOrder(second.title, third.title, first.title, grid = true)
+                onNodeWithText("Added").performClick()
+                assertOrder(first.title, third.title, second.title, grid = true)
+                onNodeWithText("Modified").performClick()
+                assertOrder(first.title, second.title, third.title, grid = true)
+                onNodeWithText("A–Z").performClick()
+                assertOrder(third.title, second.title, first.title, grid = true)
+                assertEquals("TITLE_DESC", persistence.string("downloaded_sort", ""))
                 assertEquals("GRID", persistence.string("downloaded_view", ""))
 
                 changeView.performClick()
-                assertTrue(firstPlaylist.fetchSemanticsNode().boundsInRoot.bottom <
-                    secondPlaylist.fetchSemanticsNode().boundsInRoot.top)
-                secondPlaylist.performClick()
+                assertOrder(third.title, second.title, first.title)
+                onNode(hasSetTextAction()).performTextInput("brav")
+                onNodeWithText(first.title).assertDoesNotExist()
+                onNodeWithText(second.title).performClick()
                 runOnIdle { assertEquals(second, opened) }
                 assertEquals("LIST", persistence.string("downloaded_view", ""))
             }

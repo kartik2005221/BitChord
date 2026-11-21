@@ -7602,10 +7602,17 @@ internal fun DesktopDownloadsPage(
         emptyTitle = DesktopStrings["d_no_downloads", "No downloads"],
         emptyDescription = DesktopStrings["d_downloaded_songs_will_appear_here", "Downloaded songs will appear here."],
         persistenceKey = "downloaded",
-        playlistsTab = { view ->
+        playlistsTab = { view, sort, query ->
+            val sortedRecords = remember(playlistRecords, sort, query) {
+                playlistRecords.filter { record ->
+                    query.isBlank() || record.title.contains(query, ignoreCase = true) ||
+                        record.subtitle.contains(query, ignoreCase = true)
+                }.sortedForDownloads(sort)
+            }
             DesktopPlaylistDownloadsContent(
-                records = playlistRecords,
+                records = sortedRecords,
                 view = view,
+                searching = query.isNotBlank(),
                 downloadedIds = downloadedIds,
                 downloadInProgress = downloadInProgress,
                 staleIds = playlistStaleIds,
@@ -7624,6 +7631,7 @@ internal fun DesktopDownloadsPage(
 private fun DesktopPlaylistDownloadsContent(
     records: List<DesktopPlaylistDownload>,
     view: DesktopLibraryView,
+    searching: Boolean,
     downloadedIds: Set<String>,
     downloadInProgress: Set<String>,
     staleIds: Set<String>,
@@ -7632,11 +7640,15 @@ private fun DesktopPlaylistDownloadsContent(
     onRemove: (DesktopPlaylistDownload) -> Unit,
 ) {
     if (records.isEmpty()) {
-        DesktopEmptyPage(
-            BitChordIcons.Download,
-            "No playlist downloads",
-            "Download a playlist or album from its menu, and it will stand here.",
-        )
+        if (searching) {
+            DesktopEmptyPage(BitChordIcons.Search, "No matching playlists", "Try a different search.")
+        } else {
+            DesktopEmptyPage(
+                BitChordIcons.Download,
+                "No playlist downloads",
+                "Download a playlist or album from its menu, and it will stand here.",
+            )
+        }
         return
     }
     val showGrid = view == DesktopLibraryView.GRID
@@ -7884,7 +7896,7 @@ private fun DesktopLocalMusicPage(
     persistenceKey: String = "local",
     menu: (@Composable (Song) -> Unit)? = null,
     /** A Playlists tab between Songs and Artists — the Downloads page's downloaded collections. */
-    playlistsTab: (@Composable (DesktopLibraryView) -> Unit)? = null,
+    playlistsTab: (@Composable (DesktopLibraryView, DesktopLibrarySort, String) -> Unit)? = null,
     /** Copy for the songs list's own empty state, for a page that has a playlists tab to show instead. */
     songsEmptyTitle: String = "No matching music",
     songsEmptyDescription: String = "Try a different search.",
@@ -7953,12 +7965,8 @@ private fun DesktopLocalMusicPage(
                 )
                 Spacer(Modifier.width(10.dp))
                 TextButton(onClick = {
-                    sort = when (sort) {
-                        DesktopLibrarySort.TITLE_ASC -> DesktopLibrarySort.TITLE_DESC
-                        DesktopLibrarySort.TITLE_DESC -> DesktopLibrarySort.DATE_ADDED
-                        DesktopLibrarySort.DATE_ADDED -> DesktopLibrarySort.DATE_MODIFIED
-                        DesktopLibrarySort.DATE_MODIFIED -> DesktopLibrarySort.TITLE_ASC
-                    }
+                    val options = DesktopLibrarySort.entries
+                    sort = options[(sort.ordinal + 1) % options.size]
                     persistence.saveString("${persistenceKey}_sort", sort.name)
                 }) {
                     Text(sort.label())
@@ -8000,7 +8008,7 @@ private fun DesktopLocalMusicPage(
                     emptyDescription = songsEmptyDescription,
                 )
                 DownloadsTab.PLAYLISTS ->
-                    playlistsTab?.invoke(view)
+                    playlistsTab?.invoke(view, sort, searchQuery)
                         ?: DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
                 DownloadsTab.ARTISTS -> DesktopLibraryGroupingContent(artists, view, onGroupClick = { drillDown = it })
                 DownloadsTab.ALBUMS -> DesktopLibraryGroupingContent(albums, view, onGroupClick = { drillDown = it })
