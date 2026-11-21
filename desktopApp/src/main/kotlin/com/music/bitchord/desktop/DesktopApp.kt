@@ -3472,11 +3472,12 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         }
         val accountChanged = loadedAccountId != activeAccountId || loadedProfileId != activeProfileId
         val manualRefresh = libraryRefreshing && !accountChanged
-        if (!manualRefresh && !DesktopLibraryLoadPolicy.shouldFetch(
+        if (!DesktopLibraryLoadPolicy.shouldFetch(
                 accountChanged = accountChanged,
                 hasLoadedLibrary = libraryState is UiState.Success,
                 playlistDialogOpen = overlays.playlistDialog,
                 libraryVisible = destination == DesktopDestination.LIBRARY,
+                refreshRequested = manualRefresh,
             )
         ) {
             return@LaunchedEffect
@@ -3490,7 +3491,6 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 libraryState = UiState.Success(page.copy(likedContinuation = null))
                 loadedAccountId = activeAccountId
                 loadedProfileId = activeProfileId
-                libraryStale = false
                 // A Show All grid is another view of the account shelf, so update it in place.
                 libraryShowAll?.let { shelf ->
                     if (shelf.title != libraryOnDeviceTitle) {

@@ -201,11 +201,6 @@ internal fun DesktopSpotifyLibraryPage(
             TextButton(onClick = onManageAccount) {
                 Text("Account & integrations")
             }
-            if (connected) {
-                TextButton(onClick = onRetry, enabled = !loading) {
-                    Text(if (loading) "Refreshing..." else "Refresh")
-                }
-            }
         }
         when {
             !connected -> Column(
