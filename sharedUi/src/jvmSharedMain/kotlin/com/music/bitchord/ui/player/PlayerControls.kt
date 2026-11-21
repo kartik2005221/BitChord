@@ -82,6 +82,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.composed
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.draw.clip
@@ -332,41 +334,14 @@ internal fun PlaybackQualityLabel(
     isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val wifiQuality by PlayerSettings.audioQualityWifi.collectAsStateWithLifecycle()
-    val cellularQuality by PlayerSettings.audioQualityCellular.collectAsStateWithLifecycle()
-    val metered by PlayerSettings.meteredConnection.collectAsStateWithLifecycle()
-    val nerdStats by NerdStats.current.collectAsStateWithLifecycle()
-    // Whether this playback session is even asking for a lossless stream — the
-    // same computation SourceResolver.requestForNow() makes, mirrored here so
-    // "Loading lossless" only appears when a lossless fetch is actually in
-    // flight, not on every buffering YouTube track.
-    val effectiveQuality = if (metered == true) cellularQuality else wifiQuality
-    // Whether a module is still racing YouTube for this exact track — see
-    // [NerdStats.racingLossless]. YouTube can win that race and already be
-    // playing while the module lookup is still running detached, and the badge
-    // should keep saying "loading" through that stretch rather than going
-    // blank only to possibly say "loading" again a moment later.
-    val racingLossless by NerdStats.racingLossless.collectAsStateWithLifecycle()
-    LosslessOrStats(
-        isLoading = isLoading,
-        stillRacing = song.videoId in racingLossless,
-        losslessRequested = effectiveQuality == AudioQuality.LOSSLESS,
-        nerdStats = nerdStats,
-        modifier = modifier,
-    )
+    LosslessOrStats(state = observePlaybackQuality(song, isLoading), modifier = modifier)
 }
 
 /** Compact version of the player quality badge, with the same state precedence. */
 @Composable
 fun PlaybackQualityIcon(song: Song?, isLoading: Boolean, modifier: Modifier = Modifier, tint: Color = LocalPlayerTint.current) {
     if (song == null) return
-    val wifiQuality by PlayerSettings.audioQualityWifi.collectAsStateWithLifecycle()
-    val cellularQuality by PlayerSettings.audioQualityCellular.collectAsStateWithLifecycle()
-    val metered by PlayerSettings.meteredConnection.collectAsStateWithLifecycle()
-    val stats by NerdStats.current.collectAsStateWithLifecycle()
-    val racing by NerdStats.racingLossless.collectAsStateWithLifecycle()
-    val requested = (if (metered == true) cellularQuality else wifiQuality) == AudioQuality.LOSSLESS
-    val state = playbackQualityState(isLoading, song.videoId in racing, requested, stats)
+    val state = observePlaybackQuality(song, isLoading)
     val label = when (state) {
         PlaybackQuality.SEARCHING -> stringResource(Res.string.upgrading_quality)
         PlaybackQuality.HI_RES -> stringResource(Res.string.hi_res_lossless)
@@ -389,6 +364,17 @@ fun PlaybackQualityIcon(song: Song?, isLoading: Boolean, modifier: Modifier = Mo
     } else {
         Icon(painterResource(if (state == PlaybackQuality.DOLBY) Res.drawable.ic_dolby_atmos else Res.drawable.ic_lossless), label, iconModifier, tint = tint)
     }
+}
+
+@Composable
+private fun observePlaybackQuality(song: Song, isLoading: Boolean): PlaybackQuality {
+    val wifiQuality by PlayerSettings.audioQualityWifi.collectAsStateWithLifecycle()
+    val cellularQuality by PlayerSettings.audioQualityCellular.collectAsStateWithLifecycle()
+    val metered by PlayerSettings.meteredConnection.collectAsStateWithLifecycle()
+    val stats by NerdStats.current.collectAsStateWithLifecycle()
+    val racing by NerdStats.racingLossless.collectAsStateWithLifecycle()
+    val requested = (if (metered == true) cellularQuality else wifiQuality) == AudioQuality.LOSSLESS
+    return playbackQualityState(isLoading, song.videoId in racing, requested, stats)
 }
 
 private enum class PlaybackQuality { SEARCHING, HI_RES, LOSSLESS, DOLBY, HIGH, NONE }
@@ -1664,13 +1650,10 @@ private fun formatTime(ms: Long): String {
  */
 @Composable
 private fun LosslessOrStats(
-    isLoading: Boolean,
-    stillRacing: Boolean,
-    losslessRequested: Boolean,
-    nerdStats: NerdStats.Snapshot?,
+    state: PlaybackQuality,
     modifier: Modifier = Modifier,
 ) {
-    when (playbackQualityState(isLoading, stillRacing, losslessRequested, nerdStats)) {
+    when (state) {
         // Still resolving — either the player itself is buffering, or a
         // module is still racing YouTube for this track in the background
         // (see [NerdStats.racingLossless]) even though YouTube already won
@@ -1704,7 +1687,7 @@ private fun LosslessOrStats(
         PlaybackQuality.LOSSLESS, PlaybackQuality.HI_RES -> LosslessLabel(
             // Same line Tidal, Qobuz and Apple Music draw it at — see
             // [NerdStats.Snapshot.isHiRes].
-            text = stringResource(if (nerdStats?.isHiRes == true) Res.string.hi_res_lossless else Res.string.lossless),
+            text = stringResource(if (state == PlaybackQuality.HI_RES) Res.string.hi_res_lossless else Res.string.lossless),
             iconPainter = painterResource(Res.drawable.ic_lossless),
             // Shimmer is reserved for the thing that was asked for and
             // confirmed. It is what makes the badge read as an achievement
