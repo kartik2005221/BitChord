@@ -2,6 +2,10 @@ package com.music.bitchord.desktop
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasSetTextAction
@@ -88,6 +92,52 @@ class DesktopDownloadsViewTest {
                 onNodeWithText(second.title).performClick()
                 runOnIdle { assertEquals(second, opened) }
                 assertEquals("LIST", persistence.string("downloaded_view", ""))
+            }
+        } finally {
+            prefs.removeNode()
+        }
+    }
+
+    @Test
+    fun `artist drilldown responds to changes in the sort and search controls`() {
+        val prefs = Preferences.userRoot().node("com.music.bitchord.tests/downloads-view-${UUID.randomUUID()}")
+        try {
+            val persistence = DesktopPersistence(prefs)
+            persistence.saveString("downloaded_view", "LIST")
+            val first = Song("first", "alpha", "The Band", null)
+            val second = Song("second", "Bravo", "The Band", null)
+            runDesktopComposeUiTest(width = 800, height = 600) {
+                setContent {
+                    var drillDown by remember { mutableStateOf<DesktopLibraryDrillDown?>(null) }
+                    MaterialTheme {
+                        DesktopDownloadsPage(
+                            persistence = persistence,
+                            downloads = listOf(first, second),
+                            playlistRecords = emptyList(),
+                            downloadedIds = setOf(first.videoId, second.videoId),
+                            downloadInProgress = emptySet(),
+                            playlistStaleIds = emptySet(),
+                            onSongClick = {},
+                            onOpenPlaylist = {},
+                            onUpdatePlaylist = {},
+                            onRemovePlaylist = {},
+                            contentPadding = PaddingValues(),
+                            drillDown = drillDown,
+                            onDrillDownChange = { drillDown = it },
+                        )
+                    }
+                }
+
+                onNodeWithText("Artists").performClick()
+                onNodeWithText("The Band").performClick()
+                val alpha = onNodeWithText(first.title)
+                val bravo = onNodeWithText(second.title)
+                assertTrue(alpha.fetchSemanticsNode().boundsInRoot.bottom < bravo.fetchSemanticsNode().boundsInRoot.top)
+                onNodeWithText("A–Z").performClick()
+                assertTrue(bravo.fetchSemanticsNode().boundsInRoot.bottom < alpha.fetchSemanticsNode().boundsInRoot.top)
+                onNode(hasSetTextAction()).performTextInput("brav")
+                alpha.assertDoesNotExist()
+                bravo.assertExists()
             }
         } finally {
             prefs.removeNode()
