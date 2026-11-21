@@ -42,6 +42,7 @@ import com.music.bitchord.data.listentogether.partyQueueIndexOf
 import com.music.bitchord.data.listentogether.partyUpcomingAfter
 import com.music.bitchord.ui.LyricsProviderState
 import com.music.bitchord.ui.player.LyricsSidePanel
+import com.music.bitchord.ui.player.PlaybackQualityIcon
 import com.music.bitchord.ui.player.NowPlayingScreen
 import com.music.bitchord.ui.player.QueueSidePanel
 import com.music.bitchord.ui.player.PlayerBack
@@ -6596,6 +6597,7 @@ internal fun DesktopMiniPlayer(
                         Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                         Text(song.artist, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    PlaybackQualityIcon(song, isLoading, Modifier.padding(end = 2.dp), tint = DesktopSecondary)
                     if (onToggleLike != null) {
                         Box(
                             Modifier

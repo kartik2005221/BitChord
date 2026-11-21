@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
+import com.music.bitchord.data.NerdStats
 import com.music.bitchord.data.model.Song
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -95,6 +96,39 @@ class DesktopMiniPlayerLikeTest {
         addToQueue.performMouseInput { click() }
         runOnIdle { assertEquals(song, queued); assertEquals(0, expanded) }
         onNodeWithText("Add to queue").assertDoesNotExist()
+    }
+
+    @Test fun qualityFollowsTrackSearchAndMeasuredStream() = runDesktopComposeUiTest(width = 480, height = 100) {
+        var song: Song? by mutableStateOf(Song("first", "First", "Artist", null))
+        NerdStats.current.value = null
+        NerdStats.racingLossless.value = setOf("first")
+        try {
+            setContent {
+                MaterialTheme {
+                    DesktopMiniPlayer(
+                        song = song, isPlaying = false, isLoading = false, previousEnabled = false,
+                        progress = 0f, volume = 0.5f, shuffle = false, repeatMode = DesktopRepeatMode.OFF,
+                        sidePanel = null, onExpand = {}, onPlayPause = {}, onPrevious = {}, onNext = {},
+                        onShuffleChange = {}, onRepeatModeChange = {}, onVolumeChange = {},
+                        onOpenAudioOutput = {}, onOpenLyrics = {}, onOpenPip = {}, onOpenQueue = {}, onOpenDetails = {},
+                    )
+                }
+            }
+            onNodeWithContentDescription("Upgrading quality").assertIsDisplayed()
+            runOnIdle { NerdStats.current.value = NerdStats.Snapshot("audio/flac", 1411, 96000, 2, 24) }
+            onNodeWithContentDescription("Hi-Res Lossless").assertIsDisplayed()
+            runOnIdle {
+                song = Song("second", "Second", "Artist", null)
+                NerdStats.current.value = NerdStats.Snapshot("audio/aac", 320, 44100, 2)
+            }
+            onNodeWithContentDescription("High quality").assertIsDisplayed()
+            onNodeWithContentDescription("Upgrading quality").assertDoesNotExist()
+            runOnIdle { song = null }
+            onNodeWithContentDescription("High quality").assertDoesNotExist()
+        } finally {
+            NerdStats.current.value = null
+            NerdStats.racingLossless.value = emptySet()
+        }
     }
 
     @Test fun emptyDockDoesNotShowSongActions() = runDesktopComposeUiTest(width = 480, height = 100) {

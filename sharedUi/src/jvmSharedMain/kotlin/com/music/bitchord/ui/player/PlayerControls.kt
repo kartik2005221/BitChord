@@ -99,8 +99,6 @@ import org.jetbrains.compose.resources.vectorResource
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
@@ -356,6 +354,51 @@ internal fun PlaybackQualityLabel(
         nerdStats = nerdStats,
         modifier = modifier,
     )
+}
+
+/** Compact version of the player quality badge, with the same state precedence. */
+@Composable
+fun PlaybackQualityIcon(song: Song?, isLoading: Boolean, modifier: Modifier = Modifier, tint: Color = LocalPlayerTint.current) {
+    if (song == null) return
+    val wifiQuality by PlayerSettings.audioQualityWifi.collectAsStateWithLifecycle()
+    val cellularQuality by PlayerSettings.audioQualityCellular.collectAsStateWithLifecycle()
+    val metered by PlayerSettings.meteredConnection.collectAsStateWithLifecycle()
+    val stats by NerdStats.current.collectAsStateWithLifecycle()
+    val racing by NerdStats.racingLossless.collectAsStateWithLifecycle()
+    val requested = (if (metered == true) cellularQuality else wifiQuality) == AudioQuality.LOSSLESS
+    val state = playbackQualityState(isLoading, song.videoId in racing, requested, stats)
+    val label = when (state) {
+        PlaybackQuality.SEARCHING -> stringResource(Res.string.upgrading_quality)
+        PlaybackQuality.HI_RES -> stringResource(Res.string.hi_res_lossless)
+        PlaybackQuality.LOSSLESS -> stringResource(Res.string.lossless)
+        PlaybackQuality.DOLBY -> "Dolby Atmos"
+        PlaybackQuality.HIGH -> stringResource(Res.string.high_quality)
+        PlaybackQuality.NONE -> return
+    }
+    val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
+    val pulse = if (state == PlaybackQuality.SEARCHING && !reduceAnimation) {
+        rememberInfiniteTransition(label = "miniQualityPulse").animateFloat(
+            initialValue = 1f, targetValue = UPGRADING_PULSE_LOW,
+            animationSpec = infiniteRepeatable(tween(UPGRADING_PULSE_MS, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "miniQualityPulseAlpha",
+        )
+    } else null
+    val iconModifier = modifier.size(18.dp).graphicsLayer { alpha = pulse?.value ?: 1f }
+    if (state == PlaybackQuality.HIGH) {
+        Icon(Icons.Rounded.Headphones, label, iconModifier, tint = tint)
+    } else {
+        Icon(painterResource(if (state == PlaybackQuality.DOLBY) Res.drawable.ic_dolby_atmos else Res.drawable.ic_lossless), label, iconModifier, tint = tint)
+    }
+}
+
+private enum class PlaybackQuality { SEARCHING, HI_RES, LOSSLESS, DOLBY, HIGH, NONE }
+
+private fun playbackQualityState(isLoading: Boolean, stillRacing: Boolean, losslessRequested: Boolean, stats: NerdStats.Snapshot?): PlaybackQuality = when {
+    (stillRacing && stats?.isLossless != true) || (isLoading && losslessRequested && stats == null) -> PlaybackQuality.SEARCHING
+    stats?.isLossless == true -> if (stats.isHiRes) PlaybackQuality.HI_RES else PlaybackQuality.LOSSLESS
+    stats?.isDolbyAtmos == true -> PlaybackQuality.DOLBY
+    stats?.isHiQuality == true -> PlaybackQuality.HIGH
+    else -> PlaybackQuality.NONE
 }
 
 /**
@@ -1627,7 +1670,7 @@ private fun LosslessOrStats(
     nerdStats: NerdStats.Snapshot?,
     modifier: Modifier = Modifier,
 ) {
-    when {
+    when (playbackQualityState(isLoading, stillRacing, losslessRequested, nerdStats)) {
         // Still resolving — either the player itself is buffering, or a
         // module is still racing YouTube for this track in the background
         // (see [NerdStats.racingLossless]) even though YouTube already won
@@ -1649,8 +1692,7 @@ private fun LosslessOrStats(
         // [nerdStats] exists there is something measured to show instead, so
         // only a genuinely unmeasured track — or a real race via
         // [stillRacing] — earns this label.
-        (stillRacing && nerdStats?.isLossless != true) ||
-            (isLoading && losslessRequested && nerdStats == null) -> LosslessLabel(
+        PlaybackQuality.SEARCHING -> LosslessLabel(
             text = stringResource(Res.string.upgrading_quality),
             iconPainter = painterResource(Res.drawable.ic_lossless),
             // Breathes for as long as the search runs: a wait, not a result,
@@ -1659,10 +1701,10 @@ private fun LosslessOrStats(
             animated = false,
             modifier = modifier,
         )
-        nerdStats?.isLossless == true -> LosslessLabel(
+        PlaybackQuality.LOSSLESS, PlaybackQuality.HI_RES -> LosslessLabel(
             // Same line Tidal, Qobuz and Apple Music draw it at — see
             // [NerdStats.Snapshot.isHiRes].
-            text = stringResource(if (nerdStats.isHiRes) Res.string.hi_res_lossless else Res.string.lossless),
+            text = stringResource(if (nerdStats?.isHiRes == true) Res.string.hi_res_lossless else Res.string.lossless),
             iconPainter = painterResource(Res.drawable.ic_lossless),
             // Shimmer is reserved for the thing that was asked for and
             // confirmed. It is what makes the badge read as an achievement
@@ -1670,7 +1712,7 @@ private fun LosslessOrStats(
             animated = true,
             modifier = modifier,
         )
-        nerdStats?.isDolbyAtmos == true -> LosslessLabel(
+        PlaybackQuality.DOLBY -> LosslessLabel(
             text = "Dolby Atmos",
             animated = true,
             iconPainter = painterResource(Res.drawable.ic_dolby_atmos),
@@ -1679,7 +1721,7 @@ private fun LosslessOrStats(
         // Lossy, but the good end of lossy — a module's 320kbps tier, which
         // for a great many tracks is the best copy that exists anywhere the
         // app can reach. See [NerdStats.Snapshot.isHiQuality].
-        nerdStats?.isHiQuality == true -> LosslessLabel(
+        PlaybackQuality.HIGH -> LosslessLabel(
             text = stringResource(Res.string.high_quality),
             animated = false,
             iconPainter = rememberVectorPainter(Icons.Rounded.Headphones),
@@ -1689,7 +1731,7 @@ private fun LosslessOrStats(
         )
         // Below that, no badge: "Medium Quality" and "Data Saver" are gone.
         // The space under the bar is kept for what is worth announcing.
-        else -> {}
+        PlaybackQuality.NONE -> {}
     }
 }
 
