@@ -928,6 +928,12 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         playlists.any { it.id == browseId } -> null
         else -> playlistPinScope
     }
+    LaunchedEffect(playlistPinScope, spotifyPinScope) {
+        val current = openedCollection ?: return@LaunchedEffect
+        if (current.type == BrowseType.PLAYLIST && openedCollectionPinScope != currentPinScope(current.browseId)) {
+            openedCollection = null
+        }
+    }
     val openedPlaylistPin = openedCollection
         ?.takeIf { it.type == BrowseType.PLAYLIST && !it.loading && it.title.isNotBlank() }
         ?.takeIf { openedCollectionPinScope == currentPinScope(it.browseId) }
@@ -1320,12 +1326,14 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
      * in the history, not underneath: an artist page left standing under an album would be drawn
      * over it, which is how an album opened from an artist once went nowhere.
      */
-    fun showCollection(collection: DesktopCollection) {
+    var openedSidebarPin by remember { mutableStateOf<DesktopPlaylistPin?>(null) }
+    fun showCollection(collection: DesktopCollection, sidebarPin: DesktopPlaylistPin? = null) {
         openedArtist = null
         openedBrowse = null
         overlays.replay = false
         overlays.settingsPage = null
         collectionError = null
+        openedSidebarPin = sidebarPin
         openedCollectionPinScope = currentPinScope(collection.browseId)
         openedCollection = collection
     }
@@ -1335,11 +1343,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
      * artist's page opens — rather than leaving the click with nothing to show until YouTube answers.
      * [fallback] is what the card that was clicked already knew.
      */
-    fun openCollection(browseId: String, fallback: BrowseItem? = null) {
+    fun openCollection(browseId: String, fallback: BrowseItem? = null, sidebarPin: DesktopPlaylistPin? = null) {
         openedBrowse = null
         val current = openedCollection
         if (current?.browseId == browseId && !current.loading &&
-            openedCollectionPinScope == currentPinScope(browseId)
+            (current.type != BrowseType.PLAYLIST || openedCollectionPinScope == currentPinScope(browseId))
         ) {
             showCollection(current)
             return
@@ -1355,6 +1363,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 songs = emptyList(),
                 loading = true,
             ),
+            sidebarPin = sidebarPin,
         )
         collectionReloads++
     }
@@ -1369,6 +1378,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var openedDownloadGeneration by remember { mutableStateOf(0L) }
     fun notePlaylistDownloadState(loaded: DesktopCollection) {
         val record = DesktopPlaylistDownloads.recordOf(loaded.browseId) ?: return
+        if (record.pinOwner != null && record.pinOwner != openedCollectionPinScope?.downloadOwner) return
         val fresh = loaded.songs.filter { it.unresolvedSpotifyTrack() == null }.map(Song::videoId)
         stalePlaylistDownloads = if (fresh == record.songs.map(Song::videoId)) {
             stalePlaylistDownloads - loaded.browseId
@@ -1404,9 +1414,19 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         )
     }
 
-    LaunchedEffect(openedCollection?.browseId, collectionReloads) {
-        val pending = openedCollection?.takeIf { it.loading } ?: return@LaunchedEffect
+    val loadingPlaylistScope = openedCollection?.takeIf { it.type == BrowseType.PLAYLIST }
+        ?.let { currentPinScope(it.browseId) }
+    LaunchedEffect(openedCollection?.browseId, collectionReloads, loadingPlaylistScope) {
+        val pending = openedCollection?.takeIf {
+            it.loading && (it.type != BrowseType.PLAYLIST || openedCollectionPinScope == loadingPlaylistScope)
+        } ?: return@LaunchedEffect
         collectionError = null
+        val sidebarPin = openedSidebarPin
+        fun downloadedSnapshot(): DesktopPlaylistDownload? = if (sidebarPin != null) {
+            sidebarPin.downloadedSnapshot(DesktopPlaylistDownloads.records.value)
+        } else {
+            DesktopPlaylistDownloads.recordOf(pending.browseId)
+        }
         if (pending.browseId.startsWith("spotify:playlist:")) {
             val playlistId = pending.browseId.removePrefix("spotify:playlist:")
             runCatching {
@@ -1421,7 +1441,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 openedCollection?.takeIf { it.browseId == pending.browseId }?.let(::notePlaylistDownloadState)
             }.onFailure { failure ->
                 if (openedCollection?.browseId == pending.browseId) {
-                    val downloaded = DesktopPlaylistDownloads.recordOf(pending.browseId)
+                    val downloaded = downloadedSnapshot()
                     collectionError = if (downloaded != null) null else failure.message ?: "Could not open Spotify playlist"
                     openedCollection = downloaded?.toCollection() ?: openedCollection?.copy(loading = false)
                 }
@@ -1445,7 +1465,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 }
             },
             onFailure = {
-                val record = DesktopPlaylistDownloads.recordOf(pending.browseId)
+                val record = downloadedSnapshot()
                 if (record != null) {
                     // The downloaded copy goes up when the live listing cannot be reached.
                     if (openedCollection?.browseId == pending.browseId) {
@@ -1505,10 +1525,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     }
 
     /** Snapshot the listing into a record and ask for everything not yet in hand. */
-    fun rememberPlaylistDownload(listing: DesktopCollection) {
+    fun rememberPlaylistDownload(listing: DesktopCollection, owner: DesktopPlaylistPinScope?) {
         val record = DesktopPlaylistDownloads.remember(
             listing.copy(songs = listing.songs.filter { it.unresolvedSpotifyTrack() == null }),
             downloads,
+            pinOwner = owner?.downloadOwner?.takeIf { requiresPlaylistDownloadOwner(listing.browseId) },
         )
         stalePlaylistDownloads = stalePlaylistDownloads - record.id
         val missing = tracksMissingOffline(
@@ -1535,6 +1556,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         // The account's own in-app playlist is already a first-class local list;
         // freezing it into a download record would only let it go stale.
         if (playlists.any { it.id == collection.browseId }) return
+        val owner = openedCollectionPinScope
         scope.launch {
             var listing = collection
             while (listing.continuation != null) {
@@ -1555,7 +1577,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     continuation = next,
                 )
             }
-            rememberPlaylistDownload(listing)
+            rememberPlaylistDownload(listing, owner)
         }
     }
 
@@ -1566,9 +1588,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             openCollection(record.id, record.toBrowseItem())
             return
         }
+        val owner = currentPinScope(record.id)
         scope.launch {
             DesktopSearchClient.browse(browseId = record.id, fallback = record.toBrowseItem())
-                .onSuccess { rememberPlaylistDownload(it) }
+                .onSuccess { rememberPlaylistDownload(it, owner) }
                 .onFailure {
                     DesktopTrackLog.log("playlist update: '${record.title}' could not be reached: ${it.message}")
                 }
@@ -1583,6 +1606,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         if (event.first == attemptedDownloadGeneration || openedCollection?.browseId != event.second.browseId) return@LaunchedEffect
         attemptedDownloadGeneration = event.first
         val listing = event.second
+        val owner = openedCollectionPinScope
         val settings = DesktopDownloadsSettings(persistence.preferences)
         if (!settings.autoUpdate()) return@LaunchedEffect
         val completeSongs = collectDownloadListing(listing.songs, listing.continuation, Song::videoId) { token ->
@@ -1596,7 +1620,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         val record = DesktopPlaylistDownloads.recordOf(listing.browseId) ?: return@LaunchedEffect
         val fresh = completeSongs.filter { it.unresolvedSpotifyTrack() == null }.map(Song::videoId)
         if (shouldAutoUpdatePlaylist(true, record.songs.map(Song::videoId), fresh)) {
-            rememberPlaylistDownload(listing.copy(songs = completeSongs, continuation = null))
+            rememberPlaylistDownload(listing.copy(songs = completeSongs, continuation = null), owner)
         }
     }
 
@@ -3550,6 +3574,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         artist = openedArtist,
         collection = openedCollection,
         collectionPinScope = openedCollectionPinScope.takeIf { openedCollection != null },
+        sidebarPin = openedSidebarPin.takeIf { openedCollection != null },
         browse = openedBrowse,
         mood = selectedMoodGenre,
         showAll = libraryShowAll,
@@ -3605,8 +3630,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             settingsParents.addAll(entry.settingsParents)
             overlays.settingsPage = entry.settings
             collectionError = null
-            openedCollection = entry.collection?.takeIf { entry.collectionPinScope == currentPinScope(it.browseId) }
+            openedCollection = entry.collection?.takeIf {
+                it.type != BrowseType.PLAYLIST || entry.collectionPinScope == currentPinScope(it.browseId)
+            }
             openedCollectionPinScope = entry.collectionPinScope
+            openedSidebarPin = entry.sidebarPin
             openedBrowse = entry.browse
             libraryShowAll = entry.showAll
             showMoodGrid = entry.moodGrid
@@ -4455,12 +4483,14 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 openCollection(
                                     pin.browseId,
                                     BrowseItem(pin.browseId, pin.title, "", pin.artworkUrl, BrowseType.PLAYLIST),
+                                    sidebarPin = pin,
                                 )
                             }
                         },
                         onUnpinPlaylist = { playlistPins.remove(it.browseId, it.scope) },
                         localPlaylists = playlists,
-                        openedCollectionId = openedCollection?.browseId,
+                        openedCollectionId = openedCollection?.browseId
+                            ?.takeIf { openedCollectionPinScope == currentPinScope(it) },
                         accountName = activeAccount?.name?.takeIf(String::isNotBlank) ?: "Sign in",
                         accountAvatar = activeAccount?.avatar
                             ?: activeAccount?.profiles?.firstOrNull()?.avatar,
@@ -7805,6 +7835,7 @@ private data class DesktopNavEntry(
     val artist: DesktopArtistTarget?,
     val collection: DesktopCollection?,
     val collectionPinScope: DesktopPlaylistPinScope?,
+    val sidebarPin: DesktopPlaylistPin?,
     val browse: DesktopBrowseTarget?,
     val mood: MoodGenre?,
     val showAll: HomeShelf?,
