@@ -2693,6 +2693,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             .onFailure { if (searchTyping && query == requestedQuery && searchRequestGeneration == requestedGeneration) searchTypeahead = emptyList() }
     }
 
+    fun search() = runPageSearch(refresh = false)
+
     fun runSearch(term: String) {
         editQuery(term)
         search()
@@ -2752,8 +2754,6 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         searchFilter = SearchFilter.ALL
         runSearch(requested)
     }
-
-    fun search() = runPageSearch(refresh = false)
 
     fun selectDestination(next: DesktopDestination) {
         val page = if (next == DesktopDestination.EXPLORE) DesktopDestination.SEARCH else next
