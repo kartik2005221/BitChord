@@ -846,6 +846,20 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             .orEmpty()
     }
 
+    val playlistPins = remember { DesktopPlaylistPins(persistence) }
+    val allPlaylistPins by playlistPins.pins.collectAsState()
+    val playlistPinScope = DesktopPlaylistPinScope(activeAccountId, activeProfileId)
+    val spotifyPinScope = remember(spotifyCanvasCookie) { DesktopPlaylistPinScope.spotify(spotifyCanvasCookie) }
+    val visiblePlaylistPins = remember(allPlaylistPins, playlistPinScope, spotifyPinScope) {
+        allPlaylistPins.filter { it.isVisibleIn(playlistPinScope, spotifyPinScope) }
+    }
+    val currentSidebarAccountPlaylists = if (
+        loadedAccountId == activeAccountId && loadedProfileId == activeProfileId
+    ) sidebarAccountPlaylists else emptyList()
+    LaunchedEffect(visiblePlaylistPins) {
+        DesktopAppUiHost.showLibraryPlaylistPins(visiblePlaylistPins.map { it.browseId })
+    }
+
     fun reloadLibrary() {
         libraryState = UiState.Loading
         sessionRevision++
@@ -899,6 +913,32 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         DesktopSleepTimer.remainingMs()
     }
     var openedCollection by remember { mutableStateOf<DesktopCollection?>(null) }
+    var openedCollectionPinScope by remember { mutableStateOf<DesktopPlaylistPinScope?>(null) }
+    fun currentPinScope(browseId: String): DesktopPlaylistPinScope? = when {
+        browseId.startsWith(SPOTIFY_PAGE_PREFIX) -> spotifyPinScope
+        playlists.any { it.id == browseId } -> null
+        else -> playlistPinScope
+    }
+    val openedPlaylistPin = openedCollection
+        ?.takeIf { it.type == BrowseType.PLAYLIST && !it.loading && it.title.isNotBlank() }
+        ?.takeIf { openedCollectionPinScope == currentPinScope(it.browseId) }
+        ?.takeUnless { it.browseId.startsWith(SPOTIFY_PAGE_PREFIX) && spotifyPinScope == null }
+        ?.let { DesktopPlaylistPin(it.browseId, it.title, it.thumbnailUrl, openedCollectionPinScope) }
+    LaunchedEffect(playlistPinScope, currentSidebarAccountPlaylists, playlists, openedPlaylistPin) {
+        val known = buildList {
+            openedPlaylistPin?.let(::add)
+            playlists.forEach {
+                add(DesktopPlaylistPin(it.id, it.title, it.songs.firstOrNull()?.thumbnailUrl, null))
+            }
+            currentSidebarAccountPlaylists.forEach { item ->
+                item.browseId?.takeIf { it.isNotBlank() && item.title.isNotBlank() }?.let { id ->
+                    add(DesktopPlaylistPin(id, item.title, item.thumbnailUrl, playlistPinScope))
+                }
+            }
+        }
+        playlistPins.refresh(known)
+    }
+
     var collectionLoadingMore by remember { mutableStateOf(false) }
     var collectionError by remember { mutableStateOf<String?>(null) }
     var collectionReloads by remember { mutableStateOf(0) }
@@ -1277,6 +1317,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         overlays.replay = false
         overlays.settingsPage = null
         collectionError = null
+        openedCollectionPinScope = currentPinScope(collection.browseId)
         openedCollection = collection
     }
 
@@ -1288,7 +1329,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     fun openCollection(browseId: String, fallback: BrowseItem? = null) {
         openedBrowse = null
         val current = openedCollection
-        if (current?.browseId == browseId && !current.loading) {
+        if (current?.browseId == browseId && !current.loading &&
+            openedCollectionPinScope == currentPinScope(browseId)
+        ) {
             showCollection(current)
             return
         }
@@ -1369,8 +1412,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 openedCollection?.takeIf { it.browseId == pending.browseId }?.let(::notePlaylistDownloadState)
             }.onFailure { failure ->
                 if (openedCollection?.browseId == pending.browseId) {
-                    collectionError = failure.message ?: "Could not open Spotify playlist"
-                    openedCollection = openedCollection?.copy(loading = false)
+                    val downloaded = DesktopPlaylistDownloads.recordOf(pending.browseId)
+                    collectionError = if (downloaded != null) null else failure.message ?: "Could not open Spotify playlist"
+                    openedCollection = downloaded?.toCollection() ?: openedCollection?.copy(loading = false)
                 }
             }
             return@LaunchedEffect
@@ -3340,6 +3384,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun deleteOpenPlaylist() {
         val collection = openedCollection ?: return
+        val collectionPinScope = openedCollectionPinScope
         playlistBusy = true
         playlistError = null
         scope.launch {
@@ -3348,7 +3393,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     closePlaylistDialogs()
                     // Its page is the one open, and a deleted playlist has nothing left to show.
                     if (openedCollection?.browseId == collection.browseId) openedCollection = null
-                    editPlaylistShelf { items -> items.filterNot { it.browseId == collection.browseId } }
+                    collectionPinScope?.let { playlistPins.remove(collection.browseId, it) }
+                    if (collectionPinScope == DesktopPlaylistPinScope(activeAccountId, activeProfileId)) {
+                        editPlaylistShelf { items -> items.filterNot { it.browseId == collection.browseId } }
+                    }
                     libraryStale = true
                 }
                 .onFailure {
@@ -3451,6 +3499,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         destination = destination,
         artist = openedArtist,
         collection = openedCollection,
+        collectionPinScope = openedCollectionPinScope.takeIf { openedCollection != null },
         browse = openedBrowse,
         mood = selectedMoodGenre,
         showAll = libraryShowAll,
@@ -3501,7 +3550,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             settingsParents.addAll(entry.settingsParents)
             overlays.settingsPage = entry.settings
             collectionError = null
-            openedCollection = entry.collection
+            openedCollection = entry.collection?.takeIf { entry.collectionPinScope == currentPinScope(it.browseId) }
+            openedCollectionPinScope = entry.collectionPinScope
             openedBrowse = entry.browse
             libraryShowAll = entry.showAll
             if (entry.mood != selectedMoodGenre) {
@@ -4232,7 +4282,21 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                         onToggleCollapse = onToggleCollapse,
                         destination = destination,
                         settingsOpen = overlays.settingsPage != null,
-                        accountPlaylists = sidebarAccountPlaylists,
+                        accountPlaylists = currentSidebarAccountPlaylists,
+                        pinnedPlaylists = visiblePlaylistPins,
+                        onOpenPinnedPlaylist = { pin ->
+                            dismissDrawer()
+                            val local = playlists.firstOrNull { it.id == pin.browseId }
+                            if (local != null) {
+                                openPlaylist(local)
+                            } else {
+                                openCollection(
+                                    pin.browseId,
+                                    BrowseItem(pin.browseId, pin.title, "", pin.artworkUrl, BrowseType.PLAYLIST),
+                                )
+                            }
+                        },
+                        onUnpinPlaylist = { playlistPins.remove(it.browseId, it.scope) },
                         localPlaylists = playlists,
                         openedCollectionId = openedCollection?.browseId,
                         accountName = activeAccount?.name?.takeIf(String::isNotBlank) ?: "Sign in",
@@ -5260,6 +5324,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                         }
                         openedCollection != null -> DesktopCollectionPage(
                             collection = openedCollection!!,
+                            pinned = visiblePlaylistPins.any { it.identity == openedPlaylistPin?.identity },
+                            onTogglePin = openedPlaylistPin?.let { pin -> { playlistPins.toggle(pin) } },
                             loadingMore = collectionLoadingMore,
                             onLoadMore = ::loadMoreCollectionSongs,
                             onRename = { overlays.rename = true }.takeIf { openedCollection?.owned == true },
@@ -6064,6 +6130,9 @@ private fun DesktopSidebar(
     settingsOpen: Boolean,
     accountPlaylists: List<ShelfItem>,
     localPlaylists: List<DesktopPlaylist>,
+    pinnedPlaylists: List<DesktopPlaylistPin>,
+    onOpenPinnedPlaylist: (DesktopPlaylistPin) -> Unit,
+    onUnpinPlaylist: (DesktopPlaylistPin) -> Unit,
     openedCollectionId: String?,
     accountName: String,
     accountAvatar: String?,
@@ -6156,80 +6225,113 @@ private fun DesktopSidebar(
                     Icon(Icons.Rounded.ChevronLeft, "Collapse sidebar", tint = DesktopSecondary, modifier = Modifier.size(20.dp))
                 }
             }
-            DesktopSidebarItem(DesktopPrimaryNavigationIcons.Home, DesktopStrings["home", "Home"], !settingsOpen && destination == DesktopDestination.LISTEN_NOW, collapsed = collapsed) {
-                onDestinationSelected(DesktopDestination.LISTEN_NOW)
-            }
-            DesktopSidebarItem(DesktopPrimaryNavigationIcons.New, "New", !settingsOpen && destination == DesktopDestination.NEW, collapsed = collapsed) {
-                onDestinationSelected(DesktopDestination.NEW)
-            }
-            DesktopSidebarItem(DesktopPrimaryNavigationIcons.Search, "Search",
-                !settingsOpen && (destination == DesktopDestination.SEARCH || destination == DesktopDestination.EXPLORE), collapsed = collapsed) {
-                onDestinationSelected(DesktopDestination.SEARCH)
-            }
-            // Match the mobile tab bar glyphs; Library and Spotify remain independent destinations.
-            DesktopSidebarItem(DesktopPrimaryNavigationIcons.Library, "Library", !settingsOpen && destination == DesktopDestination.LIBRARY, collapsed = collapsed) {
-                onDestinationSelected(DesktopDestination.LIBRARY)
-            }
-            Spacer(Modifier.height(6.dp))
-            HorizontalDivider(color = desktopChromeDivider())
-            Spacer(Modifier.height(12.dp))
-            DesktopSidebarItem(BitChordIcons.Clock, "History", !settingsOpen && destination == DesktopDestination.HISTORY, collapsed = collapsed) {
-                onDestinationSelected(DesktopDestination.HISTORY)
-            }
-            val queued by DesktopDownloadQueue.active.collectAsState()
-            DesktopSidebarItem(
-                BitChordIcons.Download,
-                if (queued.isEmpty()) "Downloads" else "Downloads · ${queued.size}",
-                !settingsOpen && destination == DesktopDestination.DOWNLOADS,
-                collapsed = collapsed,
-            ) {
-                onDestinationSelected(DesktopDestination.DOWNLOADS)
-            }
-            DesktopSidebarItem(BitChordIcons.Library, "Local Music", !settingsOpen && destination == DesktopDestination.LOCAL_MUSIC, collapsed = collapsed) {
-                onDestinationSelected(DesktopDestination.LOCAL_MUSIC)
-            }
-            DesktopSidebarItem(
-                BitChordIcons.Library, "Spotify", !settingsOpen && destination == DesktopDestination.SPOTIFY,
-                collapsed = collapsed, logo = SharedUiRes.drawable.spotify_logo,
-            ) {
-                onDestinationSelected(DesktopDestination.SPOTIFY)
-            }
-            Spacer(Modifier.height(6.dp))
-            HorizontalDivider(color = desktopChromeDivider())
-            Spacer(Modifier.height(12.dp))
             val playlistNavState = rememberLazyListState()
-            if (collapsed) {
-                DesktopSidebarItem(Icons.AutoMirrored.Rounded.PlaylistPlay, "Browse playlists", false, collapsed = true) {
-                    onToggleCollapse()
-                }
-                Spacer(Modifier.weight(1f))
-            } else LazyColumn(
+            LazyColumn(
                 state = playlistNavState,
                 modifier = Modifier.fillMaxWidth().weight(1f).desktopTopScrollFade(playlistNavState),
                 contentPadding = PaddingValues(bottom = 8.dp),
             ) {
-                items(accountPlaylists, key = { "account:${it.browseId}" }) { playlist ->
-                    DesktopSidebarItem(
-                        Icons.AutoMirrored.Rounded.PlaylistPlay,
-                        playlist.title,
-                        !settingsOpen && openedCollectionId == playlist.browseId,
-                    ) { onOpenAccountPlaylist(playlist) }
+                item(key = "destinations") {
+                    Column {
+                        DesktopSidebarItem(DesktopPrimaryNavigationIcons.Home, DesktopStrings["home", "Home"], !settingsOpen && destination == DesktopDestination.LISTEN_NOW, collapsed = collapsed) {
+                            onDestinationSelected(DesktopDestination.LISTEN_NOW)
+                        }
+                        DesktopSidebarItem(DesktopPrimaryNavigationIcons.New, "New", !settingsOpen && destination == DesktopDestination.NEW, collapsed = collapsed) {
+                            onDestinationSelected(DesktopDestination.NEW)
+                        }
+                        DesktopSidebarItem(DesktopPrimaryNavigationIcons.Search, "Search",
+                            !settingsOpen && (destination == DesktopDestination.SEARCH || destination == DesktopDestination.EXPLORE), collapsed = collapsed) {
+                            onDestinationSelected(DesktopDestination.SEARCH)
+                        }
+                        // Match the mobile tab bar glyphs; Library and Spotify remain independent destinations.
+                        DesktopSidebarItem(DesktopPrimaryNavigationIcons.Library, "Library", !settingsOpen && destination == DesktopDestination.LIBRARY, collapsed = collapsed) {
+                            onDestinationSelected(DesktopDestination.LIBRARY)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        HorizontalDivider(color = desktopChromeDivider())
+                        Spacer(Modifier.height(12.dp))
+                        DesktopSidebarItem(BitChordIcons.Clock, "History", !settingsOpen && destination == DesktopDestination.HISTORY, collapsed = collapsed) {
+                            onDestinationSelected(DesktopDestination.HISTORY)
+                        }
+                        val queued by DesktopDownloadQueue.active.collectAsState()
+                        DesktopSidebarItem(
+                            BitChordIcons.Download,
+                            if (queued.isEmpty()) "Downloads" else "Downloads · ${queued.size}",
+                            !settingsOpen && destination == DesktopDestination.DOWNLOADS,
+                            collapsed = collapsed,
+                        ) {
+                            onDestinationSelected(DesktopDestination.DOWNLOADS)
+                        }
+                        DesktopSidebarItem(BitChordIcons.Library, "Local Music", !settingsOpen && destination == DesktopDestination.LOCAL_MUSIC, collapsed = collapsed) {
+                            onDestinationSelected(DesktopDestination.LOCAL_MUSIC)
+                        }
+                        DesktopSidebarItem(
+                            BitChordIcons.Library, "Spotify", !settingsOpen && destination == DesktopDestination.SPOTIFY,
+                            collapsed = collapsed, logo = SharedUiRes.drawable.spotify_logo,
+                        ) {
+                            onDestinationSelected(DesktopDestination.SPOTIFY)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        HorizontalDivider(color = desktopChromeDivider())
+                        Spacer(Modifier.height(12.dp))
+                    }
                 }
-                items(localPlaylists, key = { "local:${it.id}" }) { playlist ->
-                    DesktopSidebarItem(
-                        Icons.AutoMirrored.Rounded.PlaylistPlay,
-                        playlist.title,
-                        !settingsOpen && openedCollectionId == playlist.id,
-                    ) { onOpenLocalPlaylist(playlist) }
-                }
-                if (accountPlaylists.isEmpty() && localPlaylists.isEmpty()) {
-                    item {
+                if (pinnedPlaylists.isNotEmpty() && !collapsed) {
+                    item(key = "pinned-heading") {
                         Text(
-                            "Your playlists will appear here",
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
-                            color = DesktopSecondary.copy(alpha = 0.68f),
+                            "Pinned playlists",
+                            modifier = Modifier.padding(start = 9.dp, bottom = 4.dp),
+                            color = DesktopSecondary,
                             style = MaterialTheme.typography.bodySmall,
                         )
+                    }
+                }
+                items(pinnedPlaylists, key = { "pin:${it.browseId}" }) { pin ->
+                    DesktopPinnedPlaylistRow(
+                        pin = pin,
+                        selected = !settingsOpen && openedCollectionId?.removePrefix("VL") == pin.identity.first,
+                        collapsed = collapsed,
+                        onOpen = { onOpenPinnedPlaylist(pin) },
+                        onUnpin = { onUnpinPlaylist(pin) },
+                    )
+                }
+                if (pinnedPlaylists.isNotEmpty()) {
+                    item(key = "pinned-divider") {
+                        Spacer(Modifier.height(6.dp))
+                        HorizontalDivider(color = desktopChromeDivider())
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+                if (collapsed) {
+                    item(key = "browse-playlists") {
+                        DesktopSidebarItem(Icons.AutoMirrored.Rounded.PlaylistPlay, "Browse playlists", false, collapsed = true) {
+                            onToggleCollapse()
+                        }
+                    }
+                } else {
+                    items(accountPlaylists, key = { "account:${it.browseId}" }) { playlist ->
+                        DesktopSidebarItem(
+                            Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            playlist.title,
+                            !settingsOpen && openedCollectionId == playlist.browseId,
+                        ) { onOpenAccountPlaylist(playlist) }
+                    }
+                    items(localPlaylists, key = { "local:${it.id}" }) { playlist ->
+                        DesktopSidebarItem(
+                            Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            playlist.title,
+                            !settingsOpen && openedCollectionId == playlist.id,
+                        ) { onOpenLocalPlaylist(playlist) }
+                    }
+                    if (accountPlaylists.isEmpty() && localPlaylists.isEmpty() && pinnedPlaylists.isEmpty()) {
+                        item {
+                            Text(
+                                "Your playlists will appear here",
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+                                color = DesktopSecondary.copy(alpha = 0.68f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
@@ -7536,6 +7638,7 @@ private data class DesktopNavEntry(
     val destination: DesktopDestination,
     val artist: DesktopArtistTarget?,
     val collection: DesktopCollection?,
+    val collectionPinScope: DesktopPlaylistPinScope?,
     val browse: DesktopBrowseTarget?,
     val mood: MoodGenre?,
     val showAll: HomeShelf?,
@@ -7545,7 +7648,7 @@ private data class DesktopNavEntry(
 ) {
     /** What makes two entries the same place: an album that paged in more tracks has not moved. */
     val key: List<Any?>
-        get() = listOf(destination, artist?.browseId, collection?.browseId, browse?.browseId, browse?.params, mood?.browseId, mood?.params, showAll?.title, replay, settings)
+        get() = listOf(destination, artist?.browseId, collection?.browseId, collectionPinScope, browse?.browseId, browse?.params, mood?.browseId, mood?.params, showAll?.title, replay, settings)
 }
 
 /** Deep enough for any way back anyone takes; the oldest fall off. */
@@ -9503,6 +9606,8 @@ private fun DesktopSourceEditorDialog(
 @Composable
 private fun DesktopCollectionPage(
     collection: DesktopCollection,
+    pinned: Boolean,
+    onTogglePin: (() -> Unit)?,
     loadingMore: Boolean,
     onLoadMore: () -> Unit,
     /** The three edits only a playlist's owner is offered. */
@@ -9548,7 +9653,6 @@ private fun DesktopCollectionPage(
     }
     var moreOpen by remember(collection.browseId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val pinnedIds by DesktopAppUiHost.pinnedPlaylists.collectAsState()
     val playableSongs = remember(songs) { songs.filter { it.unresolvedSpotifyTrack() == null } }
     // A saved YouTube playlist/album can be toggled from its overflow. Spotify playlists
     // have no YouTube library state and are never rated against a Spotify identifier.
@@ -9723,10 +9827,8 @@ private fun DesktopCollectionPage(
                                                 }
                                             },
                                             savedToLibrary = libraryState?.saved == true,
-                                            onPin = if (collection.type == BrowseType.PLAYLIST) {
-                                                { DesktopAppUiHost.togglePinnedPlaylist(collection.browseId) }
-                                            } else null,
-                                            pinned = collection.browseId in pinnedIds,
+                                            onPin = onTogglePin,
+                                            pinned = pinned,
                                             onRename = onRename,
                                             onDelete = onDelete,
                                         ),

@@ -87,21 +87,11 @@ internal object DesktopAppUiHost : AppUiHost {
         _homeRecentsViewType.value = value
     }
 
-    /** Playlist pins are local preferences, shared by Library cards and playlist overflow menus. */
-    private const val KEY_PINNED_PLAYLISTS = "pinned_playlists"
-    private val _pinnedPlaylists = MutableStateFlow(
-        persistence.string(KEY_PINNED_PLAYLISTS, "").split('\n').filter(String::isNotBlank).distinct(),
-    )
+    private val _pinnedPlaylists = MutableStateFlow<List<String>>(emptyList())
     override val pinnedPlaylists: StateFlow<List<String>> = _pinnedPlaylists
 
-    fun togglePinnedPlaylist(browseId: String): Boolean {
-        if (browseId.isBlank()) return false
-        val existing = _pinnedPlaylists.value
-        val updated = if (browseId in existing) existing.filterNot { it == browseId }
-            else existing + browseId
-        persistence.saveString(KEY_PINNED_PLAYLISTS, updated.joinToString("\n"))
-        _pinnedPlaylists.value = updated
-        return browseId in updated
+    fun showLibraryPlaylistPins(browseIds: List<String>) {
+        _pinnedPlaylists.value = browseIds
     }
 
     private val _librarySort = MutableStateFlow(

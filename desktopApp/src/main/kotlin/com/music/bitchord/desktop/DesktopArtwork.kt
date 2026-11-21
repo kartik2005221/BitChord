@@ -206,6 +206,7 @@ fun DesktopArtwork(
     /** Faces of people, not of music, ride out the privacy mode: avatars pass false. */
     blur: Boolean = true,
     scope: ArtworkPrivacyScope? = null,
+    fallback: (@Composable () -> Unit)? = null,
 ) {
     val chosenScope = scope ?: if (LocalArtworkScope.current == SharedArtworkScope.PLAYER)
         ArtworkPrivacyScope.PLAYER else ArtworkPrivacyScope.BROWSING
@@ -226,7 +227,7 @@ fun DesktopArtwork(
 
     if (hoverMode == null) {
         if (bitmap == null) {
-            Box(modifier.background(Color(0xFF2B2B35)))
+            Box(modifier.background(Color(0xFF2B2B35)), contentAlignment = Alignment.Center) { fallback?.invoke() }
         } else if (blurredCovers) {
             DesktopFrostedTile(bitmap!!, modifier, contentScale = contentScale, contentDescription = contentDescription)
         } else {
