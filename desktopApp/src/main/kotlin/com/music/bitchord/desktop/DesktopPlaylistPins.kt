@@ -10,6 +10,9 @@ internal data class DesktopPlaylistPinScope(
     val profileId: String?,
     val provider: String = "youtube",
 ) {
+    internal val downloadOwner: String
+        get() = listOf(provider, accountId.orEmpty(), profileId.orEmpty()).joinToString("|")
+
     companion object {
         fun spotify(cookie: String): DesktopPlaylistPinScope? {
             val credential = cookie.trim().takeIf(String::isNotBlank) ?: return null
@@ -32,6 +35,19 @@ internal data class DesktopPlaylistPin(
 
     fun isVisibleIn(youtube: DesktopPlaylistPinScope, spotify: DesktopPlaylistPinScope?): Boolean =
         scope == null || scope == youtube || scope == spotify
+}
+
+/** Spotify and YouTube's built-in lists can resolve to account-relative content. */
+internal fun requiresPlaylistDownloadOwner(browseId: String): Boolean =
+    browseId.startsWith("spotify:playlist:") || browseId.removePrefix("VL") in accountRelativeYouTubePlaylists
+
+private val accountRelativeYouTubePlaylists = setOf("LM", "SE")
+
+internal fun DesktopPlaylistPin.downloadedSnapshot(
+    records: List<DesktopPlaylistDownload>,
+): DesktopPlaylistDownload? = records.firstOrNull { record ->
+    record.playlist && record.id.removePrefix("VL") == identity.first &&
+        (!requiresPlaylistDownloadOwner(browseId) || record.pinOwner == scope?.downloadOwner && scope != null)
 }
 
 internal class DesktopPlaylistPins(persistence: DesktopPersistence) {
