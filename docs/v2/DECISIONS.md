@@ -15,4 +15,16 @@
 | Address Spotify reconnect at the account/playlist boundary in item 12. | A cookie-derived fingerprint changes with new credentials. Attach new pins to a stable verified account ID when available. Migrate a legacy scope only with evidence binding both identities. Preserve unresolved records for safe recovery. |
 | Keep the original exclusion list and the approval gates. | No Drive, Premium Opus, new queue gestures, animated lyrics sharing, AutoMix artwork transition system or other A2 items are dependencies of the proposed port. The redesign, performance baseline milestones and prerelease require the later Part B approval. |
 
+## Gate A1
+
+| Decision | Reason and consequence |
+| --- | --- |
+| Use desktop merge criteria. | Both desktop jobs must pass, including shared and shared UI JVM suites. The Android PR job is advisory. No TV, Wear or web PR jobs are configured. On 2026-11-23, the fork's default branch `master` exposed no required-check contexts and the rulesets list was empty. The connector could read branch metadata but returned 403 for the detailed protection endpoint. |
+| Scope Gate A1 to desktop. | Keep shared edits small for desktop maintenance and future upstream pulls. This supersedes the mobile-impact practice proposed in A0. |
+| Keep automatic liked downloads off by default. | Before opt-in, show the first-fill size estimate and free space. Enforce the configured storage cap, preserve completed downloads on disable or unlike, and pause when space runs low. |
+| Land AutoMix model delivery last. | Compare paired before/after Windows and Linux installers and extracted sizes built under identical packaging conditions. Record the size deltas and package test results. |
+| Stop at the Part A report. | Hold releases, tags, prereleases, overhaul implementation and other Part B work for separate approval. |
+
+**Part B proposal for M5, pending approval.** Remove CI jobs for unshipped platforms from the desktop fork. This focuses CI execution on shipped desktop targets while leaving platform sources available for future upstream pulls.
+
 Proposal, source links, sequencing and validation details are in the [port matrix](UPSTREAM_PORT.md). Record later approvals or deviations here with the relevant commit or PR.

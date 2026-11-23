@@ -1,4 +1,4 @@
-# Desktop smoke checklist · Gate A0
+# Desktop smoke checklist · Gates A0 and A1
 
 Use master `926489c1` for the initial baseline and repeat the affected cases on each merge commit. Record the exact revision, package, date, tester, display scale, audio device and test profile. The target workstation is Fedora 44, GNOME/Wayland, 1920 × 1080 at 144 Hz. Keep results from a Linux X11 fixture distinct from native Wayland and real-device observations.
 
@@ -30,6 +30,7 @@ Desktop catalogue search uses YouTube Music. Stream resolution can race provider
 - [ ] Quit mid-track with paused restoration enabled. Relaunch and check the personal track, queue and position before pressing Play. Disable restore, enable it again, and verify retained session data. A temporary party session should not become the restored personal queue.
 - [ ] Use Like and More in the mini player. Check the full player and the corresponding song menu for the same track and rating.
 - [ ] Download a track and a playlist. Check progress, completion, playable offline files and retry after network or write failure. Cancel one queued and one active transfer and inspect the completion state.
+- [ ] In a fresh profile, confirm automatic liked downloads are off. Before enabling, check the first-fill count, size estimate, treatment of missing size data, and free space. Exercise a low cap, low disk, retry, overlapping manual/playlist claims, and a switched account. Disable or unlike during an active run and check that completed downloads are retained.
 - [ ] Scan and play tagged local audio. Verify per-file embedded covers, folder fallback, restart persistence and recovery after folder access is restored. Cancel folder selection and check the previous library.
 
 ## Accounts and desktop integration
@@ -58,7 +59,9 @@ BITCHORD_PIP_NATIVE_TEST=1 xvfb-run -a ./gradlew :shared:jvmTest :sharedUi:jvmTe
 bash desktopApp/packaging/tests/linux-automix-check.sh
 ```
 
-For feature PRs also check Windows, Android and backend jobs. The Android job uses JDK 17 and runs `testDevDebugUnitTest` and `assembleDevDebug`. Save the exact command, exit code, test report and any platform gaps. [CI definition](../../.github/workflows/check.yml)
+Gate A1 requires successful Linux and Windows desktop checks, including `:shared:jvmTest` and `:sharedUi:jvmTest` in both jobs. Android, TV, Wear and web CI are outside the A1 merge criteria. Record the exact command, exit code, test report and any platform gaps. [CI definition](../../.github/workflows/check.yml)
+
+For the last A1 change, compare paired before/after AutoMix installers on Windows and Linux. Match format, toolchain, packaging and signing conditions. Record revisions, each installer and extracted size, and absolute and percentage deltas. Verify first-enable download, installed inference, restart and offline fallback. Use test builds for the comparison. Publication waits for separate approval.
 
 | Record per baseline or rerun | Details |
 | --- | --- |
@@ -75,4 +78,4 @@ For feature PRs also check Windows, Android and backend jobs. The Android job us
 | Packaged Linux AutoMix regression | PASS | The shipped analyzer loaded through JNI. The existing 120 BPM fixture, downbeat ordering and PCM resampling checks passed (reported 120.003 BPM). This exercises the existing bundled-weights implementation. |
 | Replay on Linux X11 using a synthetic history | FAIL | The fresh distributable showed a blocking duplicate album-key error dialog for All time and This year. See [fixture and exception](KNOWN_ISSUES.md). This case is missing from the green baseline suite. |
 | Signed-in integrations, two-client party, Fedora/GNOME/Wayland, hardware outputs and other manual scenarios | UNTESTED at A0 | Run the relevant subset against comparable profiles before and after the first affected feature. |
-| Windows and Android | No new A0 execution | This branch contains documentation. The earlier [PR #13 checks](https://github.com/kartik2005221/BitChord/pull/13/checks) describe that merge. Each feature PR needs fresh checks. |
+| Windows and Android | No new A0 execution | This branch contains documentation. The earlier [PR #13 checks](https://github.com/kartik2005221/BitChord/pull/13/checks) describe that merge. The A1 desktop checks need a fresh run for each feature PR. |

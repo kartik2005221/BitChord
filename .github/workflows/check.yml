@@ -139,6 +139,8 @@ jobs:
 
   android:
     name: Android
+    # Gate A1 uses desktop checks to decide whether pull requests can land.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
