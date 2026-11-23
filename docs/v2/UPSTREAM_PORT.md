@@ -53,11 +53,11 @@ The original v1.10 model assets match the embedded bytes. Beat This! SHA-256 is 
 
 ## Gate A1 delivery order
 
-1. **Establish the baseline and protect data.** Run relevant smoke cases, seed a duplicate-title Replay fixture, and fix the reproduced Replay failure (item 13). See the [fixture and exception](KNOWN_ISSUES.md). Land #12 read-side pagination and occurrence identity before mutation. Bind subscriptions and pins to verified accounts. Land #10 displayed-order correctness and #11 history replay with duplicates covered.
-2. **Improve source and file identity.** Land matcher #14 with positive and negative fixtures, then tagged local metadata/per-file artwork (#7/#8). Land owned reorder, local-import editing and album/picker actions (#12/#7). Exercise partial pages and retries before enabling batch writes.
-3. **Deliver the bigger features.** Land opt-in liked downloads (#2), Radio (#1), Search (#6), and timed/local lyric providers and preference ranking (#9). Put independent work on its own branch.
-4. **Finish transport and polish.** Spatial limiter (#10), timer gain (#5), thumbnail transitions (#8), lyric rendering fixes (#9) and minimal controls/preferences (#4). Preserve the existing sidebar and settings groups. Escalate any dependency that requires an excluded feature.
-5. **Compare AutoMix packages last.** Port model delivery (#3), verify packaged inference and fallback, and record paired before/after Windows and Linux installer measurements.
+1. **Fix Replay first in its own PR.** Use the two same-title albums from the [reproduction](KNOWN_ISSUES.md) as the regression test. Verify the packaged app in This year and All time.
+2. **Finish the correctness group.** Port desktop song matching, queue history, displayed playback order, complete and safely editable playlist listings, imported playlist edits, playlist picker and album actions, and numeric track/disc ordering. Verify account binding for Spotify pins. Include duplicate occurrences, legacy data, and retries in the fixtures.
+3. **Stop at Gate A1.** Give the maintainer a testable desktop build identified by commit, evidence for the affected flows, and a short report of failures and gaps. Wait for the maintainer to test and approve before continuing.
+4. **After Gate A1 approval**, proceed with lyrics, artwork, Search, sleep timer, player settings, liked downloads, Radio and the spatial limiter. Confirm Radio's data source and navigation against the released upstream implementation again before coding. Its PR must list every desktop difference and explain how the independent song-seeded action works.
+5. **Evaluate AutoMix last.** Measure paired Windows and Linux installer builds *before* implementing lazy model delivery. If the real saving is small, report the measurements and recommend skipping. Otherwise implement the verified first-enable download and test packaged inference, recovery and offline fallback.
 
 Use one conventional-commit branch and PR per item or tightly coupled slice in the desktop fork. Include upstream source credit, behavior tests, relevant manual cases before and after, and gaps in coverage. Keep shared edits small so the desktop code remains easy to maintain and future upstream changes are easier to pull.
 
