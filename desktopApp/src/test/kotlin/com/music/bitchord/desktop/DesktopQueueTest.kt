@@ -63,6 +63,42 @@ class DesktopQueueTest {
     }
 
     @Test
+    fun historyReplayMovesTheSelectedOccurrenceToThePlayheadWithTheSameUpcomingQueue() {
+        val first = songs("duplicate").single().copy(queueEntryId = "first")
+        val second = first.copy(queueEntryId = "second")
+        val upcoming = queued("manual") + songs("album") + mix("autoplay")
+        val queue = DesktopQueue(listOf(first, second) + songs("later", "current") + upcoming, index = 3)
+
+        val replayed = queue.replayFromHistory(1)
+
+        assertEquals(queue.index, replayed.index)
+        assertEquals(second, replayed.current)
+        assertEquals(listOf("duplicate", "later", "current"), replayed.ids().take(replayed.index))
+        assertEquals(first, replayed.songs.first())
+        assertEquals(upcoming, replayed.upcoming)
+        assertEquals(upcoming.first(), replayed.next().current)
+        assertEquals(queue.current, replayed.previous().current)
+        assertEquals(upcoming, replayed.inOrderOf(queue.orderKeys()).upcoming)
+        assertEquals(upcoming, replayed.withPartyUpcoming(upcoming).upcoming)
+    }
+
+    @Test
+    fun historyReplayWorksAtTheEndOfARestoredQueueWithoutEntryIds() {
+        val queue = DesktopQueue.restored(songs("duplicate", "later", "duplicate"), index = 2)
+
+        val replayed = queue.replayFromHistory(0)
+
+        assertEquals("duplicate", replayed.current?.videoId)
+        assertTrue(replayed.current?.queueEntryId != null)
+        assertEquals(listOf("later", "duplicate", "duplicate"), replayed.ids())
+        assertFalse(replayed.hasNext)
+        assertEquals(replayed, DesktopQueue.restored(replayed.songs, replayed.index))
+        assertTrue(replayed.replayFromHistory(-1) === replayed)
+        assertTrue(replayed.replayFromHistory(replayed.index) === replayed)
+        assertTrue(replayed.replayFromHistory(replayed.songs.size) === replayed)
+    }
+
+    @Test
     fun theNextTrackIsNotAJumpAndKeepsTheOneBehindIt() {
         val queue = DesktopQueue(songs("a", "b", "c"), index = 0).next()
 

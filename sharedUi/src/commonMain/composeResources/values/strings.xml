@@ -108,6 +108,8 @@
     <string name="playing_from">Playing from %1$s</string>
     <string name="playing_radio">Playing %1$s Radio</string>
     <string name="queue">Queue</string>
+    <string name="queue_history">History</string>
+    <string name="queue_upcoming_empty">Nothing in Up Next</string>
     <string name="remove_from_liked">Remove from Liked Music</string>
     <string name="remove_from_queue">Remove from queue</string>
     <string name="repeat_all">Repeat all</string>

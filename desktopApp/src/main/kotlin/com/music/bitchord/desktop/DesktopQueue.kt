@@ -51,6 +51,16 @@ internal data class DesktopQueue(
         return copy(songs = songs.take(index + 1) + rebuilt, index = index + 1).afterTransition()
     }
 
+    /** Plays one history occurrence again while everything after the playhead stays queued. */
+    fun replayFromHistory(target: Int): DesktopQueue {
+        if (target !in 0 until index || current == null) return this
+        val reordered = songs.toMutableList().apply {
+            val selected = removeAt(target)
+            add(index, selected.asQueueEntry(selected.queueTier))
+        }
+        return copy(songs = reordered)
+    }
+
     /**
      * A music video and its audio recording are two versions of this same queue
      * row. Do not enqueue another song or change the index; repeated tracks

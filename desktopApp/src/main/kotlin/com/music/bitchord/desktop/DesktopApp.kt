@@ -1196,6 +1196,14 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         playCurrent()
     }
 
+    fun replayQueueHistory(target: Int) {
+        if (partyTrackChangeBlocked()) return
+        val replay = liveQueue.replayFromHistory(target)
+        if (replay === liveQueue) return
+        liveQueue = replay
+        playCurrent()
+    }
+
     fun cycleSleepTimer() {
         when {
             sleepAfterTrack -> DesktopSleepTimer.cancel()
@@ -4664,6 +4672,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 queueIndex = liveQueue.index,
                                 autoplayEnabled = DesktopAutoplay.enabled(partyState, autoplay),
                                 onJumpTo = ::playQueueIndex,
+                                onReplayHistory = ::replayQueueHistory,
                                 onRemove = ::removeFromQueue,
                                 onMove = ::moveInQueue,
                                 onClear = ::clearQueue,
@@ -4768,6 +4777,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 setAutoplay(!DesktopAutoplay.enabled(DesktopListenTogether.state.value, autoplay))
                             },
                             onJumpTo = ::playQueueIndex,
+                            onReplayQueueHistory = ::replayQueueHistory,
                             onRemoveFromQueue = ::removeFromQueue,
                             onMoveInQueue = ::moveInQueue,
                             onClearQueue = ::clearQueue,

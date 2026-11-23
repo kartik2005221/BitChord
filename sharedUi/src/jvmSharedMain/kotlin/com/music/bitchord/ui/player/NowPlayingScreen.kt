@@ -715,6 +715,7 @@ fun NowPlayingScreen(
      * for every neighbour the drag crosses. See [PartySync.beginQueueDrag].
      */
     onQueueDragActiveChange: (Boolean) -> Unit = {},
+    onReplayQueueHistory: ((Int) -> Unit)? = null,
     onClearQueue: () -> Unit,
     onOpenMenu: () -> Unit,
     onOpenAlbum: (String) -> Unit,
@@ -1892,6 +1893,7 @@ fun NowPlayingScreen(
                         DesktopVideoQueue(queue, queueIndex, autoplayEnabled, controlsLocked,
                             onJumpTo, onRemoveFromQueue, onMoveInQueue, onClearQueue,
                             onDragActiveChange = onQueueDragActiveChange,
+                            onReplayHistory = onReplayQueueHistory,
                             modifier = Modifier.fillMaxSize())
                     },
                     panelActions = playerActions,
@@ -2197,6 +2199,7 @@ fun NowPlayingScreen(
                             onMove = onMoveInQueue,
                             onClear = onClearQueue,
                             onDragActiveChange = onQueueDragActiveChange,
+                            onReplayHistory = onReplayQueueHistory,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -3792,6 +3795,8 @@ fun NowPlayingScreen(
                                     onClear = onClearQueue,
                                     onScrollingChange = { queueScrolling = it },
                                     onDragActiveChange = onQueueDragActiveChange,
+                                    onReplayHistory = onReplayQueueHistory,
+                                    queueVisible = queuePanelVisible,
                                     collapsePlayerOnScroll = true,
                                     onRevealPlayer = { queueControlsOpen = true },
                                     onHidePlayer = { queueControlsOpen = false },

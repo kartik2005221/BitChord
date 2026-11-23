@@ -147,6 +147,7 @@ fun QueueSidePanel(
     modifier: Modifier = Modifier,
     /** The desktop panel draws Queue in the same shared header as Lyrics and Now playing. */
     showTitle: Boolean = true,
+    onReplayHistory: ((Int) -> Unit)? = null,
 ) {
     InlineQueue(
         queue = queue,
@@ -159,5 +160,6 @@ fun QueueSidePanel(
         onClear = onClear,
         modifier = modifier,
         showTitle = showTitle,
+        onReplayHistory = onReplayHistory,
     )
 }
