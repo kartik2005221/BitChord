@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,7 +81,11 @@ internal fun DesktopPlaylistDialog(
     onDismiss: () -> Unit,
 ) {
     var creating by remember { mutableStateOf(song == null) }
+    var query by remember { mutableStateOf("") }
     val playlistListState = rememberLazyListState()
+    LaunchedEffect(query, creating) {
+        if (!creating) playlistListState.scrollToItem(0)
+    }
 
     DesktopDialogFrame(onDismiss = onDismiss) {
         if (creating) {
@@ -108,7 +113,28 @@ internal fun DesktopPlaylistDialog(
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp),
             )
         }
-        val account = if (canUseAccount) accountPlaylists else emptyList()
+        val eligibleAccount = if (signedIn && canUseAccount) accountPlaylists else emptyList()
+        val account = remember(eligibleAccount, query) {
+            filterDesktopPlaylists(eligibleAccount, query, UserPlaylist::title)
+        }
+        val local = remember(localPlaylists, query) {
+            filterDesktopPlaylists(localPlaylists, query, DesktopPlaylist::title)
+        }
+        if (eligibleAccount.isNotEmpty() || localPlaylists.isNotEmpty()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text(DesktopStrings["find_a_playlist", "Find a playlist"]) },
+                leadingIcon = { Icon(BitChordIcons.Search, null) },
+                trailingIcon = if (query.isEmpty()) null else ({
+                    IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Rounded.Close, DesktopStrings["close_search", "Clear search"])
+                    }
+                }),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp),
+            )
+        }
         when {
             busy && account.isEmpty() && localPlaylists.isEmpty() -> Box(
                 Modifier.fillMaxWidth().height(96.dp),
@@ -116,8 +142,10 @@ internal fun DesktopPlaylistDialog(
             ) {
                 CircularProgressIndicator(color = DesktopAccent, modifier = Modifier.size(22.dp))
             }
-            account.isEmpty() && localPlaylists.isEmpty() -> Text(
+            account.isEmpty() && local.isEmpty() -> Text(
                 when {
+                    eligibleAccount.isNotEmpty() || localPlaylists.isNotEmpty() ->
+                        DesktopStrings["no_matching_playlists", "No matching playlists"]
                     !signedIn -> "No playlists on this computer yet. Sign in to see the ones on your account."
                     // Signed in, but this track cannot go on the account — so offering to sign in
                     // would be answering a question nobody asked.
@@ -134,7 +162,7 @@ internal fun DesktopPlaylistDialog(
             ) {
                 if (account.isNotEmpty()) {
                     item(key = "heading:account") { DialogSectionHeading("On your account") }
-                    items(account.size, key = { account[it].playlistId }) { index ->
+                    items(account.size, key = { "account:${account[it].playlistId}" }) { index ->
                         val playlist = account[index]
                         DialogAction(
                             BitChordIcons.Queue,
@@ -144,10 +172,10 @@ internal fun DesktopPlaylistDialog(
                         ) { onPickAccount(playlist) }
                     }
                 }
-                if (localPlaylists.isNotEmpty()) {
+                if (local.isNotEmpty()) {
                     item(key = "heading:local") { DialogSectionHeading("On this computer") }
-                    items(localPlaylists.size, key = { localPlaylists[it].id }) { index ->
-                        val playlist = localPlaylists[index]
+                    items(local.size, key = { "local:${local[it].id}" }) { index ->
+                        val playlist = local[index]
                         DialogAction(
                             BitChordIcons.Queue,
                             playlist.title,
