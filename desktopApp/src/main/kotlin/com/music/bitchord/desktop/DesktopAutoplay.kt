@@ -40,21 +40,24 @@ internal object DesktopAutoplay {
         currentIndex == itemCount - 1
 
     /** The YouTube id to seed a station on. */
-    suspend fun youtubeSeedFor(song: Song): String? {
+    suspend fun youtubeSeedFor(
+        song: Song,
+        search: suspend (String, SearchFilter) -> Result<List<SearchResult>> = DesktopSearchClient::search,
+    ): String? {
         if (DesktopMusicSources.hasYouTubeOriginal(song)) return song.videoId
-        val query = DesktopTrackMatcher.queries(song).firstOrNull() ?: return null
-        // YouTube specifically, not the configured sources.
-        return DesktopSearchClient.search(query, SearchFilter.SONGS)
-            .getOrNull()
-            ?.mapNotNull { result ->
+        for (query in DesktopTrackMatcher.queries(song)) {
+            // YouTube specifically, not the configured sources.
+            val results = search(query, SearchFilter.SONGS).getOrNull() ?: return null
+            val candidates = results.mapNotNull { result ->
                 when (result) {
                     is SearchResult.Track -> result.song
                     is SearchResult.TopTrack -> result.song
                     is SearchResult.Browse -> null
                 }
             }
-            ?.let { DesktopTrackMatcher.best(it, song) }
-            ?.videoId
+            DesktopTrackMatcher.best(candidates, song)?.let { return it.videoId }
+        }
+        return null
     }
 
     /** One batch of station tracks to append after [existing]. */

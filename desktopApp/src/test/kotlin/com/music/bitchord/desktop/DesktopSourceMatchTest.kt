@@ -40,6 +40,26 @@ class DesktopSourceMatchTest {
     }
 
     @Test
+    fun `addon fallback prefers exact spellings and checks the recording before folding`() = runBlocking {
+        val target = song("youtube", "Şımarık", "Tárkan", "3:30")
+        withAddon(
+            search = """
+                {"tracks":[{"id":"folded","title":"Simarik","artist":"Tarkan","duration":210},
+                 {"id":"exact","title":"Şımarık","artist":"Tárkan","duration":211},
+                 {"id":"long","title":"Simarik","artist":"Tarkan","duration":250},
+                 {"id":"live","title":"Simarik (Live)","artist":"Tarkan","duration":210}]}
+            """.trimIndent(),
+            streams = emptyMap(),
+        ) { config ->
+            val matches = DesktopAddonSource.matches(config, target)
+            assertEquals(
+                listOf("exact", "folded"),
+                matches.map { DesktopAddonSource.parseTrack(it.videoId)?.trackId },
+            )
+        }
+    }
+
+    @Test
     fun `a lossless copy is opened before a lossy one when lossless is wanted`() {
         val candidates = listOf(
             song("ytm", "Shayar", "Prabhakar Raj", "4:08", "HIGH"),
