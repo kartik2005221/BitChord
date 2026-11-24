@@ -10103,8 +10103,6 @@ private fun DesktopCollectionSortMenu(sort: DesktopCollectionSort, onSort: (Desk
                                 DesktopCollectionSort.DEFAULT -> DesktopStrings["sort_default", "Default order"]
                                 DesktopCollectionSort.TITLE_ASC -> DesktopStrings["sort_title_ascending", "Alphabetical (A to Z)"]
                                 DesktopCollectionSort.TITLE_DESC -> DesktopStrings["sort_title_descending", "Alphabetical (Z to A)"]
-                                DesktopCollectionSort.DATE_ADDED_ASC -> DesktopStrings["sort_date_added_oldest", "Date added (oldest first)"]
-                                DesktopCollectionSort.DATE_ADDED_DESC -> DesktopStrings["sort_date_added", "Date added (newest first)"]
                             },
                         )
                     },

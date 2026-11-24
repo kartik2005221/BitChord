@@ -39,9 +39,9 @@ class DesktopCollectionOrderTest {
     @Test fun `sorting continuation rows keeps every loaded occurrence and its source position`() {
         val first = listOf(song("track", "Song", "first"), song("track", "Song", "second"))
         val more = listOf(song("track", "Song", "third"), song("end", "Last", "fourth"))
-        val shown = (first + more).inCollectionOrder(DesktopCollectionSort.DATE_ADDED_DESC)
-        assertEquals(listOf(3, 2, 1, 0), shown.map { it.index })
-        assertEquals(listOf("fourth", "third", "second", "first"), shown.map { it.value.setVideoId })
+        val shown = (first + more).inCollectionOrder(DesktopCollectionSort.TITLE_ASC)
+        assertEquals(listOf(3, 0, 1, 2), shown.map { it.index })
+        assertEquals(listOf("fourth", "first", "second", "third"), shown.map { it.value.setVideoId })
     }
 
     @Test fun `matching one Spotify occurrence preserves its exact queue seat`() {
@@ -51,18 +51,28 @@ class DesktopCollectionOrderTest {
             "spotify:playlist:one", "Mix", "", null, BrowseType.PLAYLIST,
             listOf(pending, resolved, pending, song("z", "Other")),
         )
-        val shown = collection.songs.inCollectionOrder(DesktopCollectionSort.DATE_ADDED_DESC)
-        val selected = shown[1]
+        val shown = collection.songs.inCollectionOrder(DesktopCollectionSort.TITLE_DESC)
+        val selected = shown[3]
         assertEquals(2, selected.index)
-        assertNull(shown.map { it.value }.playableContextAt(1))
+        assertNull(shown.map { it.value }.playableContextAt(3))
 
         val changed = collection.resolveSpotifyOccurrence(selected.index, "duplicate", resolved)
         assertEquals(listOf(pending, resolved, resolved, collection.songs.last()), changed.songs)
         val updated = shown.map { if (it.index == selected.index) resolved else it.value }
-        val (index, playable) = checkNotNull(updated.playableContextAt(1))
-        assertEquals(1, index)
+        val (index, playable) = checkNotNull(updated.playableContextAt(3))
+        assertEquals(2, index)
         assertEquals(listOf("z", "yt-track", "yt-track"), playable.map { it.videoId })
         assertEquals(changed, changed.resolveSpotifyOccurrence(2, "duplicate", pending))
+    }
+
+    @Test fun `default collection order preserves manual entries with or without local file dates`() {
+        val entries = listOf(
+            song("z", "Z", "first").copy(localDateAddedSeconds = 20),
+            song("a", "A", "second"),
+            song("b", "B", "third").copy(localDateAddedSeconds = 10),
+        )
+        assertEquals(entries, entries.inCollectionOrder(DesktopCollectionSort.DEFAULT).map { it.value })
+        assertEquals(listOf("a", "b", "z"), entries.inCollectionOrder(DesktopCollectionSort.TITLE_ASC).map { it.value.videoId })
     }
 
     private fun song(id: String, title: String, occurrence: String? = null) =

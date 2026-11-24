@@ -27,7 +27,7 @@ class DesktopCollectionOrderUiTest {
         val pending = Song("sp:same", "Acoustic D", "Artist", null)
         val songs = listOf(
             pending,
-            Song("other", "Drums", "Artist", null),
+            Song("other", "Drums", "Artist", null, localDateAddedSeconds = 10),
             pending,
             Song("a", "Acoustic A", "Artist", null),
         )
@@ -70,18 +70,20 @@ class DesktopCollectionOrderUiTest {
             }
         }
         compose.onNodeWithContentDescription("Sort songs").performClick()
-        compose.onNodeWithText("Date added (newest first)").performClick()
+        compose.onNodeWithText("Date added (newest first)").assertDoesNotExist()
+        compose.onNodeWithText("Date added (oldest first)").assertDoesNotExist()
+        compose.onNodeWithText("Alphabetical (Z to A)").performClick()
         compose.onNodeWithContentDescription("Play").performClick()
-        compose.runOnIdle { assertEquals(listOf(3, 2, 1, 0) to 0, played.single()) }
+        compose.runOnIdle { assertEquals(listOf(1, 0, 2, 3) to 0, played.single()) }
 
         compose.onNodeWithContentDescription("Search this list").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("Acoustic")
         compose.onNodeWithText("Acoustic A").performClick()
-        compose.runOnIdle { assertEquals(listOf(3, 2, 0) to 0, played.last()) }
+        compose.runOnIdle { assertEquals(listOf(0, 2, 3) to 2, played.last()) }
 
-        // Both identical pending rows have menus; the first is the later source occurrence.
-        compose.onAllNodes(hasContentDescription("More options"))[0].performClick()
+        // Both identical pending rows have menus; the second is the later source occurrence.
+        compose.onAllNodes(hasContentDescription("More options"))[1].performClick()
         compose.onNodeWithText("Find & play on YouTube Music").performClick()
-        compose.runOnIdle { assertEquals(listOf(3, 2, 0) to 1, played.last()) }
+        compose.runOnIdle { assertEquals(listOf(0, 2, 3) to 1, played.last()) }
     }
 }

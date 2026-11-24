@@ -7,8 +7,6 @@ internal enum class DesktopCollectionSort {
     DEFAULT,
     TITLE_ASC,
     TITLE_DESC,
-    DATE_ADDED_ASC,
-    DATE_ADDED_DESC,
 }
 
 /** Indices refer to the loaded collection before sorting or filtering. */
@@ -20,11 +18,6 @@ internal fun List<Song>.inCollectionOrder(sort: DesktopCollectionSort): List<Ind
             rows.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.value.title })
         DesktopCollectionSort.TITLE_DESC ->
             rows.sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.value.title })
-        // Online rows without an added date follow their source positions.
-        DesktopCollectionSort.DATE_ADDED_ASC ->
-            rows.sortedWith(compareBy { it.value.localDateAddedSeconds ?: Long.MAX_VALUE })
-        DesktopCollectionSort.DATE_ADDED_DESC ->
-            rows.asReversed().sortedWith(compareByDescending { it.value.localDateAddedSeconds ?: Long.MIN_VALUE })
     }
 }
 
