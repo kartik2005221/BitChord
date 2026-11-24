@@ -3473,20 +3473,12 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         val name = title?.trim()
         if (action == PlaylistEditAction.RENAME && name.isNullOrBlank()) return
         if (local != null) {
-            val updated = when (action) {
-                PlaylistEditAction.RENAME -> local.copy(title = requireNotNull(name))
-                PlaylistEditAction.DELETE -> null
-                PlaylistEditAction.REMOVE -> local.withoutOccurrence(edit.listing, requireNotNull(edit.index))
-                    ?: run {
-                        playlistEditError = "The playlist changed. Open the track again to remove it."
-                        return
-                    }
-                PlaylistEditAction.REORDER -> return
-            }
-            playlists = playlists.mapNotNull { if (it.id == local.id) updated else it }
-            persistence.savePlaylists(playlists)
-            openedCollection = updated?.toCollection()
-            if (updated == null) playlistPins.remove(local.id, null)
+            playlists = persistLocalPlaylistEdit(persistence, playlistPins, playlists, edit, name)
+                ?: run {
+                    playlistEditError = "The playlist changed. Reopen it and try again."
+                    return
+                }
+            openedCollection = playlists.firstOrNull { it.id == local.id }?.toCollection()
             closePlaylistEdit()
             return
         }

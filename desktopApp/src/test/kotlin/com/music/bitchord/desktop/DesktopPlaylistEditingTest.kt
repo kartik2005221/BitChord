@@ -53,9 +53,15 @@ class DesktopPlaylistEditingTest {
                 DesktopRemovePlaylistOccurrenceDialog(
                     listing.title, listing.songs[1], false, null,
                     onRemove = {
-                        val edited = assertNotNull(restored.withoutOccurrence(listing, 1)).copy(title = "Renamed")
-                        persistence.savePlaylists(listOf(edited, sameTitle))
-                        pins.refresh(listOf(pin.copy(title = edited.title)))
+                        val edited = assertNotNull(persistLocalPlaylistEdit(
+                            persistence, pins, persistence.playlists(),
+                            DesktopPlaylistEdit(listing, 0, PlaylistEditAction.REMOVE, 1),
+                        ))
+                        persistLocalPlaylistEdit(
+                            persistence, pins, edited,
+                            DesktopPlaylistEdit(edited.first().toCollection(), 0, PlaylistEditAction.RENAME, null),
+                            "Renamed",
+                        )
                     },
                     onDismiss = {},
                 )
@@ -67,6 +73,14 @@ class DesktopPlaylistEditingTest {
             assertNull(edited.withoutOccurrence(listing, 0))
             assertEquals("Renamed", DesktopPlaylistPins(reopened).pins.value.single().title)
             assertEquals(imported.title, reopened.playlists().last().title)
+            assertEquals(listOf(first.videoId), reopened.downloads().map(Song::videoId))
+
+            assertNotNull(persistLocalPlaylistEdit(
+                persistence, pins, reopened.playlists(),
+                DesktopPlaylistEdit(edited.toCollection(), 0, PlaylistEditAction.DELETE, null),
+            ))
+            assertEquals(listOf(sameTitle.id), reopened.playlists().map(DesktopPlaylist::id))
+            assertEquals(emptyList(), DesktopPlaylistPins(reopened).pins.value)
             assertEquals(listOf(first.videoId), reopened.downloads().map(Song::videoId))
         } finally {
             prefs.removeNode()

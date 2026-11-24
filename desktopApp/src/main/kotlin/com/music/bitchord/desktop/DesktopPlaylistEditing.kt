@@ -57,3 +57,27 @@ internal data class DesktopPlaylistEdit(
     val action: PlaylistEditAction,
     val index: Int?,
 )
+
+internal fun persistLocalPlaylistEdit(
+    persistence: DesktopPersistence,
+    pins: DesktopPlaylistPins,
+    playlists: List<DesktopPlaylist>,
+    edit: DesktopPlaylistEdit,
+    title: String? = null,
+): List<DesktopPlaylist>? {
+    val local = playlists.firstOrNull { it.id == edit.listing.browseId } ?: return null
+    val updated = when (edit.action) {
+        PlaylistEditAction.RENAME -> local.copy(title = title?.trim()?.takeIf(String::isNotBlank) ?: return null)
+        PlaylistEditAction.DELETE -> null
+        PlaylistEditAction.REMOVE -> local.withoutOccurrence(edit.listing, edit.index ?: return null) ?: return null
+        PlaylistEditAction.REORDER -> return null
+    }
+    val next = playlists.mapNotNull { if (it.id == local.id) updated else it }
+    persistence.savePlaylists(next)
+    if (updated == null) {
+        pins.remove(local.id, null)
+    } else {
+        pins.refresh(listOf(DesktopPlaylistPin(updated.id, updated.title, updated.songs.firstOrNull()?.thumbnailUrl, null)))
+    }
+    return next
+}
