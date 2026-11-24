@@ -28,6 +28,10 @@ internal object DesktopYouTubeAuth {
     var session: Session? = null
         private set
 
+    @Volatile
+    var sessionGeneration: Long = 0L
+        private set
+
     /** Whether requests will be made as somebody rather than as nobody. */
     val isSignedIn: Boolean get() = session != null
 
@@ -38,6 +42,7 @@ internal object DesktopYouTubeAuth {
     fun adopt(value: Session?) {
         if (session == value) return
         session = value
+        sessionGeneration++
         // The YouTube Music client is the phone's, shared; it signs with this
         // cookie and addresses this channel.
         Innertube.cookie = value?.cookie

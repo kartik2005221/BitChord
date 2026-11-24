@@ -15,6 +15,7 @@ import com.music.bitchord.ui.replay.ReplayCreditCard
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.music.bitchord.data.YtMusicRepository
+import com.music.bitchord.data.innertube.Innertube
 import com.music.bitchord.data.spotify.SpotifyLibrary
 import com.music.bitchord.data.spotify.SpotifyPlaylist
 import com.music.bitchord.data.spotify.SpotifyImporter
@@ -955,6 +956,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     }
 
     var collectionLoadingMore by remember { mutableStateOf(false) }
+    var collectionPageError by remember { mutableStateOf<String?>(null) }
+    var collectionViewGeneration by remember { mutableStateOf(0L) }
     var collectionError by remember { mutableStateOf<String?>(null) }
     var collectionReloads by remember { mutableStateOf(0) }
     var openedBrowse by remember { mutableStateOf<DesktopBrowseTarget?>(null) }
@@ -1333,6 +1336,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         overlays.replay = false
         overlays.settingsPage = null
         collectionError = null
+        collectionPageError = null
+        collectionLoadingMore = false
+        collectionViewGeneration++
         openedSidebarPin = sidebarPin
         openedCollectionPinScope = currentPinScope(collection.browseId)
         openedCollection = collection
@@ -1376,15 +1382,22 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
      */
     var openedDownloadListing by remember { mutableStateOf<Pair<Long, DesktopCollection>?>(null) }
     var openedDownloadGeneration by remember { mutableStateOf(0L) }
-    fun notePlaylistDownloadState(loaded: DesktopCollection) {
+    fun updatePlaylistDownloadStaleState(loaded: DesktopCollection) {
+        if (loaded.continuation != null) return
         val record = DesktopPlaylistDownloads.recordOf(loaded.browseId) ?: return
         if (record.pinOwner != null && record.pinOwner != openedCollectionPinScope?.downloadOwner) return
-        val fresh = loaded.songs.filter { it.unresolvedSpotifyTrack() == null }.map(Song::videoId)
-        stalePlaylistDownloads = if (fresh == record.songs.map(Song::videoId)) {
+        val fresh = loaded.songs.filter { it.unresolvedSpotifyTrack() == null }
+        stalePlaylistDownloads = if (mergedSnapshot(record.songs, fresh).map(Song::videoId) == record.songs.map(Song::videoId)) {
             stalePlaylistDownloads - loaded.browseId
         } else {
             stalePlaylistDownloads + loaded.browseId
         }
+    }
+
+    fun notePlaylistDownloadState(loaded: DesktopCollection) {
+        val record = DesktopPlaylistDownloads.recordOf(loaded.browseId) ?: return
+        if (record.pinOwner != null && record.pinOwner != openedCollectionPinScope?.downloadOwner) return
+        updatePlaylistDownloadStaleState(loaded)
         openedDownloadGeneration++
         openedDownloadListing = openedDownloadGeneration to loaded
     }
@@ -1448,6 +1461,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             }
             return@LaunchedEffect
         }
+        val ownerSession = DesktopYouTubeAuth.sessionGeneration
         DesktopSearchClient.browse(
             browseId = pending.browseId,
             fallback = BrowseItem(
@@ -1459,8 +1473,12 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             ),
         ).fold(
             onSuccess = { loaded ->
-                if (openedCollection?.browseId == pending.browseId) {
-                    openedCollection = loaded
+                if (openedCollection === pending) {
+                    openedCollection = loaded.copy(
+                        ownerSessionGeneration = ownerSession.takeIf {
+                            it == DesktopYouTubeAuth.sessionGeneration && DesktopYouTubeAuth.isSignedIn
+                        },
+                    )
                     notePlaylistDownloadState(loaded)
                 }
             },
@@ -1557,27 +1575,16 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         // freezing it into a download record would only let it go stale.
         if (playlists.any { it.id == collection.browseId }) return
         val owner = openedCollectionPinScope
+        val session = DesktopYouTubeAuth.sessionGeneration
         scope.launch {
-            var listing = collection
-            while (listing.continuation != null) {
-                val token = listing.continuation ?: break
-                val (songs, next) = DesktopSearchClient
-                    .moreCollectionSongs(token, listing.songs.firstOrNull()?.artist)
-                    .fold(
-                        onSuccess = { it },
-                        onFailure = {
-                            DesktopTrackLog.log(
-                                "playlist download: listing stopped at ${listing.songs.size} rows: ${it.message}",
-                            )
-                            emptyList<Song>() to null
-                        },
-                    )
-                listing = listing.copy(
-                    songs = (listing.songs + songs).distinctBy(Song::videoId),
-                    continuation = next,
-                )
-            }
-            rememberPlaylistDownload(listing, owner)
+            DesktopSearchClient.completeCollection(collection).fold(
+                onSuccess = {
+                    if (owner == currentPinScope(collection.browseId) && session == DesktopYouTubeAuth.sessionGeneration) {
+                        rememberPlaylistDownload(it, owner)
+                    }
+                },
+                onFailure = { DesktopPlayerHost.showMessage("Could not load the full collection for download") },
+            )
         }
     }
 
@@ -1589,12 +1596,16 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             return
         }
         val owner = currentPinScope(record.id)
+        val session = DesktopYouTubeAuth.sessionGeneration
         scope.launch {
             DesktopSearchClient.browse(browseId = record.id, fallback = record.toBrowseItem())
-                .onSuccess { rememberPlaylistDownload(it, owner) }
-                .onFailure {
-                    DesktopTrackLog.log("playlist update: '${record.title}' could not be reached: ${it.message}")
+                .mapCatching { DesktopSearchClient.completeCollection(it).getOrThrow() }
+                .onSuccess {
+                    if (owner == currentPinScope(record.id) && session == DesktopYouTubeAuth.sessionGeneration) {
+                        rememberPlaylistDownload(it, owner)
+                    }
                 }
+                .onFailure { DesktopPlayerHost.showMessage("Could not update downloaded playlist; existing downloads were kept") }
         }
     }
 
@@ -1609,18 +1620,19 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         val owner = openedCollectionPinScope
         val settings = DesktopDownloadsSettings(persistence.preferences)
         if (!settings.autoUpdate()) return@LaunchedEffect
-        val completeSongs = collectDownloadListing(listing.songs, listing.continuation, Song::videoId) { token ->
-            DesktopSearchClient.moreCollectionSongs(token, listing.songs.firstOrNull()?.artist)
-        }.getOrElse {
+        val session = DesktopYouTubeAuth.sessionGeneration
+        val complete = DesktopSearchClient.completeCollection(listing).getOrElse {
             DesktopTrackLog.log("playlist auto-update: listing failed: ${it.message}")
             DesktopPlayerHost.showMessage("Could not update downloaded playlist; existing downloads were kept")
             return@LaunchedEffect
         }
-        if (openedCollection?.browseId != listing.browseId || !settings.autoUpdate()) return@LaunchedEffect
+        if (openedCollection?.browseId != listing.browseId || owner != openedCollectionPinScope ||
+            session != DesktopYouTubeAuth.sessionGeneration || !settings.autoUpdate()
+        ) return@LaunchedEffect
         val record = DesktopPlaylistDownloads.recordOf(listing.browseId) ?: return@LaunchedEffect
-        val fresh = completeSongs.filter { it.unresolvedSpotifyTrack() == null }.map(Song::videoId)
+        val fresh = complete.songs.filter { it.unresolvedSpotifyTrack() == null }.map(Song::videoId)
         if (shouldAutoUpdatePlaylist(true, record.songs.map(Song::videoId), fresh)) {
-            rememberPlaylistDownload(listing.copy(songs = completeSongs, continuation = null), owner)
+            rememberPlaylistDownload(complete, owner)
         }
     }
 
@@ -1861,8 +1873,6 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     fun closePlaylistDialogs() {
         overlays.playlistDialog = false
         playlistTarget = null
-        overlays.rename = false
-        overlays.delete = false
         playlistError = null
         playlistBusy = false
     }
@@ -1911,24 +1921,18 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     }
 
     fun openPlaylist(playlist: DesktopPlaylist) {
-        showCollection(
-            DesktopCollection(
-                browseId = playlist.id,
-                title = playlist.title,
-                subtitle = "Playlist • ${playlist.songs.size} songs",
-                thumbnailUrl = playlist.songs.firstOrNull()?.thumbnailUrl,
-                type = BrowseType.PLAYLIST,
-                songs = playlist.songs,
-            ),
-        )
+        showCollection(playlist.toCollection())
     }
 
     fun addToPlaylist(playlist: DesktopPlaylist) {
         val song = playlistTarget ?: return
         playlists = playlists.map { current ->
-            if (current.id == playlist.id) current.copy(songs = (current.songs + song).distinctBy(Song::videoId)) else current
+            if (current.id == playlist.id) current.addTracks(listOf(song)) else current
         }
         persistence.savePlaylists(playlists)
+        if (openedCollection?.browseId == playlist.id) {
+            openedCollection = playlists.firstOrNull { it.id == playlist.id }?.toCollection()
+        }
         playlistTarget = null
     }
 
@@ -3378,104 +3382,193 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         }
     }
 
-    /** The next page of the open collection, appended in place. */
     fun loadMoreCollectionSongs() {
         val collection = openedCollection ?: return
-        val token = collection.continuation ?: return
-        if (collectionLoadingMore) return
+        if (collection.continuation == null || collectionLoadingMore) return
+        val generation = collectionViewGeneration
+        val owner = openedCollectionPinScope
         collectionLoadingMore = true
+        collectionPageError = null
         scope.launch {
-            DesktopSearchClient.moreCollectionSongs(token, collection.songs.firstOrNull()?.artist)
-                .onSuccess { (songs, next) ->
-                    val current = openedCollection
-                    if (current != null && current.browseId == collection.browseId) {
-                        openedCollection = current.copy(
-                            songs = (current.songs + songs).distinctBy(Song::videoId),
-                            continuation = next,
+            DesktopSearchClient.moreCollectionSongs(collection).fold(
+                onSuccess = { loaded ->
+                    if (openedCollection === collection) {
+                        openedCollection = loaded
+                        if (loaded.continuation == null) {
+                            // Record comparison needs the same complete order as the snapshot.
+                            updatePlaylistDownloadStaleState(loaded)
+                        }
+                    }
+                },
+                onFailure = { failure ->
+                    if (openedCollection === collection) {
+                        collectionPageError = failure.message ?: "Could not load more tracks"
+                    }
+                },
+            )
+            if (collectionViewGeneration == generation && openedCollectionPinScope == owner) {
+                collectionLoadingMore = false
+            }
+        }
+    }
+
+    var playlistEdit by remember { mutableStateOf<DesktopPlaylistEdit?>(null) }
+    var playlistEditBusy by remember { mutableStateOf(false) }
+    var playlistEditError by remember { mutableStateOf<String?>(null) }
+    var playlistOrder by remember { mutableStateOf<DesktopPlaylistOrder?>(null) }
+
+    fun canEditRemotePlaylist(collection: DesktopCollection?): Boolean =
+        collection != null && collection.type == BrowseType.PLAYLIST &&
+            collection.browseId.startsWith("VL") && collection.owned == true &&
+            !collection.loading && DesktopYouTubeAuth.isSignedIn &&
+            collection.ownerSessionGeneration == DesktopYouTubeAuth.sessionGeneration &&
+            openedCollectionPinScope == DesktopPlaylistPinScope(DesktopAccounts.activeAccountId(), DesktopAccounts.activeProfileId())
+
+    fun canEditPlaylist(collection: DesktopCollection?): Boolean =
+        collection != null && (playlists.any { it.id == collection.browseId } || canEditRemotePlaylist(collection))
+
+    fun isCurrentPlaylistEdit(edit: DesktopPlaylistEdit): Boolean =
+        collectionViewGeneration == edit.generation &&
+            openedCollection?.browseId == edit.listing.browseId &&
+            canEditPlaylist(openedCollection)
+
+    fun closePlaylistEdit() {
+        if (playlistEditBusy) return
+        playlistEdit = null
+        playlistEditError = null
+        playlistOrder = null
+    }
+
+    LaunchedEffect(collectionViewGeneration, openedCollection?.browseId, activeAccountId, activeProfileId, sessionRevision) {
+        if (playlistEdit?.let(::isCurrentPlaylistEdit) == false) closePlaylistEdit()
+    }
+
+    fun beginPlaylistEdit(listing: DesktopCollection, action: PlaylistEditAction, index: Int? = null) {
+        if (playlistEditBusy || openedCollection !== listing || !canEditPlaylist(listing)) return
+        if (action == PlaylistEditAction.REORDER && !canEditRemotePlaylist(listing)) return
+        val edit = DesktopPlaylistEdit(listing, collectionViewGeneration, action, index)
+        playlistEdit = edit
+        playlistEditError = null
+        playlistOrder = null
+        if (action != PlaylistEditAction.REORDER) return
+        playlistEditBusy = true
+        scope.launch {
+            YtMusicRepository.playlistEntries(listing.browseId, requireOwner = true) {
+                check(isCurrentPlaylistEdit(edit) && canEditRemotePlaylist(listing)) { "The active playlist changed" }
+            }.fold(
+                onSuccess = { if (isCurrentPlaylistEdit(edit)) playlistOrder = DesktopPlaylistOrder(it) },
+                onFailure = { playlistEditError = it.message ?: "Could not load the full playlist" },
+            )
+            playlistEditBusy = false
+            if (!isCurrentPlaylistEdit(edit)) closePlaylistEdit()
+        }
+    }
+
+    fun savePlaylistEdit(title: String? = null, targetOrder: List<String>? = null) {
+        val edit = playlistEdit ?: return
+        val current = openedCollection ?: return
+        if (playlistEditBusy || !isCurrentPlaylistEdit(edit)) return
+        val local = playlists.firstOrNull { it.id == edit.listing.browseId }
+        val action = edit.action
+        val name = title?.trim()
+        if (action == PlaylistEditAction.RENAME && name.isNullOrBlank()) return
+        if (local != null) {
+            val updated = when (action) {
+                PlaylistEditAction.RENAME -> local.copy(title = requireNotNull(name))
+                PlaylistEditAction.DELETE -> null
+                PlaylistEditAction.REMOVE -> local.withoutOccurrence(edit.listing, requireNotNull(edit.index))
+                    ?: run {
+                        playlistEditError = "The playlist changed. Open the track again to remove it."
+                        return
+                    }
+                PlaylistEditAction.REORDER -> return
+            }
+            playlists = playlists.mapNotNull { if (it.id == local.id) updated else it }
+            persistence.savePlaylists(playlists)
+            openedCollection = updated?.toCollection()
+            if (updated == null) playlistPins.remove(local.id, null)
+            closePlaylistEdit()
+            return
+        }
+
+        if (!canEditRemotePlaylist(current)) return
+        val playlistId = current.playlistId
+        val pinScope = openedCollectionPinScope
+        val order = playlistOrder
+        val song = edit.index?.let(edit.listing.songs::getOrNull)
+        val entry = song?.setVideoId?.let { it to song.videoId }
+        if (action == PlaylistEditAction.REMOVE &&
+            (entry == null || current.songs.count { it.setVideoId == entry.first && it.videoId == entry.second } != 1)
+        ) {
+            playlistEditError = "The playlist changed. Open the track again to remove it."
+            return
+        }
+        playlistEditBusy = true
+        playlistEditError = null
+        scope.launch {
+            fun checkSession() {
+                check(isCurrentPlaylistEdit(edit) && canEditRemotePlaylist(current)) { "The active playlist changed" }
+            }
+            var reloadOrder = false
+            try {
+                checkSession()
+                if (action != PlaylistEditAction.REORDER) {
+                    val owner = DesktopSearchClient.browse(current.browseId).getOrThrow().owned
+                    check(owner == true) { "Playlist ownership could not be verified" }
+                    checkSession()
+                }
+                when (action) {
+                    PlaylistEditAction.RENAME -> Innertube.renamePlaylist(playlistId, requireNotNull(name), ::checkSession)
+                    PlaylistEditAction.DELETE -> Innertube.deletePlaylist(playlistId, ::checkSession)
+                    PlaylistEditAction.REMOVE -> Innertube.removeFromPlaylist(playlistId, listOf(requireNotNull(entry)), ::checkSession)
+                    PlaylistEditAction.REORDER -> {
+                        val fresh = YtMusicRepository.playlistEntries(current.browseId, requireOwner = true, checkSession = ::checkSession).getOrThrow()
+                        reloadOrder = true
+                        val target = requireNotNull(targetOrder)
+                        val baseline = requireNotNull(order).validate(fresh, target)
+                        YtMusicRepository.reorderPlaylist(playlistId, baseline, target, checkSession = ::checkSession).getOrThrow()
+                    }
+                }
+                if (isCurrentPlaylistEdit(edit)) {
+                    val visible = openedCollection ?: current
+                    when (action) {
+                        PlaylistEditAction.RENAME -> openedCollection = visible.copy(title = requireNotNull(name))
+                        PlaylistEditAction.DELETE -> openedCollection = null
+                        PlaylistEditAction.REMOVE -> openedCollection = visible.copy(
+                            songs = visible.songs.filterNot { it.setVideoId == entry?.first },
                         )
+                        PlaylistEditAction.REORDER -> Unit
+                    }
+                    if (action == PlaylistEditAction.DELETE) playlistPins.remove(current.browseId, pinScope)
+                    if (action == PlaylistEditAction.RENAME || action == PlaylistEditAction.DELETE) {
+                        editPlaylistShelf { items ->
+                            items.mapNotNull {
+                                if (it.browseId != current.browseId) it else name?.let { title -> it.copy(title = title) }
+                            }
+                        }
+                        libraryStale = true
                     }
                 }
-                .onFailure {
-                    DesktopTrackLog.log("collection: no more rows for ${collection.browseId}: ${it.message}")
-                    val current = openedCollection
-                    if (current != null && current.browseId == collection.browseId) {
-                        // Dropped rather than retried on scroll for ever: the trailing row is what
-                        // asks, and leaving the token in place would have it ask again on every
-                        // frame.
-                        openedCollection = current.copy(continuation = null)
+                playlistEdit = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                val message = failure.message ?: "Could not edit the playlist"
+                if (reloadOrder) {
+                    DesktopPlayerHost.showMessage(message)
+                    playlistEdit = null
+                } else {
+                    playlistEditError = message
+                }
+            } finally {
+                playlistEditBusy = false
+                if (reloadOrder && isCurrentPlaylistEdit(edit)) {
+                    openedCollection?.let { listing ->
+                        showCollection(listing.copy(songs = emptyList(), continuation = null, loading = true), openedSidebarPin)
+                        collectionReloads++
                     }
                 }
-            collectionLoadingMore = false
-        }
-    }
-
-    fun renameOpenPlaylist(title: String) {
-        val collection = openedCollection ?: return
-        playlistBusy = true
-        playlistError = null
-        scope.launch {
-            DesktopSearchClient.renamePlaylist(collection.playlistId, title)
-                .onSuccess {
-                    // Renamed in place as well as re-fetched: the page that ordered it is still on
-                    // screen showing the old name, and the library reload behind it takes a moment.
-                    openedCollection = openedCollection
-                        ?.takeIf { it.browseId == collection.browseId }
-                        ?.copy(title = title)
-                        ?: openedCollection
-                    editPlaylistShelf { items ->
-                        items.map { if (it.browseId == collection.browseId) it.copy(title = title) else it }
-                    }
-                    closePlaylistDialogs()
-                    libraryStale = true
-                }
-                .onFailure {
-                    playlistBusy = false
-                    playlistError = it.message ?: "Could not rename the playlist"
-                }
-        }
-    }
-
-    fun deleteOpenPlaylist() {
-        val collection = openedCollection ?: return
-        val collectionPinScope = openedCollectionPinScope
-        playlistBusy = true
-        playlistError = null
-        scope.launch {
-            DesktopSearchClient.deletePlaylist(collection.playlistId)
-                .onSuccess {
-                    closePlaylistDialogs()
-                    // Its page is the one open, and a deleted playlist has nothing left to show.
-                    if (openedCollection?.browseId == collection.browseId) openedCollection = null
-                    collectionPinScope?.let { playlistPins.remove(collection.browseId, it) }
-                    if (collectionPinScope == DesktopPlaylistPinScope(activeAccountId, activeProfileId)) {
-                        editPlaylistShelf { items -> items.filterNot { it.browseId == collection.browseId } }
-                    }
-                    libraryStale = true
-                }
-                .onFailure {
-                    playlistBusy = false
-                    playlistError = it.message ?: "Could not delete the playlist"
-                }
-        }
-    }
-
-    /** Takes one row back out of the playlist it is being read in. */
-    fun removeFromOpenPlaylist(song: Song) {
-        val collection = openedCollection ?: return
-        val setVideoId = song.setVideoId ?: return
-        scope.launch {
-            DesktopSearchClient.removeFromPlaylist(
-                collection.playlistId,
-                listOf(setVideoId to song.videoId),
-            ).onSuccess {
-                val current = openedCollection
-                if (current != null && current.browseId == collection.browseId) {
-                    openedCollection = current.copy(
-                        songs = current.songs.filterNot { it.setVideoId == setVideoId },
-                    )
-                }
-            }.onFailure {
-                DesktopTrackLog.log("playlist: could not remove ${song.videoId}: ${it.message}")
+                if (playlistEdit == null || !isCurrentPlaylistEdit(edit)) closePlaylistEdit()
             }
         }
     }
@@ -3630,8 +3723,17 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             settingsParents.addAll(entry.settingsParents)
             overlays.settingsPage = entry.settings
             collectionError = null
-            openedCollection = entry.collection?.takeIf {
-                it.type != BrowseType.PLAYLIST || entry.collectionPinScope == currentPinScope(it.browseId)
+            collectionPageError = null
+            collectionLoadingMore = false
+            collectionViewGeneration++
+            openedCollection = entry.collection?.let { previous ->
+                val local = playlists.firstOrNull { it.id == previous.browseId }
+                when {
+                    local != null -> local.toCollection()
+                    previous.type != BrowseType.PLAYLIST -> previous
+                    entry.collectionPinScope != null && entry.collectionPinScope == currentPinScope(previous.browseId) -> previous
+                    else -> null
+                }
             }
             openedCollectionPinScope = entry.collectionPinScope
             openedSidebarPin = entry.sidebarPin
@@ -3984,7 +4086,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     val shortcutBlockedByModal = showFirstLaunchWelcome ||
         overlays.accounts || overlays.signIn || overlays.playlistDialog || overlays.spotifyImport ||
-        playlistTarget != null || overlays.rename || overlays.delete || overlays.downloadManager ||
+        playlistTarget != null || playlistEdit != null || overlays.downloadManager ||
         overlays.lastfmLogin || overlays.listenBrainzToken || overlays.discordToken ||
         overlays.listenTogether || overlays.audioOutput || overlays.pipeline || playerMenuOpen
 
@@ -4974,23 +5076,40 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onDismiss = ::closePlaylistDialogs,
                         )
                     }
-                    if (overlays.rename) {
-                        DesktopRenamePlaylistDialog(
-                            current = openedCollection?.title.orEmpty(),
-                            busy = playlistBusy,
-                            error = playlistError,
-                            onRename = ::renameOpenPlaylist,
-                            onDismiss = ::closePlaylistDialogs,
-                        )
-                    }
-                    if (overlays.delete) {
-                        DesktopDeletePlaylistDialog(
-                            title = openedCollection?.title.orEmpty(),
-                            busy = playlistBusy,
-                            error = playlistError,
-                            onDelete = ::deleteOpenPlaylist,
-                            onDismiss = ::closePlaylistDialogs,
-                        )
+                    playlistEdit?.let { edit ->
+                        when (edit.action) {
+                            PlaylistEditAction.RENAME -> DesktopRenamePlaylistDialog(
+                                current = edit.listing.title,
+                                busy = playlistEditBusy,
+                                error = playlistEditError,
+                                onRename = { savePlaylistEdit(title = it) },
+                                onDismiss = ::closePlaylistEdit,
+                            )
+                            PlaylistEditAction.DELETE -> DesktopDeletePlaylistDialog(
+                                title = edit.listing.title,
+                                local = playlists.any { it.id == edit.listing.browseId },
+                                busy = playlistEditBusy,
+                                error = playlistEditError,
+                                onDelete = { savePlaylistEdit() },
+                                onDismiss = ::closePlaylistEdit,
+                            )
+                            PlaylistEditAction.REMOVE -> DesktopRemovePlaylistOccurrenceDialog(
+                                title = edit.listing.title,
+                                song = edit.index?.let(edit.listing.songs::getOrNull),
+                                busy = playlistEditBusy,
+                                error = playlistEditError,
+                                onRemove = { savePlaylistEdit() },
+                                onDismiss = ::closePlaylistEdit,
+                            )
+                            PlaylistEditAction.REORDER -> DesktopReorderPlaylistDialog(
+                                title = edit.listing.title,
+                                order = playlistOrder,
+                                busy = playlistEditBusy,
+                                error = playlistEditError,
+                                onSave = { savePlaylistEdit(targetOrder = it) },
+                                onDismiss = ::closePlaylistEdit,
+                            )
+                        }
                     }
                     if (overlays.downloadManager) {
                         DesktopDownloadManagerDialog(onDismiss = { overlays.downloadManager = false })
@@ -5511,13 +5630,23 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onTogglePin = openedPlaylistPin?.let { pin -> { playlistPins.toggle(pin) } },
                             loadingMore = collectionLoadingMore,
                             onLoadMore = ::loadMoreCollectionSongs,
-                            onRename = { overlays.rename = true }.takeIf { openedCollection?.owned == true },
+                            pageError = collectionPageError,
+                            onRename = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
+                                { beginPlaylistEdit(listing, PlaylistEditAction.RENAME) }
+                            },
+                            onReorder = openedCollection?.takeIf(::canEditRemotePlaylist)?.let { listing ->
+                                { beginPlaylistEdit(listing, PlaylistEditAction.REORDER) }
+                            },
                             onShare = openedCollection
                                 ?.takeIf { it.type == BrowseType.ALBUM || it.type == BrowseType.PLAYLIST }
                                 ?.let { collection -> { shareCollection(collection) } },
-                            onDelete = { overlays.delete = true }.takeIf { openedCollection?.owned == true },
-                            onRemoveFromPlaylist = ::removeFromOpenPlaylist
-                                .takeIf { openedCollection?.owned == true },
+                            onDelete = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
+                                { beginPlaylistEdit(listing, PlaylistEditAction.DELETE) }
+                            },
+                            onRemoveFromPlaylist = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
+                                { index: Int, _: Song -> beginPlaylistEdit(listing, PlaylistEditAction.REMOVE, index) }
+                            },
+                            localPlaylist = playlists.any { it.id == openedCollection!!.browseId },
                             likedIds = likedIds,
                             onPlaySongs = { songs, index ->
                                 playSpotifyOrYoutubeSongs(songs, index, openedCollection?.let { collectionSource(it) })
@@ -9832,12 +9961,15 @@ private fun DesktopCollectionPage(
     onTogglePin: (() -> Unit)?,
     loadingMore: Boolean,
     onLoadMore: () -> Unit,
-    /** The three edits only a playlist's owner is offered. */
+    pageError: String?,
+    localPlaylist: Boolean,
+    onReorder: (() -> Unit)?,
+    /** Edits offered for local playlists and owned YouTube Music playlists. */
     onRename: (() -> Unit)?,
     onDelete: (() -> Unit)?,
     /** Copies the release's own YouTube Music link; null for anything with no link to share. */
     onShare: (() -> Unit)?,
-    onRemoveFromPlaylist: ((Song) -> Unit)?,
+    onRemoveFromPlaylist: ((Int, Song) -> Unit)?,
     likedIds: Set<String>,
     onPlaySongs: (List<Song>, Int) -> Unit,
     onShuffle: (List<Song>) -> Unit,
@@ -10053,6 +10185,7 @@ private fun DesktopCollectionPage(
                                             pinned = pinned,
                                             onRename = onRename,
                                             onDelete = onDelete,
+                                            onReorder = onReorder,
                                         ),
                                         onDismiss = { moreOpen = false },
                                     )
@@ -10090,14 +10223,18 @@ private fun DesktopCollectionPage(
                     downloaded = song.videoId in downloadedIds,
                     downloadInProgress = song.videoId in downloadInProgress,
                     number = index + 1,
-                    onRemove = onRemoveFromPlaylist?.takeIf { song.setVideoId != null },
+                    onRemove = onRemoveFromPlaylist
+                        ?.takeIf { localPlaylist || song.setVideoId != null }
+                        ?.let { remove -> { track -> remove(index, track) } },
                     menu = { songMenu(song, index) },
                 )
             }
             if (collection.continuation != null) {
                 // Reaching this row is what asks for the next page, the way the home feed pages.
                 item(key = "collection-more") {
-                    LaunchedEffect(songs.size) { onLoadMore() }
+                    LaunchedEffect(collection.browseId, collection.continuation) {
+                        if (pageError == null) onLoadMore()
+                    }
                     Box(
                         Modifier.fillMaxWidth().height(72.dp),
                         contentAlignment = Alignment.Center,
@@ -10108,6 +10245,11 @@ private fun DesktopCollectionPage(
                                 strokeWidth = 2.dp,
                                 modifier = Modifier.size(22.dp),
                             )
+                        } else if (pageError != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(pageError, color = DesktopSecondary)
+                                TextButton(onClick = onLoadMore) { Text("Retry") }
+                            }
                         }
                     }
                 }
