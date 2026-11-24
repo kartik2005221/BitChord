@@ -27,7 +27,7 @@ internal class DesktopDownloadsSettings(private val prefs: Preferences) {
 
 /** Removed tracks remain in snapshots, so compare against the merged result, not the live list. */
 internal fun shouldAutoUpdatePlaylist(enabled: Boolean, existingIds: List<String>, freshIds: List<String>): Boolean =
-    enabled && (freshIds + existingIds).distinct() != existingIds
+    enabled && (freshIds + existingIds.filterNot(freshIds.toHashSet()::contains)) != existingIds
 
 /** Return a complete listing or a failure; callers must not save a partial result. */
 internal suspend fun <T, K> collectDownloadListing(

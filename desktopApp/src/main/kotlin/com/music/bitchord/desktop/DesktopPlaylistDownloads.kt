@@ -185,7 +185,7 @@ internal fun tracksMissingOffline(
 ): List<Song> = snapshot.filter { song ->
     song.localUri == null && song.localPath == null &&
         song.videoId !in downloadedIds && song.videoId !in activeIds
-}
+}.distinctBy(Song::videoId)
 
 /** The snapshot's songs no other record claims — theirs to delete when the record goes. */
 internal fun songsUnclaimedBy(
@@ -193,7 +193,7 @@ internal fun songsUnclaimedBy(
     otherRecords: List<DesktopPlaylistDownload>,
 ): List<Song> {
     val claimed = otherRecords.flatMapTo(HashSet()) { record -> record.songs.map(Song::videoId) }
-    return snapshot.filter { it.videoId !in claimed }
+    return snapshot.filter { it.videoId !in claimed }.distinctBy(Song::videoId)
 }
 
 /** The record back as a page — the offline copy of the collection it was asked for. */
