@@ -127,12 +127,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
@@ -161,7 +163,6 @@ import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -205,6 +206,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -321,7 +323,6 @@ import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.SPOTIFY_MISSING_PREFIX
-import com.music.bitchord.data.model.SPOTIFY_PENDING_PREFIX
 import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.TopPicks
 import com.music.bitchord.data.model.TopPick
@@ -762,7 +763,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var spotifyError by remember { mutableStateOf<String?>(null) }
     var spotifyReloads by remember { mutableStateOf(0) }
     var spotifyLoadedCookie by remember { mutableStateOf<String?>(null) }
-    var spotifyPlaybackResolving by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val spotifyPlaybackResolving = remember { mutableSetOf<Triple<String, Int, Int>>() }
     var showNerdStats by remember { mutableStateOf(persistence.boolean("show_nerd_stats", false)) }
     LaunchedEffect(destination, spotifyCanvasCookie, spotifyReloads) {
         if (destination != DesktopDestination.SPOTIFY) return@LaunchedEffect
@@ -954,6 +955,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         playlistPins.refresh(known)
     }
 
+    val collectionSorts = remember { mutableStateMapOf<String, DesktopCollectionSort>() }
     var collectionLoadingMore by remember { mutableStateOf(false) }
     var collectionError by remember { mutableStateOf<String?>(null) }
     var collectionReloads by remember { mutableStateOf(0) }
@@ -1077,21 +1079,14 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun playSongs(songs: List<Song>, startIndex: Int = 0, source: DesktopQueueSource? = null) {
         if (songs.isEmpty()) return
-        val selected = songs.getOrNull(startIndex.coerceIn(songs.indices))
-        if (selected?.videoId?.startsWith(SPOTIFY_PENDING_PREFIX) == true ||
-            selected?.videoId?.startsWith(SPOTIFY_MISSING_PREFIX) == true
-        ) {
+        val context = songs.playableContextAt(startIndex.coerceIn(songs.indices))
+        if (context == null) {
             DesktopPlayerHost.showMessage("This Spotify track could not be matched to a playable song.")
             return
         }
         if (partyTrackChangeBlocked()) return
-        val playableSongs = songs.filterNot {
-            it.videoId.startsWith(SPOTIFY_PENDING_PREFIX) || it.videoId.startsWith(SPOTIFY_MISSING_PREFIX)
-        }
-        if (playableSongs.isEmpty()) return
-        val playable = playableSongs.map(::canonicalSong).map { it.withSource(source) }
-        val selectedId = selected?.videoId
-        val at = playable.indexOfFirst { it.videoId == selectedId }.takeIf { it >= 0 } ?: 0
+        val (at, tracks) = context
+        val playable = tracks.map { canonicalSong(it).withSource(source) }
         if (DesktopListenTogether.state.value.inParty) {
             liveQueue = DesktopQueue(partyPlaybackQueue(playable[at]), index = 0)
             preShuffleOrder = emptyList()
@@ -1122,68 +1117,55 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
      * playback engine as Spotify ids. Background matching fills in the playlist progressively,
      * but a listener can also tap a pending or unmatched row and resolve it immediately.
      */
-    fun playSpotifyOrYoutubeSongs(
-        songs: List<Song>,
-        startIndex: Int = 0,
-        source: DesktopQueueSource? = null,
+    fun playCollectionRows(
+        collection: DesktopCollection,
+        rows: List<IndexedValue<Song>>,
+        position: Int,
     ) {
-        val selected = songs.getOrNull(startIndex) ?: return
+        val (sourceIndex, selected) = rows.getOrNull(position) ?: return
+        val songs = rows.map { it.value }
+        val source = collectionSource(collection)
         val spotify = selected.unresolvedSpotifyTrack()
         if (spotify == null) {
-            playSongs(songs, startIndex, source)
+            playSongs(songs, position, source)
             return
         }
         if (partyTrackChangeBlocked()) return
-        if (selected.videoId in spotifyPlaybackResolving) {
+        val revision = collectionReloads
+        val pinScope = openedCollectionPinScope
+        val resolvingOccurrence = Triple(collection.browseId, revision, sourceIndex)
+        if (!spotifyPlaybackResolving.add(resolvingOccurrence)) {
             DesktopPlayerHost.showMessage("Searching YouTube Music for this track…")
             return
         }
-        spotifyPlaybackResolving = spotifyPlaybackResolving + selected.videoId
-        val playlistIdAtTap = openedCollection?.browseId
         DesktopPlayerHost.showMessage("Finding ${spotify.title} on YouTube Music…")
         scope.launch {
             try {
                 val match = SpotifyImporter.matchTrack(spotify)
-                if (playlistIdAtTap != null && openedCollection?.browseId != playlistIdAtTap) {
-                    return@launch
-                }
-                if (match == null) {
+                val current = openedCollection?.takeIf {
+                    it.browseId == collection.browseId && !it.loading &&
+                        collectionReloads == revision && openedCollectionPinScope == pinScope
+                } ?: return@launch
+                val playable = match?.copy(thumbnailUrl = match.thumbnailUrl ?: spotify.imageUrl)
+                    ?: current.songs.getOrNull(sourceIndex)?.takeIf(Song::isPlayableCollectionTrack)
+                if (playable == null) {
                     DesktopPlayerHost.showMessage("Could not find ${spotify.title} on YouTube Music")
-                    val current = openedCollection
-                    if (current != null && current.browseId == playlistIdAtTap) {
-                        val remaining = current.songs.toMutableList()
-                        val position = remaining.indexOfFirst { it.videoId == selected.videoId }
-                        if (position >= 0) {
-                            remaining[position] = selected.copy(videoId = SPOTIFY_MISSING_PREFIX + spotify.id)
-                            openedCollection = current.copy(songs = remaining)
-                        }
-                    }
+                    openedCollection = current.resolveSpotifyOccurrence(
+                        sourceIndex, spotify.id, selected.copy(videoId = SPOTIFY_MISSING_PREFIX + spotify.id),
+                    )
                     return@launch
                 }
 
-                val playable = match.copy(thumbnailUrl = match.thumbnailUrl ?: spotify.imageUrl)
-                val updatedQueue = songs.toMutableList().also { it[startIndex] = playable }
-                val current = openedCollection
-                if (current != null && current.browseId == playlistIdAtTap && playlistIdAtTap?.startsWith(SPOTIFY_PAGE_PREFIX) == true) {
-                    val currentRows = current.songs.toMutableList()
-                    val currentIndex = currentRows.indexOfFirst { it.videoId == selected.videoId ||
-                        it.videoId == SPOTIFY_PENDING_PREFIX + spotify.id ||
-                        it.videoId == SPOTIFY_MISSING_PREFIX + spotify.id
-                    }
-                    if (currentIndex >= 0) {
-                        currentRows[currentIndex] = playable
-                        openedCollection = current.copy(songs = currentRows)
-                    }
-                }
-                // Use BitChord's existing playback engine and context queue, not Spotify's URL.
-                playSongs(updatedQueue, startIndex, source)
+                openedCollection = current.resolveSpotifyOccurrence(sourceIndex, spotify.id, playable)
+                val updatedQueue = songs.toMutableList().also { it[position] = playable }
+                playSongs(updatedQueue, position, source)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 DesktopTrackLog.log("spotify: YouTube Music lookup failed: ${failure.javaClass.simpleName}")
                 DesktopPlayerHost.showMessage("Could not play this Spotify track via YouTube Music")
             } finally {
-                spotifyPlaybackResolving = spotifyPlaybackResolving - selected.videoId
+                spotifyPlaybackResolving.remove(resolvingOccurrence)
             }
         }
     }
@@ -5511,6 +5493,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onTogglePin = openedPlaylistPin?.let { pin -> { playlistPins.toggle(pin) } },
                             loadingMore = collectionLoadingMore,
                             onLoadMore = ::loadMoreCollectionSongs,
+                            sort = collectionSorts[openedCollection!!.browseId] ?: DesktopCollectionSort.DEFAULT,
+                            onSort = { browseId, sort -> collectionSorts[browseId] = sort },
                             onRename = { overlays.rename = true }.takeIf { openedCollection?.owned == true },
                             onShare = openedCollection
                                 ?.takeIf { it.type == BrowseType.ALBUM || it.type == BrowseType.PLAYLIST }
@@ -5519,12 +5503,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onRemoveFromPlaylist = ::removeFromOpenPlaylist
                                 .takeIf { openedCollection?.owned == true },
                             likedIds = likedIds,
-                            onPlaySongs = { songs, index ->
-                                playSpotifyOrYoutubeSongs(songs, index, openedCollection?.let { collectionSource(it) })
-                            },
-                            onShuffle = { songs ->
-                                playSpotifyOrYoutubeSongs(songs.shuffled(), 0, openedCollection?.let { collectionSource(it) })
-                            },
+                            onPlaySongs = ::playCollectionRows,
                             onDownloadAll = { downloadCollection(openedCollection!!) },
                             playlistDownload = playlistDownloadRecords.firstOrNull { it.id == openedCollection!!.browseId },
                             playlistStale = openedCollection!!.browseId in stalePlaylistDownloads,
@@ -5535,17 +5514,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onLibraryChanged = ::reloadLibrary,
                             onStartMix = ::startRadio,
                             onQueueSongs = ::enqueueSongs,
-                            songMenu = { track, index ->
+                            songMenu = { track, resolveAndPlay ->
                                 if (track.unresolvedSpotifyTrack() == null) {
                                     songMenu(track)
                                 } else {
-                                    DesktopSpotifyPendingSongMenu {
-                                        openedCollection?.let { collection ->
-                                            playSpotifyOrYoutubeSongs(
-                                                collection.songs, index, collectionSource(collection),
-                                            )
-                                        }
-                                    }
+                                    DesktopSpotifyPendingSongMenu(resolveAndPlay)
                                 }
                             },
                             animatedCanvas = animatedCanvas,
@@ -9826,12 +9799,14 @@ private fun DesktopSourceEditorDialog(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DesktopCollectionPage(
+internal fun DesktopCollectionPage(
     collection: DesktopCollection,
     pinned: Boolean,
     onTogglePin: (() -> Unit)?,
     loadingMore: Boolean,
     onLoadMore: () -> Unit,
+    sort: DesktopCollectionSort,
+    onSort: (String, DesktopCollectionSort) -> Unit,
     /** The three edits only a playlist's owner is offered. */
     onRename: (() -> Unit)?,
     onDelete: (() -> Unit)?,
@@ -9839,14 +9814,13 @@ private fun DesktopCollectionPage(
     onShare: (() -> Unit)?,
     onRemoveFromPlaylist: ((Song) -> Unit)?,
     likedIds: Set<String>,
-    onPlaySongs: (List<Song>, Int) -> Unit,
-    onShuffle: (List<Song>) -> Unit,
+    onPlaySongs: (DesktopCollection, List<IndexedValue<Song>>, Int) -> Unit,
     onDownloadAll: (List<Song>) -> Unit,
     signedIn: Boolean,
     onLibraryChanged: () -> Unit,
     onStartMix: (Song) -> Unit,
     onQueueSongs: (List<Song>, Boolean) -> Unit,
-    songMenu: @Composable (Song, Int) -> Unit,
+    songMenu: @Composable (Song, () -> Unit) -> Unit,
     animatedCanvas: Boolean,
     onToggleLike: (Song) -> Unit,
     onDownload: (Song) -> Unit,
@@ -9862,20 +9836,15 @@ private fun DesktopCollectionPage(
     contentPadding: PaddingValues,
 ) {
     val songs = collection.songs
-    // The phone's "search this list": a filter over the rows already loaded.
     var searching by remember(collection.browseId) { mutableStateOf(false) }
     var listQuery by remember(collection.browseId) { mutableStateOf("") }
-    val shownSongs = remember(songs, listQuery) {
-        val needle = listQuery.trim()
-        songs.withIndex().filter { (_, song) ->
-            needle.isBlank() || song.title.contains(needle, ignoreCase = true) ||
-                song.artist.contains(needle, ignoreCase = true) ||
-                song.albumName.orEmpty().contains(needle, ignoreCase = true)
-        }
-    }
+    val orderedRows = remember(songs, sort) { songs.inCollectionOrder(sort) }
+    val shownRows = remember(orderedRows, listQuery) { orderedRows.matchingCollectionRows(listQuery) }
     var moreOpen by remember(collection.browseId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val playableSongs = remember(songs) { songs.filter { it.unresolvedSpotifyTrack() == null } }
+    val playableSongs = remember(orderedRows) {
+        orderedRows.map { it.value }.filter(Song::isPlayableCollectionTrack)
+    }
     // A saved YouTube playlist/album can be toggled from its overflow. Spotify playlists
     // have no YouTube library state and are never rated against a Spotify identifier.
     var libraryState by remember(collection.browseId) {
@@ -9990,10 +9959,10 @@ private fun DesktopCollectionPage(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            DesktopCircleButton(BitChordIcons.Shuffle, DesktopStrings["shuffle", "Shuffle"], onClick = { onShuffle(songs) })
+                            DesktopCircleButton(BitChordIcons.Shuffle, DesktopStrings["shuffle", "Shuffle"], onClick = { onPlaySongs(collection, orderedRows.shuffled(), 0) })
                             DesktopPlayPill(
                                 label = DesktopStrings["play", "Play"],
-                                onClick = { if (songs.isNotEmpty()) onPlaySongs(songs, 0) },
+                                onClick = { onPlaySongs(collection, orderedRows, 0) },
                                 iconOnly = true,
                             )
                             DesktopCircleButton(
@@ -10004,12 +9973,15 @@ private fun DesktopCollectionPage(
                                     if (!searching) listQuery = ""
                                 },
                             )
+                            if (collection.type == BrowseType.ALBUM || collection.type == BrowseType.PLAYLIST) {
+                                DesktopCollectionSortMenu(sort, onSort = { onSort(collection.browseId, it) })
+                            }
                             Box {
                                 DesktopCircleButton(Icons.Rounded.MoreHoriz, DesktopStrings["more", "More"], onClick = { moreOpen = true })
                                 if (moreOpen) {
                                     DesktopCollectionContextMenu(
                                         actions = DesktopCollectionMenuActions(
-                                            onShuffle = { onShuffle(songs) },
+                                            onShuffle = { onPlaySongs(collection, orderedRows.shuffled(), 0) },
                                             onFind = {
                                                 searching = !searching
                                                 if (!searching) listQuery = ""
@@ -10073,7 +10045,8 @@ private fun DesktopCollectionPage(
                     )
                 }
             }
-            itemsIndexed(shownSongs, key = { _, (index, song) -> "${song.videoId}-$index" }) { position, (index, song) ->
+            itemsIndexed(shownRows, key = { _, row -> row.index }) { position, (index, song) ->
+                val play = { onPlaySongs(collection, shownRows, position) }
                 DesktopCollectionSongRow(
                     // Striped by place on screen, not track number, so a filtered list still
                     // alternates.
@@ -10081,7 +10054,7 @@ private fun DesktopCollectionPage(
                     song = song,
                     collectionType = collection.type,
                     liked = song.videoId in likedIds,
-                    onClick = { _ -> onPlaySongs(songs, index) },
+                    onClick = { play() },
                     // Spotify placeholder ids cannot be liked, added or downloaded through
                     // YouTube Music. Those actions appear once a track has been matched.
                     onToggleLike = onToggleLike.takeUnless { song.unresolvedSpotifyTrack() != null },
@@ -10091,13 +10064,13 @@ private fun DesktopCollectionPage(
                     downloadInProgress = song.videoId in downloadInProgress,
                     number = index + 1,
                     onRemove = onRemoveFromPlaylist?.takeIf { song.setVideoId != null },
-                    menu = { songMenu(song, index) },
+                    menu = { songMenu(song, play) },
                 )
             }
             if (collection.continuation != null) {
                 // Reaching this row is what asks for the next page, the way the home feed pages.
                 item(key = "collection-more") {
-                    LaunchedEffect(songs.size) { onLoadMore() }
+                    LaunchedEffect(collection.browseId, collection.continuation) { onLoadMore() }
                     Box(
                         Modifier.fillMaxWidth().height(72.dp),
                         contentAlignment = Alignment.Center,
@@ -10111,6 +10084,38 @@ private fun DesktopCollectionPage(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopCollectionSortMenu(sort: DesktopCollectionSort, onSort: (DesktopCollectionSort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        DesktopCircleButton(Icons.AutoMirrored.Rounded.Sort, DesktopStrings["sort_songs", "Sort songs"], onClick = { open = true })
+        DesktopDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DesktopCollectionSort.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            when (option) {
+                                DesktopCollectionSort.DEFAULT -> DesktopStrings["sort_default", "Default order"]
+                                DesktopCollectionSort.TITLE_ASC -> DesktopStrings["sort_title_ascending", "Alphabetical (A to Z)"]
+                                DesktopCollectionSort.TITLE_DESC -> DesktopStrings["sort_title_descending", "Alphabetical (Z to A)"]
+                                DesktopCollectionSort.DATE_ADDED_ASC -> DesktopStrings["sort_date_added_oldest", "Date added (oldest first)"]
+                                DesktopCollectionSort.DATE_ADDED_DESC -> DesktopStrings["sort_date_added", "Date added (newest first)"]
+                            },
+                        )
+                    },
+                    trailingIcon = if (option == sort) {
+                        { Icon(Icons.Rounded.Check, contentDescription = null) }
+                    } else null,
+                    onClick = {
+                        onSort(option)
+                        open = false
+                    },
+                )
             }
         }
     }
