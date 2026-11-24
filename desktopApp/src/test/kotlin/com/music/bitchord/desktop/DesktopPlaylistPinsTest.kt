@@ -1,12 +1,12 @@
 package com.music.bitchord.desktop
 
+import com.music.bitchord.data.model.Song
 import java.util.prefs.Preferences
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import com.music.bitchord.data.model.Song
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -152,12 +152,12 @@ class DesktopPlaylistPinsTest {
         val other = assertNotNull(identity.rememberVerified("session-b", "account-b"))
         val previous = DesktopPlaylistDownload(
             "spotify:playlist:liked", "Previous liked", "", null, true,
-            listOf(Song(videoId = "old", title = "Old", artist = "Artist")),
+            listOf(Song(videoId = "old", title = "Old", artist = "Artist", thumbnailUrl = null)),
             1L, 2L, binding.legacy.downloadOwner,
         )
         val stable = previous.copy(
             title = "Current liked",
-            songs = listOf(Song(videoId = "new", title = "New", artist = "Artist")),
+            songs = listOf(Song(videoId = "new", title = "New", artist = "Artist", thumbnailUrl = null)),
             createdAt = 3L, updatedAt = 4L, pinOwner = binding.account.downloadOwner,
         )
         val ownerless = previous.copy(pinOwner = null)
