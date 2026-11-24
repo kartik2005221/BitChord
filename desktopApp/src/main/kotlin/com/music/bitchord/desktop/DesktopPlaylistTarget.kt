@@ -8,8 +8,9 @@ internal data class DesktopPlaylistTarget(
     val album: Boolean,
 ) {
     val playableSongs: List<Song> = songs.filter { it.unresolvedSpotifyTrack() == null }
-    val accountVideoIds: List<String> =
-        playableSongs.map(Song::videoId).filter(DesktopSearchClient::isVideoId).distinct()
+    val accountTracks: List<Song> = playableSongs.filter { DesktopSearchClient.isVideoId(it.videoId) }
+    val accountVideoIds: List<String> = accountTracks.map(Song::videoId).distinct()
+    val canCreateOnAccount: Boolean get() = playableSongs.size == accountTracks.size
 
     companion object {
         fun track(song: Song) = DesktopPlaylistTarget("${song.title} — ${song.artist}", listOf(song), album = false)

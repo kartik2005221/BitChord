@@ -5,6 +5,8 @@ import com.music.bitchord.ui.screens.desktopTopScrollFade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,7 +99,7 @@ internal fun DesktopPlaylistDialog(
                 // the way out.
                 onBack = if (target == null || busy) null else ({ creating = false }),
                 signedIn = signedIn && canUseAccount &&
-                    (target == null || target.accountVideoIds.size == target.playableSongs.size),
+                    (target == null || target.canCreateOnAccount),
                 busy = busy,
                 error = error,
                 onCreate = onCreate,
@@ -107,7 +109,9 @@ internal fun DesktopPlaylistDialog(
 
         val album = target?.album == true
         DialogHeading(if (album) "Add to playlists" else "Add to playlist", target?.title.orEmpty())
-        error?.let { DialogError(it) }
+        error?.let {
+            DialogError(it, modifier = Modifier.heightIn(max = 116.dp).verticalScroll(rememberScrollState()))
+        }
         if (target?.playableSongs.isNullOrEmpty()) {
             if (busy) {
                 DialogSectionHeading("Loading album…")
@@ -140,7 +144,7 @@ internal fun DesktopPlaylistDialog(
         }
 
         if (album) {
-            val accountCount = target?.accountVideoIds?.size ?: 0
+            val accountCount = target?.accountTracks?.size ?: 0
             val playableCount = target?.playableSongs?.size ?: 0
             val total = target?.songs?.size ?: 0
             if (total > playableCount) DialogSectionHeading("${total - playableCount} unavailable tracks will be skipped")
@@ -170,8 +174,11 @@ internal fun DesktopPlaylistDialog(
         }
         if (account.isEmpty() && local.isEmpty()) {
             Text(
-                if (available.isNotEmpty()) DesktopStrings["no_matching_playlists", "No matching playlists"]
-                else "No playlists yet. Create one to keep these tracks.",
+                when {
+                    available.isNotEmpty() -> DesktopStrings["no_matching_playlists", "No matching playlists"]
+                    !signedIn -> "No playlists on this computer yet. Sign in to see the ones on your account."
+                    else -> "No playlists yet. Create one to keep these tracks."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = DesktopSecondary,
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
@@ -221,6 +228,8 @@ internal fun DesktopPlaylistDialog(
                 onConfirm = { onPick(pending) },
                 onDismiss = onDismiss,
             )
+        } else if (busy) {
+            CircularProgressIndicator(color = DesktopAccent, modifier = Modifier.padding(22.dp).size(20.dp))
         }
         Spacer(Modifier.height(6.dp))
     }
@@ -584,12 +593,12 @@ private fun DialogSectionHeading(text: String) {
 }
 
 @Composable
-private fun DialogError(message: String) {
+private fun DialogError(message: String, modifier: Modifier = Modifier) {
     Text(
         message,
         style = MaterialTheme.typography.bodySmall,
         color = DesktopAccent,
-        modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 10.dp),
+        modifier = modifier.padding(start = 22.dp, end = 22.dp, top = 10.dp),
     )
 }
 

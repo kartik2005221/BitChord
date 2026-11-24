@@ -1940,7 +1940,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         if (target != null && songs.isEmpty()) return
         val accountIds = target?.accountVideoIds.orEmpty()
         val session = playlistPickerSession ?: currentPlaylistPickerSession()
-        if (!playlistPickerAccountIsCurrent(session) || (target != null && accountIds.size != songs.size)) {
+        if (!playlistPickerAccountIsCurrent(session) || target?.canCreateOnAccount == false) {
             playlists = playlists + DesktopPlaylist(title = name).addTracks(songs)
             persistence.savePlaylists(playlists)
             closePlaylistDialogs()
@@ -1993,6 +1993,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         val session = playlistPickerSession
         val accountTitles = accountPlaylists.associate { it.playlistId to it.title }
         val localTitles = playlists.associate { it.id to it.title }
+        fun addedDestinationsLabel(): String {
+            val count = playlistAddedDestinations.size
+            return if (count == 1) "1 playlist" else "$count playlists"
+        }
         playlistBusy = true
         playlistError = null
         scope.launch {
@@ -2055,13 +2059,13 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 }
                 if (failures.isEmpty()) {
                     if (target.album) {
-                        DesktopPlayerHost.showMessage("Album added to ${playlistAddedDestinations.size} playlists")
+                        DesktopPlayerHost.showMessage("Album added to ${addedDestinationsLabel()}")
                     }
                     closePlaylistDialogs()
                 } else {
                     playlistError = buildString {
                         if (playlistAddedDestinations.isNotEmpty()) {
-                            append("Added to ${playlistAddedDestinations.size} playlists. ")
+                            append("Added to ${addedDestinationsLabel()}. ")
                         }
                         append(failures.joinToString("\n"))
                     }
