@@ -60,6 +60,7 @@ object DesktopSearchClient {
     suspend fun browse(browseId: String, fallback: BrowseItem? = null): Result<DesktopCollection> =
         YtMusicRepository.browseSongs(browseId, requireExplicitOwner = true).map { page ->
             val header = page.header
+            val type = fallback?.type?.takeIf { it != BrowseType.OTHER } ?: browseTypeOf(browseId)
             DesktopCollection(
                 browseId = browseId,
                 title = header?.title?.takeIf(String::isNotBlank)
@@ -67,10 +68,11 @@ object DesktopSearchClient {
                     ?: "Collection",
                 subtitle = header?.subtitle?.takeIf(String::isNotBlank) ?: fallback?.subtitle.orEmpty(),
                 thumbnailUrl = header?.thumbnailUrl ?: fallback?.thumbnailUrl,
-                type = fallback?.type?.takeIf { it != BrowseType.OTHER } ?: browseTypeOf(browseId),
+                type = type,
                 songs = page.songs,
                 continuation = page.continuation,
                 owned = page.owned,
+                initialPageComplete = type != BrowseType.PLAYLIST || page.playlistRowsComplete,
             )
         }
 
@@ -84,6 +86,9 @@ object DesktopSearchClient {
     }
 
     internal suspend fun completeCollection(collection: DesktopCollection): Result<DesktopCollection> {
+        if (collection.loading || !collection.initialPageComplete) {
+            return Result.failure(IllegalStateException("Could not read the collection's first page"))
+        }
         var listing = collection
         while (listing.continuation != null) {
             listing = moreCollectionSongs(listing).getOrElse { return Result.failure(it) }
@@ -194,6 +199,7 @@ data class DesktopCollection(
      */
     val loading: Boolean = false,
     val seenContinuations: Set<String> = emptySet(),
+    val initialPageComplete: Boolean = true,
     /** The active YouTube session when the live owner evidence was read. */
     val ownerSessionGeneration: Long? = null,
 ) {

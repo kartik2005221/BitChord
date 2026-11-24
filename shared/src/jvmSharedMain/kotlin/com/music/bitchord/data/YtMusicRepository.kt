@@ -662,6 +662,7 @@ object YtMusicRepository {
          * continuation, same as [header].
          */
         val description: String? = null,
+        val playlistRowsComplete: Boolean = false,
     )
 
     /**
@@ -740,7 +741,10 @@ object YtMusicRepository {
         // parsePlaylistShelf. Anything else (album, library, history) has no
         // such shelf, and falls back to the layout-agnostic walk.
         InnertubeParser.parsePlaylistShelf(response)?.let { shelf ->
-            return SongPage(shelf.songs, shelf.continuation, shelf.suggested, library, header = header)
+            return SongPage(
+                shelf.songs, shelf.continuation, shelf.suggested, library,
+                header = header, playlistRowsComplete = shelf.complete && shelf.hasPlaylistRows,
+            )
         }
         return SongPage(
             // One response can name the same track twice — an album page that

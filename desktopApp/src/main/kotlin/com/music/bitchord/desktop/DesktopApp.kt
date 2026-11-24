@@ -1383,7 +1383,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var openedDownloadListing by remember { mutableStateOf<Pair<Long, DesktopCollection>?>(null) }
     var openedDownloadGeneration by remember { mutableStateOf(0L) }
     fun updatePlaylistDownloadStaleState(loaded: DesktopCollection) {
-        if (loaded.continuation != null) return
+        if (!loaded.initialPageComplete || loaded.continuation != null) return
         val record = DesktopPlaylistDownloads.recordOf(loaded.browseId) ?: return
         if (record.pinOwner != null && record.pinOwner != openedCollectionPinScope?.downloadOwner) return
         val fresh = loaded.songs.filter { it.unresolvedSpotifyTrack() == null }

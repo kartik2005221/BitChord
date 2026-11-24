@@ -103,7 +103,9 @@ object DesktopPlaylistDownloads {
                 it.id == collection.browseId && (pinOwner == null || it.pinOwner == pinOwner)
             }
             val snapshot = mergedSnapshot(existing?.songs.orEmpty(), collection.songs)
-                .map { song -> downloaded.firstOrNull { it.videoId == song.videoId } ?: song }
+                .map { song ->
+                    downloaded.firstOrNull { it.videoId == song.videoId }?.let(song::withDownloadedFile) ?: song
+                }
             val merged = DesktopPlaylistDownload(
                 id = collection.browseId,
                 title = collection.title,
@@ -136,7 +138,7 @@ object DesktopPlaylistDownloads {
                     touched = true
                     record.copy(
                         songs = record.songs.map { song ->
-                            if (song.videoId == saved.videoId) saved else song
+                            if (song.videoId == saved.videoId) song.withDownloadedFile(saved) else song
                         },
                     )
                 }
@@ -160,6 +162,14 @@ object DesktopPlaylistDownloads {
         }
     }
 }
+
+private fun Song.withDownloadedFile(downloaded: Song): Song = copy(
+    localUri = downloaded.localUri,
+    localPath = downloaded.localPath,
+    downloadFormat = downloaded.downloadFormat,
+    localDateAddedSeconds = downloaded.localDateAddedSeconds,
+    localDateModifiedSeconds = downloaded.localDateModifiedSeconds,
+)
 
 /**
  * The refreshed listing leads and the old snapshot's stragglers follow: a
