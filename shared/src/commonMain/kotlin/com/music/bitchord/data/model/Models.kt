@@ -125,6 +125,10 @@ data class Song(
      * non-history rows (e.g. search results, library).
      */
     val feedbackToken: String? = null,
+    /** On-disk tags used when browsing local albums. */
+    val localTrackNumber: Int? = null,
+    val localDiscNumber: Int? = null,
+    val localAlbumArtist: String? = null,
 ) {
     /** Legacy derived property: true if and only if [queueTier] is [QueueTier.AUTOPLAY]. */
     val fromAutoplay: Boolean get() = queueTier == QueueTier.AUTOPLAY

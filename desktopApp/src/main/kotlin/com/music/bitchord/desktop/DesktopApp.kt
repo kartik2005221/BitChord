@@ -698,7 +698,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     val factsRevision by DesktopArtistFacts.revision.collectAsState()
     var replaySummary by remember { mutableStateOf(DesktopReplaySummary()) }
     var statsCountedSongs by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var playlistTarget by remember { mutableStateOf<Song?>(null) }
+    var albumCardMenu by remember { mutableStateOf<ShelfItem?>(null) }
+    var playlistTarget by remember { mutableStateOf<DesktopPlaylistTarget?>(null) }
+    var playlistPickerSession by remember { mutableStateOf<Pair<DesktopPlaylistPinScope, Int>?>(null) }
+    var playlistAddedDestinations by remember { mutableStateOf(emptySet<DesktopPlaylistDestination>()) }
+    val albumPlaylistConfirmedBatches = remember { mutableMapOf<String, MutableSet<String>>() }
     // One busy flag and one message for every playlist edit: only one of them can be in flight,
     // because each is driven by a dialog that is modal.
     var playlistBusy by remember { mutableStateOf(false) }
@@ -1873,19 +1877,71 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     fun closePlaylistDialogs() {
         overlays.playlistDialog = false
         playlistTarget = null
+        playlistPickerSession = null
+        playlistAddedDestinations = emptySet()
+        albumPlaylistConfirmedBatches.clear()
         playlistError = null
         playlistBusy = false
     }
 
-    /** Creates a playlist — on the account when there is one, otherwise here. */
+    fun currentPlaylistPickerSession(): Pair<DesktopPlaylistPinScope, Int> =
+        DesktopPlaylistPinScope(activeAccountId, activeProfileId) to sessionRevision
+
+    fun playlistPickerAccountIsCurrent(session: Pair<DesktopPlaylistPinScope, Int>?): Boolean =
+        youtubeSignedIn && DesktopYouTubeAuth.isSignedIn && session == currentPlaylistPickerSession() &&
+            DesktopAccounts.activeAccountId() == session?.first?.accountId &&
+            DesktopAccounts.activeProfileId() == session?.first?.profileId
+
+    fun openTrackPlaylistPicker(song: Song) {
+        if (playlistBusy || playlistTarget != null) return
+        playlistError = null
+        playlistPickerSession = currentPlaylistPickerSession()
+        playlistTarget = DesktopPlaylistTarget.track(song)
+    }
+
+    fun openLocalAlbumPlaylistPicker(title: String, songs: List<Song>) {
+        if (playlistBusy || playlistTarget != null || songs.isEmpty()) return
+        playlistError = null
+        playlistPickerSession = currentPlaylistPickerSession()
+        playlistTarget = DesktopPlaylistTarget(title, songs, album = true)
+    }
+
+    fun openRemoteAlbumPlaylistPicker(browseId: String, title: String) {
+        if (playlistBusy || playlistTarget != null) return
+        val session = currentPlaylistPickerSession()
+        playlistPickerSession = session
+        playlistTarget = DesktopPlaylistTarget(title, emptyList(), album = true)
+        playlistError = null
+        playlistBusy = true
+        scope.launch {
+            try {
+                val first = DesktopSearchClient.browse(browseId).getOrThrow()
+                val songs = loadDesktopAlbumTracks(first.songs, first.continuation) { token ->
+                    DesktopSearchClient.moreCollectionSongs(token).getOrThrow()
+                }
+                check(currentPlaylistPickerSession() == session) { "The active profile changed. Reopen the album to try again." }
+                playlistTarget = DesktopPlaylistTarget(first.title, songs, album = true)
+                if (playlistTarget?.playableSongs.isNullOrEmpty()) playlistError = "This album has no available tracks."
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                playlistError = failure.message ?: "Could not load the album. Reopen it to try again."
+            } finally {
+                playlistBusy = false
+            }
+        }
+    }
+
+    /** Creates a playlist on YouTube for an eligible seed, or on this computer. */
     fun createPlaylist(title: String, privacy: PlaylistPrivacy) {
         val name = title.trim()
-        if (name.isBlank()) return
-        val seed = playlistTarget
-        // A track from another source cannot go in an account playlist, so the playlist made to
-        // hold it is one kept here.
-        if (!DesktopYouTubeAuth.isSignedIn || (seed != null && !DesktopSearchClient.isVideoId(seed.videoId))) {
-            playlists = playlists + DesktopPlaylist(title = name, songs = listOfNotNull(seed))
+        if (name.isBlank() || playlistBusy) return
+        val target = playlistTarget
+        val songs = target?.playableSongs.orEmpty()
+        if (target != null && songs.isEmpty()) return
+        val accountIds = target?.accountVideoIds.orEmpty()
+        val session = playlistPickerSession ?: currentPlaylistPickerSession()
+        if (!playlistPickerAccountIsCurrent(session) || (target != null && accountIds.size != songs.size)) {
+            playlists = playlists + DesktopPlaylist(title = name).addTracks(songs)
             persistence.savePlaylists(playlists)
             closePlaylistDialogs()
             return
@@ -1893,28 +1949,33 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         playlistBusy = true
         playlistError = null
         scope.launch {
-            DesktopSearchClient.createPlaylist(name, privacy, listOfNotNull(seed?.videoId))
-                .onSuccess { playlistId ->
+            runCatching {
+                Innertube.createPlaylist(name, privacy, videoIds = accountIds) {
+                    check(playlistPickerAccountIsCurrent(session)) { "The active profile changed." }
+                }
+            }.onSuccess { playlistId ->
                     closePlaylistDialogs()
-                    editPlaylistShelf { items ->
-                        val card = ShelfItem(
-                            title = name,
-                            // Only what this request itself establishes: an unseeded playlist gets
-                            // a card of just its name rather than a guess at what the feed will
-                            // call it.
-                            subtitle = if (seed != null) "1 song" else "",
-                            thumbnailUrl = seed?.thumbnailUrl,
-                            videoId = null,
-                            browseId = "VL$playlistId",
-                        )
-                        // Leads the shelf because it is the newest, which is the order the feed
-                        // itself comes in.
-                        listOf(card) + items.filterNot { it.browseId == card.browseId }
+                    if (playlistPickerAccountIsCurrent(session)) {
+                        editPlaylistShelf { items ->
+                            val card = ShelfItem(
+                                title = name,
+                                subtitle = when (accountIds.size) {
+                                    0 -> ""
+                                    1 -> "1 song"
+                                    else -> "${accountIds.size} songs"
+                                },
+                                thumbnailUrl = songs.firstOrNull()?.thumbnailUrl,
+                                videoId = null,
+                                browseId = "VL$playlistId",
+                            )
+                            listOf(card) + items.filterNot { it.browseId == card.browseId }
+                        }
+                        libraryStale = true
                     }
-                    libraryStale = true
                 }
                 .onFailure {
                     playlistBusy = false
+                    if (it is CancellationException) throw it
                     playlistError = it.message ?: "Could not create the playlist"
                 }
         }
@@ -1924,30 +1985,90 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         showCollection(playlist.toCollection())
     }
 
-    fun addToPlaylist(playlist: DesktopPlaylist) {
-        val song = playlistTarget ?: return
-        playlists = playlists.map { current ->
-            if (current.id == playlist.id) current.addTracks(listOf(song)) else current
-        }
-        persistence.savePlaylists(playlists)
-        if (openedCollection?.browseId == playlist.id) {
-            openedCollection = playlists.firstOrNull { it.id == playlist.id }?.toCollection()
-        }
-        playlistTarget = null
-    }
-
-    fun addToAccountPlaylist(playlist: UserPlaylist) {
-        val song = playlistTarget ?: return
+    fun addToSelectedPlaylists(destinations: List<DesktopPlaylistDestination>) {
+        val target = playlistTarget ?: return
+        if (playlistBusy || target.playableSongs.isEmpty()) return
+        val pending = destinations.distinct().filterNot(playlistAddedDestinations::contains)
+        if (pending.isEmpty()) return
+        val session = playlistPickerSession
+        val accountTitles = accountPlaylists.associate { it.playlistId to it.title }
+        val localTitles = playlists.associate { it.id to it.title }
         playlistBusy = true
         playlistError = null
         scope.launch {
-            DesktopSearchClient.addToPlaylist(playlist.playlistId, listOf(song.videoId))
-                .onSuccess { closePlaylistDialogs() }
-                .onFailure {
-                    DesktopTrackLog.log("playlist: could not add ${song.videoId}: ${it.message}")
-                    playlistBusy = false
-                    playlistError = it.message ?: "Could not add to ${playlist.title}"
+            val failures = mutableListOf<String>()
+            try {
+                for (destination in pending) {
+                    val title = (if (destination.account) accountTitles else localTitles)[destination.id]
+                        ?: "Playlist"
+                    try {
+                        if (destination.account) {
+                            fun checkSession() {
+                                check(
+                                    playlistPickerAccountIsCurrent(session) &&
+                                        loadedAccountId == session?.first?.accountId &&
+                                        loadedProfileId == session?.first?.profileId &&
+                                        destination.id in accountTitles,
+                                ) { "The active profile changed or the playlist is no longer available." }
+                            }
+                            checkSession()
+                            val ids = target.accountVideoIds
+                            check(ids.isNotEmpty()) { "This playlist requires YouTube Music tracks." }
+                            if (target.album) {
+                                appendAlbumToAccountPlaylist(
+                                    videoIds = ids,
+                                    confirmed = albumPlaylistConfirmedBatches.getOrPut(destination.id) { mutableSetOf() },
+                                    readIds = {
+                                        YtMusicRepository.playlistEntries(
+                                            "VL${destination.id}",
+                                            requireOwner = true,
+                                            checkSession = ::checkSession,
+                                        ).getOrThrow().mapTo(HashSet(), Song::videoId)
+                                    },
+                                    append = { batch ->
+                                        checkSession()
+                                        Innertube.addToPlaylist(destination.id, batch, ::checkSession)
+                                        if (playlistPickerAccountIsCurrent(session)) libraryStale = true
+                                    },
+                                )
+                            } else {
+                                Innertube.addToPlaylist(destination.id, ids, ::checkSession)
+                                if (playlistPickerAccountIsCurrent(session)) libraryStale = true
+                            }
+                        } else {
+                            val current = checkNotNull(playlists.firstOrNull { it.id == destination.id }) {
+                                "This playlist is no longer available."
+                            }
+                            val updated = current.addTracks(target.playableSongs)
+                            val updatedPlaylists = playlists.map { if (it.id == updated.id) updated else it }
+                            persistence.savePlaylists(updatedPlaylists)
+                            playlists = updatedPlaylists
+                            if (openedCollection?.browseId == updated.id) {
+                                openedCollection = updated.toCollection()
+                            }
+                        }
+                        playlistAddedDestinations = playlistAddedDestinations + destination
+                    } catch (failure: Exception) {
+                        if (failure is CancellationException) throw failure
+                        failures += "$title — ${failure.message ?: "Could not add tracks"}"
+                    }
                 }
+                if (failures.isEmpty()) {
+                    if (target.album) {
+                        DesktopPlayerHost.showMessage("Album added to ${playlistAddedDestinations.size} playlists")
+                    }
+                    closePlaylistDialogs()
+                } else {
+                    playlistError = buildString {
+                        if (playlistAddedDestinations.isNotEmpty()) {
+                            append("Added to ${playlistAddedDestinations.size} playlists. ")
+                        }
+                        append(failures.joinToString("\n"))
+                    }
+                }
+            } finally {
+                playlistBusy = false
+            }
         }
     }
 
@@ -2475,7 +2596,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         sleepTimerMinutes = sleepTimerMinutes,
         sleepAfterTrack = sleepAfterTrack,
         onToggleDislike = ::toggleDislike,
-        onAddToPlaylist = { playlistTarget = it },
+        onAddToPlaylist = ::openTrackPlaylistPicker,
         onDownload = ::downloadSong,
         onRemoveDownload = ::removeDownload,
         onStartRadio = ::startRadio,
@@ -2605,6 +2726,13 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     }
 
     fun openMenu(song: Song) = pageMenu(song)
+
+    fun openShelfMenu(item: ShelfItem) {
+        when {
+            item.videoId != null -> openMenu(item.toSong())
+            item.browseId?.let(::browseTypeOf) == BrowseType.ALBUM -> albumCardMenu = item
+        }
+    }
 
     /** What the phone records for a search hit: the thing picked, not the words typed to find it. */
     fun recordSongSearch(song: Song) = DesktopSearchHistory.record(
@@ -3859,7 +3987,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         sleepTimerMinutes = sleepTimerMinutes,
         sleepAfterTrack = sleepAfterTrack,
         onToggleDislike = ::toggleDislike,
-        onAddToPlaylist = { playlistTarget = it },
+        onAddToPlaylist = ::openTrackPlaylistPicker,
         onDownload = ::downloadSong,
         onRemoveDownload = ::removeDownload,
         onStartRadio = ::startRadio,
@@ -5052,18 +5180,27 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onDismiss = { overlays.spotifyImport = false },
                         )
                     }
+                    albumCardMenu?.let { album ->
+                        DesktopAlbumPlaylistMenu(
+                            onAdd = { album.browseId?.let { openRemoteAlbumPlaylistPicker(it, album.title) } },
+                            onDismiss = { albumCardMenu = null },
+                        )
+                    }
                     if (overlays.playlistDialog || playlistTarget != null) {
                         DesktopPlaylistDialog(
-                            song = playlistTarget,
-                            accountPlaylists = accountPlaylists,
+                            target = playlistTarget,
+                            accountPlaylists = accountPlaylists.takeIf {
+                                loadedAccountId == activeAccountId && loadedProfileId == activeProfileId
+                            }.orEmpty(),
                             localPlaylists = playlists,
                             signedIn = youtubeSignedIn,
-                            canUseAccount = playlistTarget
-                                ?.let { DesktopSearchClient.isVideoId(it.videoId) } ?: true,
+                            canUseAccount = playlistTarget?.let {
+                                playlistPickerAccountIsCurrent(playlistPickerSession) && it.accountVideoIds.isNotEmpty()
+                            } ?: true,
                             busy = playlistBusy,
                             error = playlistError,
-                            onPickAccount = ::addToAccountPlaylist,
-                            onPickLocal = ::addToPlaylist,
+                            completed = playlistAddedDestinations,
+                            onPick = ::addToSelectedPlaylists,
                             onCreate = ::createPlaylist,
                             onDismiss = ::closePlaylistDialogs,
                         )
@@ -5581,7 +5718,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             title = openedBrowse!!.title,
                             state = browseState,
                             onItemClick = { item -> openShelfItem(item, openedBrowse?.title) },
-                            onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
+                            onItemLongPress = ::openShelfMenu,
                             onRetry = { browseReloads++ },
                             contentPadding = sharedPagePadding,
                         )
@@ -5647,6 +5784,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 playSpotifyOrYoutubeSongs(songs.shuffled(), 0, openedCollection?.let { collectionSource(it) })
                             },
                             onDownloadAll = { downloadCollection(openedCollection!!) },
+                            onAddAlbumToPlaylists = openedCollection?.takeIf { it.type == BrowseType.ALBUM }?.let { album ->
+                                { openRemoteAlbumPlaylistPicker(album.browseId, album.title) }
+                            },
                             playlistDownload = playlistDownloadRecords.firstOrNull { it.id == openedCollection!!.browseId },
                             playlistStale = openedCollection!!.browseId in stalePlaylistDownloads,
                             onRemovePlaylistDownload = playlistDownloadRecords
@@ -5673,7 +5813,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onToggleLike = { song ->
                                 toggleLike(song)
                             },
-                            onAddToPlaylist = { playlistTarget = it },
+                            onAddToPlaylist = ::openTrackPlaylistPicker,
                             onDownload = ::downloadSong,
                             downloadedIds = downloads.map(Song::videoId).toSet(),
                             downloadInProgress = downloadInProgress,
@@ -5705,7 +5845,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             contentPadding = sharedPagePadding,
                             title = "Home",
                             signedIn = true,
-                            onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
+                            onItemLongPress = ::openShelfMenu,
                             onLoadMore = ::loadMoreHome,
                             loadingMore = homeLoadingMore,
                             recentlyPlayedLoading = homeRecentsLoading,
@@ -5716,7 +5856,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             state = newState,
                             listState = newListState,
                             onItemClick = { item, shelfTitle -> openShelfItem(item, shelfTitle) },
-                            onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
+                            onItemLongPress = ::openShelfMenu,
                             onRetry = { newReloads++ },
                             onOpenMore = ::openShelfDestination,
                             contentPadding = sharedPagePadding,
@@ -5777,7 +5917,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             },
                             onTopResultPlaylist = { song ->
                                 recordSongSearch(song)
-                                playlistTarget = song
+                                openTrackPlaylistPicker(song)
                             },
                             onBrowseClick = { item ->
                                 recordBrowseSearch(item)
@@ -5917,7 +6057,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 shelf = libraryShowAll!!,
                                 gridState = libraryGridState,
                                 onItemClick = ::openLibraryItem,
-                                onItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
+                                onItemLongPress = ::openShelfMenu,
                                 contentPadding = PaddingValues(bottom = sharedPagePadding.calculateBottomPadding()),
                                 modifier = Modifier.weight(1f),
                                 onNewPlaylist = { overlays.playlistDialog = true }
@@ -5931,7 +6071,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             state = libraryState,
                             listState = libraryListState,
                             onShelfItemClick = ::openLibraryItem,
-                            onShelfItemLongPress = { item -> if (item.videoId != null) openMenu(item.toSong()) },
+                            onShelfItemLongPress = ::openShelfMenu,
                             onNewPlaylist = { overlays.playlistDialog = true },
                             onImportSpotifyPlaylist = { overlays.spotifyImport = true },
                             onShowAll = { shelf -> libraryShowAll = shelf },
@@ -5977,7 +6117,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             history = remoteHistory.ifEmpty { history },
                             onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["history", "History"], PlaybackSourceType.HISTORY)) },
                             onDownload = ::downloadSong,
-                            onAddToPlaylist = { playlistTarget = it },
+                            onAddToPlaylist = ::openTrackPlaylistPicker,
                             downloadedIds = downloads.map(Song::videoId).toSet(),
                             downloadInProgress = downloadInProgress,
                             contentPadding = contentPadding,
@@ -6021,6 +6161,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             drillDown = libraryDrillDown,
                             onDrillDownChange = ::changeLibraryDrillDown,
                             onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["local_music", "Local Music"], PlaybackSourceType.BROWSE)) },
+                            onPlayLocalAlbum = { name, tracks, index ->
+                                playSongs(tracks, index, DesktopQueueSource(name, PlaybackSourceType.BROWSE))
+                            },
+                            onAddLocalAlbum = ::openLocalAlbumPlaylistPicker,
                             contentPadding = contentPadding,
                             menu = { song -> songMenu(song) },
                         )
@@ -8325,7 +8469,11 @@ internal enum class DownloadsTab(val label: String) {
     ALBUMS("Albums"),
 }
 
-internal data class DesktopLibraryDrillDown(val tab: DownloadsTab, val name: String)
+internal data class DesktopLibraryDrillDown(
+    val tab: DownloadsTab,
+    val name: String,
+    val key: String = name,
+)
 
 /** A local-music page's tab kinds in order — the Downloads page carries a Playlists tab between Songs and Artists. */
 internal fun downloadsTabs(withPlaylists: Boolean): List<DownloadsTab> = buildList {
@@ -8360,6 +8508,8 @@ private fun DesktopLocalMusicPage(
     /** Copy for the songs list's own empty state, for a page that has a playlists tab to show instead. */
     songsEmptyTitle: String = "No matching music",
     songsEmptyDescription: String = "Try a different search.",
+    onPlayLocalAlbum: ((String, List<Song>, Int) -> Unit)? = null,
+    onAddLocalAlbum: ((String, List<Song>) -> Unit)? = null,
 ) {
     // Tab kinds in order — the Downloads page carries a Playlists tab between Songs and Artists,
     // and opens on it: the downloaded collections are the page's own headline.
@@ -8404,10 +8554,16 @@ private fun DesktopLocalMusicPage(
         filteredSongs.groupBy { it.artist.ifBlank { "On This Computer" } }
             .entries.toList().sortedForDesktopGroups(sort)
     }
-    val albums = remember(filteredSongs, sort) {
-        filteredSongs.groupBy { it.albumName?.takeIf(String::isNotBlank) ?: "Unknown Album" }
-            .entries.toList().sortedForDesktopGroups(sort)
+    val localAlbumFeatures = onPlayLocalAlbum != null
+    val albumKey: (Song) -> String = if (localAlbumFeatures) Song::desktopLocalAlbumKey else Song::desktopAlbumTitle
+    val albums = remember(filteredSongs, sort, localAlbumFeatures) {
+        filteredSongs.groupBy(albumKey).entries.toList().sortedForDesktopGroups(sort)
     }
+    val localAlbums = remember(songs, localAlbumFeatures) {
+        if (localAlbumFeatures) songs.filter { !it.albumName.isNullOrBlank() }.groupBy(albumKey) else emptyMap()
+    }
+    val openedLocalAlbum = drillDown?.takeIf { it.tab == DownloadsTab.ALBUMS }?.let { localAlbums[it.key] }
+    var byTrackNumber by remember(drillDown) { mutableStateOf(true) }
     DesktopPageScaffold(contentPadding) {
         Column(
             Modifier.fillMaxSize().padding(horizontal = DesktopPageGutter),
@@ -8457,10 +8613,33 @@ private fun DesktopLocalMusicPage(
                 DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
             } else if (drillDown != null) {
                 val groups = if (drillDown.tab == DownloadsTab.ARTISTS) artists else albums
-                val groupSongs = groups.firstOrNull { it.key == drillDown.name }?.value.orEmpty()
-                Text(drillDown.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                val groupSongs = groups.firstOrNull { it.key == drillDown.key }?.value.orEmpty()
+                val hasTrackNumbers = openedLocalAlbum?.any { it.localTrackNumber != null } == true
+                val visible = if (hasTrackNumbers && byTrackNumber) groupSongs.sortedForLocalAlbum() else groupSongs
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(drillDown.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    if (hasTrackNumbers) {
+                        FilterChip(
+                            selected = byTrackNumber,
+                            onClick = { byTrackNumber = !byTrackNumber },
+                            label = { Text(DesktopStrings["sort_track_number", "Track number"]) },
+                        )
+                    }
+                    if (openedLocalAlbum != null && onAddLocalAlbum != null) {
+                        DesktopAlbumPlaylistMenuButton {
+                            onAddLocalAlbum(drillDown.name, openedLocalAlbum.sortedForLocalAlbum())
+                        }
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
-                DesktopLibrarySongContent(groupSongs, view, onSongClick, menu)
+                DesktopLibrarySongContent(
+                    visible,
+                    view,
+                    onSongClick = if (openedLocalAlbum == null || onPlayLocalAlbum == null) onSongClick else { song ->
+                        onPlayLocalAlbum(drillDown.name, visible, visible.indexOf(song))
+                    },
+                    menu = menu,
+                )
             } else when (tabs[selectedTab]) {
                 DownloadsTab.SONGS -> DesktopLibrarySongContent(
                     filteredSongs,
@@ -8474,11 +8653,21 @@ private fun DesktopLocalMusicPage(
                     playlistsTab?.invoke(view, sort, searchQuery)
                         ?: DesktopEmptyPage(emptyIcon, emptyTitle, emptyDescription)
                 DownloadsTab.ARTISTS -> DesktopLibraryGroupingContent(artists, view, onGroupClick = {
-                    onDrillDownChange(DesktopLibraryDrillDown(DownloadsTab.ARTISTS, it.first))
+                    onDrillDownChange(DesktopLibraryDrillDown(DownloadsTab.ARTISTS, it.key))
                 })
-                DownloadsTab.ALBUMS -> DesktopLibraryGroupingContent(albums, view, onGroupClick = {
-                    onDrillDownChange(DesktopLibraryDrillDown(DownloadsTab.ALBUMS, it.first))
-                })
+                DownloadsTab.ALBUMS -> DesktopLibraryGroupingContent(
+                    albums,
+                    view,
+                    onGroupClick = { group ->
+                        onDrillDownChange(DesktopLibraryDrillDown(DownloadsTab.ALBUMS, group.value.first().desktopAlbumTitle(), group.key))
+                    },
+                    groupTitle = { it.value.first().desktopAlbumTitle() },
+                    onAddGroup = if (onAddLocalAlbum == null) null else { group ->
+                        localAlbums[group.key]?.let { album ->
+                            { onAddLocalAlbum(album.first().desktopAlbumTitle(), album.sortedForLocalAlbum()) }
+                        }
+                    },
+                )
             }
         }
     }
@@ -8554,7 +8743,9 @@ private fun DesktopLibrarySongContent(
 private fun DesktopLibraryGroupingContent(
     groups: List<Map.Entry<String, List<Song>>>,
     view: DesktopLibraryView,
-    onGroupClick: (Pair<String, List<Song>>) -> Unit,
+    onGroupClick: (Map.Entry<String, List<Song>>) -> Unit,
+    groupTitle: (Map.Entry<String, List<Song>>) -> String = { it.key },
+    onAddGroup: ((Map.Entry<String, List<Song>>) -> (() -> Unit)?)? = null,
 ) {
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
@@ -8572,15 +8763,20 @@ private fun DesktopLibraryGroupingContent(
             gridItems(groups, key = { it.key }) { group ->
                 val artworkHoverInteraction = remember { MutableInteractionSource() }
                 val artworkHovered by artworkHoverInteraction.collectIsHoveredAsState()
-                Column(Modifier.fillMaxWidth().hoverable(artworkHoverInteraction).desktopNoHoverClickable { onGroupClick(group.key to group.value) }) {
-                    DesktopArtwork(
-                        group.value.firstOrNull()?.thumbnailUrl,
-                        Modifier.fillMaxWidth().height(150.dp).clip(CircleShape),
-                        hoverMode = ArtworkHoverMode.DARKEN_ONLY,
-                        hovered = artworkHovered,
-                    )
+                Column(Modifier.fillMaxWidth().hoverable(artworkHoverInteraction).desktopNoHoverClickable { onGroupClick(group) }) {
+                    Box {
+                        DesktopArtwork(
+                            group.value.firstOrNull()?.thumbnailUrl,
+                            Modifier.fillMaxWidth().height(150.dp).clip(CircleShape),
+                            hoverMode = ArtworkHoverMode.DARKEN_ONLY,
+                            hovered = artworkHovered,
+                        )
+                        onAddGroup?.invoke(group)?.let { add ->
+                            DesktopAlbumPlaylistMenuButton(Modifier.align(Alignment.TopEnd), onAdd = add)
+                        }
+                    }
                     Spacer(Modifier.height(7.dp))
-                    Text(group.key, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                    Text(groupTitle(group), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                     Text("${group.value.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -8596,7 +8792,7 @@ private fun DesktopLibraryGroupingContent(
                 val artworkHoverInteraction = remember { MutableInteractionSource() }
                 val artworkHovered by artworkHoverInteraction.collectIsHoveredAsState()
                 Row(
-                    Modifier.fillMaxWidth().hoverable(artworkHoverInteraction).desktopNoHoverClickable { onGroupClick(group.key to group.value) }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().hoverable(artworkHoverInteraction).desktopNoHoverClickable { onGroupClick(group) }.padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     DesktopArtwork(
@@ -8607,9 +8803,10 @@ private fun DesktopLibraryGroupingContent(
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(group.key, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                        Text(groupTitle(group), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                         Text("${group.value.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
                     }
+                    onAddGroup?.invoke(group)?.let { add -> DesktopAlbumPlaylistMenuButton(onAdd = add) }
                     Icon(BitChordIcons.Play, DesktopStrings["open", "Open"], tint = DesktopSecondary)
                 }
             }
@@ -9966,6 +10163,7 @@ private fun DesktopCollectionPage(
     onPlaySongs: (List<Song>, Int) -> Unit,
     onShuffle: (List<Song>) -> Unit,
     onDownloadAll: (List<Song>) -> Unit,
+    onAddAlbumToPlaylists: (() -> Unit)? = null,
     signedIn: Boolean,
     onLibraryChanged: () -> Unit,
     onStartMix: (Song) -> Unit,
@@ -10150,6 +10348,7 @@ private fun DesktopCollectionPage(
                                             onDownloadAll = playableSongs.takeIf(List<Song>::isNotEmpty)?.let { ready ->
                                                 { onDownloadAll(ready) }
                                             },
+                                            onAddToPlaylists = onAddAlbumToPlaylists,
                                             playlistProgress = playlistDownload?.let { record ->
                                                 offlineProgress(record.songs, downloadedIds, downloadInProgress)
                                             },
