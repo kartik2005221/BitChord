@@ -408,6 +408,7 @@ internal data class DesktopCollectionMenuActions(
     val pinned: Boolean = false,
     val onRename: (() -> Unit)? = null,
     val onDelete: (() -> Unit)? = null,
+    val onReorder: (() -> Unit)? = null,
     /** Whole-collection download state, when the page has been asked for as a whole. */
     val playlistProgress: DesktopPlaylistDownloadProgress? = null,
     /** The snapshot no longer matches the live listing — the download row becomes an update. */
@@ -472,10 +473,13 @@ internal fun DesktopCollectionContextMenu(
         actions.onShare?.let { share ->
             DesktopMenuRow(Icons.Rounded.Share, "Share") { onDismiss(); share() }
         }
-        if (actions.onRename != null || actions.onDelete != null) {
+        if (actions.onRename != null || actions.onDelete != null || actions.onReorder != null) {
             DesktopMenuDivider()
             actions.onRename?.let { rename ->
                 DesktopMenuRow(Icons.Rounded.Edit, "Rename") { onDismiss(); rename() }
+            }
+            actions.onReorder?.let { reorder ->
+                DesktopMenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Reorder playlist") { onDismiss(); reorder() }
             }
             actions.onDelete?.let { delete ->
                 DesktopMenuRow(Icons.Rounded.Delete, "Delete playlist") { onDismiss(); delete() }

@@ -29,8 +29,6 @@ internal class DesktopOverlays {
     var playlistDialog by mutableStateOf(false)
     /** Shared Spotify playlist import modal, reachable from Library and Spotify. */
     var spotifyImport by mutableStateOf(false)
-    var rename by mutableStateOf(false)
-    var delete by mutableStateOf(false)
     var nowPlaying by mutableStateOf(false)
 
     /**

@@ -111,7 +111,9 @@ object DesktopPlaylistDownloads {
                 it.sameRecord(collection.browseId, pinOwner) && (pinOwner == null || it.pinOwner == pinOwner)
             }
             val snapshot = mergedSnapshot(existing?.songs.orEmpty(), collection.songs)
-                .map { song -> downloaded.firstOrNull { it.videoId == song.videoId } ?: song }
+                .map { song ->
+                    downloaded.firstOrNull { it.videoId == song.videoId }?.let(song::withDownloadedFile) ?: song
+                }
             val merged = DesktopPlaylistDownload(
                 id = collection.browseId,
                 title = collection.title,
@@ -144,7 +146,7 @@ object DesktopPlaylistDownloads {
                     touched = true
                     record.copy(
                         songs = record.songs.map { song ->
-                            if (song.videoId == saved.videoId) saved else song
+                            if (song.videoId == saved.videoId) song.withDownloadedFile(saved) else song
                         },
                     )
                 }
@@ -199,6 +201,14 @@ internal fun migrateSpotifyDownloadOwner(
     }
 }
 
+private fun Song.withDownloadedFile(downloaded: Song): Song = copy(
+    localUri = downloaded.localUri,
+    localPath = downloaded.localPath,
+    downloadFormat = downloaded.downloadFormat,
+    localDateAddedSeconds = downloaded.localDateAddedSeconds,
+    localDateModifiedSeconds = downloaded.localDateModifiedSeconds,
+)
+
 /**
  * The refreshed listing leads and the old snapshot's stragglers follow: a
  * re-download re-orders the record to how the page lists them now, and keeps
@@ -223,7 +233,7 @@ internal fun tracksMissingOffline(
 ): List<Song> = snapshot.filter { song ->
     song.localUri == null && song.localPath == null &&
         song.videoId !in downloadedIds && song.videoId !in activeIds
-}
+}.distinctBy(Song::videoId)
 
 /** The snapshot's songs no other record claims — theirs to delete when the record goes. */
 internal fun songsUnclaimedBy(
@@ -231,7 +241,7 @@ internal fun songsUnclaimedBy(
     otherRecords: List<DesktopPlaylistDownload>,
 ): List<Song> {
     val claimed = otherRecords.flatMapTo(HashSet()) { record -> record.songs.map(Song::videoId) }
-    return snapshot.filter { it.videoId !in claimed }
+    return snapshot.filter { it.videoId !in claimed }.distinctBy(Song::videoId)
 }
 
 /** The record back as a page — the offline copy of the collection it was asked for. */

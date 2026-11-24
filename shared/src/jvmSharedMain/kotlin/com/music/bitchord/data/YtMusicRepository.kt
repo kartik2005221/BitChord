@@ -662,6 +662,7 @@ object YtMusicRepository {
          * continuation, same as [header].
          */
         val description: String? = null,
+        val playlistRowsComplete: Boolean = false,
     )
 
     /**
@@ -673,7 +674,7 @@ object YtMusicRepository {
      * first response. The rest arrives behind a page that is by then already
      * being read — see [moreSongs].
      */
-    suspend fun browseSongs(browseId: String): Result<SongPage> = call("browse:$browseId") {
+    suspend fun browseSongs(browseId: String, requireExplicitOwner: Boolean = false): Result<SongPage> = call("browse:$browseId") {
         val response = Innertube.browse(browseId)
         val page = if (browseId.startsWith("MPREb")) {
             albumPageOf(response)
@@ -683,7 +684,8 @@ object YtMusicRepository {
         // Only a playlist has an owner in the sense that matters — see
         // parsePlaylistOwned — and only its own first response can be asked.
         if (!browseId.startsWith("VL")) page
-        else page.copy(owned = InnertubeParser.parsePlaylistOwned(response))
+        else page.copy(owned = if (requireExplicitOwner) InnertubeParser.hasPlaylistEditCapability(response)
+            else InnertubeParser.parsePlaylistOwned(response))
     }
 
     /**
@@ -706,8 +708,15 @@ object YtMusicRepository {
     }
 
     /** The page [SongPage.continuation] points at. */
-    suspend fun moreSongs(token: String): Result<SongPage> = call("browse:more") {
-        pageOf(Innertube.browseContinuation(token))
+    suspend fun moreSongs(token: String, playlist: Boolean = false): Result<SongPage> = call("browse:more") {
+        val response = Innertube.browseContinuation(token)
+        if (playlist) {
+            val shelf = InnertubeParser.parsePlaylistShelf(response)
+            check(shelf != null && shelf.complete) { "YouTube Music returned an incomplete playlist page" }
+            SongPage(shelf.songs, shelf.continuation, shelf.suggested)
+        } else {
+            pageOf(response)
+        }
     }
 
     /**
@@ -732,7 +741,10 @@ object YtMusicRepository {
         // parsePlaylistShelf. Anything else (album, library, history) has no
         // such shelf, and falls back to the layout-agnostic walk.
         InnertubeParser.parsePlaylistShelf(response)?.let { shelf ->
-            return SongPage(shelf.songs, shelf.continuation, shelf.suggested, library, header = header)
+            return SongPage(
+                shelf.songs, shelf.continuation, shelf.suggested, library,
+                header = header, playlistRowsComplete = shelf.complete && shelf.hasPlaylistRows,
+            )
         }
         return SongPage(
             // One response can name the same track twice — an album page that
@@ -961,23 +973,45 @@ object YtMusicRepository {
      * Fails when an entry comes back without the set-video-id a move has to
      * name, rather than offering to reorder something it can't.
      */
-    suspend fun playlistEntries(browseId: String): Result<List<Song>> = call("entries:$browseId") {
-        val out = LinkedHashMap<String, Song>()
-        var response = Innertube.browse(browseId)
-        var page = 1
-        while (true) {
-            val shelf = InnertubeParser.parsePlaylistShelf(response) ?: break
-            shelf.songs.forEach { song ->
-                val setVideoId = song.setVideoId ?: error("playlist entry without an id")
-                out.putIfAbsent(setVideoId, song)
+    suspend fun playlistEntries(
+        browseId: String,
+        requireOwner: Boolean = false,
+        checkSession: () -> Unit = {},
+    ): Result<List<Song>> = call("entries:$browseId") {
+        checkSession()
+        val first = Innertube.browse(browseId)
+        collectPlaylistEntries(first, requireOwner) { token ->
+            checkSession()
+            Innertube.browseContinuation(token)
+        }.also { checkSession() }
+    }
+
+    internal suspend fun collectPlaylistEntries(
+        first: JsonObject,
+        requireOwner: Boolean,
+        loadMore: suspend (String) -> JsonObject,
+    ): List<Song> {
+        check(!requireOwner || InnertubeParser.hasPlaylistEditCapability(first)) { "Playlist ownership could not be verified" }
+        val seenEntries = HashSet<String>()
+        val seenTokens = HashSet<String>()
+        val entries = mutableListOf<Song>()
+        var response = first
+        repeat(MAX_PAGES) { page ->
+            val shelf = InnertubeParser.parsePlaylistShelf(response)
+            check(shelf != null && shelf.complete && (page != 0 || shelf.hasPlaylistRows)) {
+                "YouTube Music returned an incomplete playlist page"
             }
-            val token = shelf.continuation ?: break
-            // Same cap as [songsPaged] — a playlist past it can't be listed
-            // whole, and a partial list can't be reordered safely.
-            if (page++ >= MAX_PAGES) error("playlist too long to reorder")
-            response = Innertube.browseContinuation(token)
+            for (song in shelf.songs) {
+                val id = song.setVideoId
+                check(!id.isNullOrBlank() && seenEntries.add(id)) { "Playlist entry IDs are missing or repeated" }
+                entries.add(song)
+            }
+            val token = shelf.continuation ?: return entries
+            check(seenTokens.add(token)) { "YouTube Music repeated a playlist continuation" }
+            check(page + 1 < MAX_PAGES) { "This playlist exceeds the page limit for editing" }
+            response = loadMore(token)
         }
-        out.values.toList()
+        error("YouTube Music returned an incomplete playlist")
     }
 
     /**
@@ -989,10 +1023,18 @@ object YtMusicRepository {
         playlistId: String,
         current: List<String>,
         target: List<String>,
-    ): Result<Unit> = call("playlist:reorder") {
-        playlistMoves(current, target).chunked(MOVE_BATCH).forEach { batch ->
-            Innertube.movePlaylistItems(playlistId, batch)
-        }
+        checkSession: () -> Unit = {},
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val original = current.toSet()
+            check(original.size == current.size && target.size == current.size && target.toSet() == original) {
+                "Playlist order changed. Reopen the editor and try again."
+            }
+            for (batch in playlistMoves(current, target).chunked(MOVE_BATCH)) {
+                checkSession()
+                Innertube.movePlaylistItems(playlistId, batch, checkSession)
+            }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 
     private const val MOVE_BATCH = 50

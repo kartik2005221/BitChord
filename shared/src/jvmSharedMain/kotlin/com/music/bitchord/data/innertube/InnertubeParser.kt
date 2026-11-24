@@ -581,7 +581,13 @@ object InnertubeParser {
     }
 
     /** A playlist page's own tracks, the ones YouTube suggests adding, and the token for the rest. */
-    data class PlaylistShelfPage(val songs: List<Song>, val suggested: List<Song>, val continuation: String?)
+    data class PlaylistShelfPage(
+        val songs: List<Song>,
+        val suggested: List<Song>,
+        val continuation: String?,
+        val complete: Boolean,
+        val hasPlaylistRows: Boolean,
+    )
 
     /**
      * A playlist page's own track list, scoped rather than walked — plus
@@ -608,21 +614,26 @@ object InnertubeParser {
      * generic walk.
      */
     fun parsePlaylistShelf(root: JsonElement): PlaylistShelfPage? {
+        val appended = root.a("onResponseReceivedActions").orEmpty()
+            .mapNotNull { it.o("appendContinuationItemsAction") }
         val scope: JsonElement = root.o("continuationContents")
             ?: root.o("contents").o("twoColumnBrowseResultsRenderer").o("secondaryContents")
+            ?: root.takeIf { appended.isNotEmpty() }
             ?: return null
         val playlistScope = scope.o("musicPlaylistShelfContinuation")
-            ?: collectRenderers(scope, "musicPlaylistShelfRenderer").firstOrNull()
-        val suggestionShelves = collectRenderers(scope, "musicShelfRenderer")
+            ?: scope.takeUnless { it === root }?.let { collectRenderers(it, "musicPlaylistShelfRenderer").firstOrNull() }
+        val suggestionShelves = (if (scope === root) emptyList() else collectRenderers(scope, "musicShelfRenderer"))
             .filter { it.o("title").runs() == "Suggestions" }
-        if (playlistScope == null && suggestionShelves.isEmpty()) return null
+        val rows = if (scope === root) {
+            appended.flatMap { it.a("continuationItems").orEmpty() }
+        } else {
+            playlistScope.a("contents").orEmpty()
+        }
+        if (scope !== root && playlistScope == null && suggestionShelves.isEmpty()) return null
 
         val pageCredit = pageCredit(root)
-        val songs = playlistScope?.let { playlist ->
-            collectRenderers(playlist, "musicResponsiveListItemRenderer")
-                .mapNotNull { parseResponsiveListItem(it, pageCredit) }
-                .distinctBy { it.videoId }
-        }.orEmpty()
+        val renderers = rows.mapNotNull { it.o("musicResponsiveListItemRenderer") }
+        val songs = renderers.mapNotNull { parseResponsiveListItem(it, pageCredit) }
         val knownSongs = songs.mapTo(HashSet()) { it.videoId }
         val suggested = suggestionShelves
             .flatMap { collectRenderers(it, "musicResponsiveListItemRenderer") }
@@ -633,12 +644,23 @@ object InnertubeParser {
         // batch rather than paging it (see its "Refresh" button, wired to a
         // `reloadContinuationData` token). Only the playlist shelf's own
         // continuation means more real tracks.
-        val token = playlistScope?.let { playlist ->
-            collectRenderers(playlist, "continuationItemRenderer").firstOrNull()
-                .o("continuationEndpoint").o("continuationCommand").s("token")
-                ?: collectRenderers(playlist, "nextContinuationData").firstOrNull().s("continuation")
+        val markers = rows.mapNotNull { it.o("continuationItemRenderer") }
+        val legacyMarkers = playlistScope.a("continuations").orEmpty()
+        val next = markers.firstOrNull().o("continuationEndpoint").o("continuationCommand").s("token")
+            ?: legacyMarkers.firstOrNull().o("nextContinuationData").s("continuation")
+        val hasPlaylistRows = playlistScope != null || scope === root
+        val hasContents = if (scope === root) appended.all { it.a("continuationItems") != null }
+            else playlistScope.a("contents") != null
+        val markerCount = markers.size + legacyMarkers.size
+        val complete = if (hasPlaylistRows) {
+            hasContents && rows.size == renderers.size + markers.size &&
+                songs.size == renderers.size && markerCount <= 1 &&
+                (markerCount == 0 || !next.isNullOrBlank())
+        } else {
+            // Serving suggestions is a recognized terminal response to a playlist token.
+            suggestionShelves.isNotEmpty()
         }
-        return PlaylistShelfPage(songs, suggested, token)
+        return PlaylistShelfPage(songs, suggested, next, complete, hasPlaylistRows)
     }
 
     /** One page of saved library cards, plus the token for the next page. */
@@ -1465,6 +1487,14 @@ object InnertubeParser {
             return true
         }
         return header.a("buttons").orEmpty().none { it.o("toggleButtonRenderer").isSaveToggle }
+    }
+
+    /** Explicit ownership evidence for calls that will write to a playlist. */
+    fun hasPlaylistEditCapability(root: JsonElement): Boolean {
+        if (collectRenderers(root, "musicEditablePlaylistDetailHeaderRenderer").isNotEmpty()) return true
+        val header = collectRenderers(root, "musicResponsiveHeaderRenderer").firstOrNull() ?: return false
+        return collectRenderers(header, "menuNavigationItemRenderer")
+            .any { it.o("icon").s("iconType") in OWNER_ICONS }
     }
 
     /** Header menu icons only the playlist's owner is offered. */
