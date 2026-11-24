@@ -17,7 +17,7 @@ import kotlin.test.assertNull
 class DesktopPlaylistEditingTest {
     @get:Rule val compose = createComposeRule()
 
-    private val first = Song(videoId = "aaaaaaaaaaa", title = "First occurrence", artist = "Artist", setVideoId = "set1")
+    private val first = Song(videoId = "aaaaaaaaaaa", title = "First occurrence", artist = "Artist", thumbnailUrl = null, setVideoId = "set1")
     private val second = first.copy(title = "Second occurrence", setVideoId = "set2")
 
     @Test
