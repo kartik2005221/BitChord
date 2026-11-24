@@ -1028,7 +1028,7 @@ object YtMusicRepository {
             }
             for (batch in playlistMoves(current, target).chunked(MOVE_BATCH)) {
                 checkSession()
-                Innertube.movePlaylistItems(playlistId, batch)
+                Innertube.movePlaylistItems(playlistId, batch, checkSession)
             }
         }.onFailure { if (it is CancellationException) throw it }
     }
