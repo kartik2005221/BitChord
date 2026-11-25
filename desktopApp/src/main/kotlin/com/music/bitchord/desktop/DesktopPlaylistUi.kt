@@ -65,6 +65,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.bitchord.data.model.PlaylistPrivacy
+import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.UserPlaylist
 import com.music.bitchord.ui.icons.BitChordIcons
 
