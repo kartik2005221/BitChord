@@ -97,8 +97,31 @@ jobs:
           echo "LASTFM_API_KEY=${{ secrets.LASTFM_API_KEY }}" > local.properties
           echo "LASTFM_SECRET=${{ secrets.LASTFM_SECRET }}" >> local.properties
 
-      - name: CMake version
-        run: cmake --version
+      - name: Install Windows native build tools
+        id: msys2
+        uses: msys2/setup-msys2@3c51bf698df1e37b2261f53cb67797b97761185c # v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-ninja
+
+      - name: Add MinGW tools to the Windows PATH
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          Join-Path $env:MSYS2_LOCATION 'mingw64\bin' >> $env:GITHUB_PATH
+
+      - name: Verify Windows native build tools
+        shell: pwsh
+        run: |
+          foreach ($tool in 'cmake', 'g++', 'ninja') {
+            $exe = Get-Command -Name $tool -CommandType Application -ErrorAction Stop |
+              Select-Object -First 1 -ExpandProperty Source
+            Write-Host "$tool found at $exe"
+            & $exe --version
+            if ($LASTEXITCODE -ne 0) { throw "$tool could not run" }
+          }
 
       # Keep Windows' EXE/MSI metadata valid for the same descriptive build labels.
       - name: Tests
