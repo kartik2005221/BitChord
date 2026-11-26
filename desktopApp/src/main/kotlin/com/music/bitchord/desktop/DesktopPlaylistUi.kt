@@ -4,6 +4,9 @@ import com.music.bitchord.ui.screens.desktopTopScrollFade
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,10 +38,12 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,29 +72,35 @@ import com.music.bitchord.ui.icons.BitChordIcons
 /** Where a track goes: one of the account's playlists, a local one, or a new one. */
 @Composable
 internal fun DesktopPlaylistDialog(
-    song: Song?,
+    target: DesktopPlaylistTarget?,
     accountPlaylists: List<UserPlaylist>,
     localPlaylists: List<DesktopPlaylist>,
     signedIn: Boolean,
-    /** Whether [song] is something YouTube can be asked to hold. */
+    /** Whether the current YouTube session can accept the target's eligible tracks. */
     canUseAccount: Boolean,
     busy: Boolean,
     error: String?,
-    onPickAccount: (UserPlaylist) -> Unit,
-    onPickLocal: (DesktopPlaylist) -> Unit,
+    completed: Set<DesktopPlaylistDestination>,
+    onPick: (List<DesktopPlaylistDestination>) -> Unit,
     onCreate: (String, PlaylistPrivacy) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var creating by remember { mutableStateOf(song == null) }
+    var creating by remember { mutableStateOf(target == null) }
+    var selected by remember { mutableStateOf(emptySet<DesktopPlaylistDestination>()) }
+    var query by remember { mutableStateOf("") }
     val playlistListState = rememberLazyListState()
+    LaunchedEffect(query, creating) {
+        if (!creating) playlistListState.scrollToItem(0)
+    }
 
-    DesktopDialogFrame(onDismiss = onDismiss) {
+    DesktopDialogFrame(onDismiss = { if (!busy) onDismiss() }) {
         if (creating) {
             NewPlaylistForm(
                 // Nowhere to go back to when the dialog opened onto the form; its own dismiss is
                 // the way out.
-                onBack = if (song == null) null else ({ creating = false }),
-                signedIn = signedIn && canUseAccount,
+                onBack = if (target == null || busy) null else ({ creating = false }),
+                signedIn = signedIn && canUseAccount &&
+                    (target == null || target.canCreateOnAccount),
                 busy = busy,
                 error = error,
                 onCreate = onCreate,
@@ -96,67 +108,129 @@ internal fun DesktopPlaylistDialog(
             return@DesktopDialogFrame
         }
 
-        DialogHeading("Add to playlist", song?.let { "${it.title} — ${it.artist}" }.orEmpty())
-        error?.let { DialogError(it) }
-        DialogAction(BitChordIcons.Plus, "New playlist", enabled = !busy) { creating = true }
+        val album = target?.album == true
+        DialogHeading(if (album) "Add to playlists" else "Add to playlist", target?.title.orEmpty())
+        error?.let {
+            DialogError(it, modifier = Modifier.heightIn(max = 116.dp).verticalScroll(rememberScrollState()))
+        }
+        if (target?.playableSongs.isNullOrEmpty()) {
+            if (busy) {
+                DialogSectionHeading("Loading album…")
+                CircularProgressIndicator(color = DesktopAccent, modifier = Modifier.padding(22.dp).size(20.dp))
+            }
+            TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.padding(horizontal = 14.dp)) {
+                Text(DesktopStrings["cancel", "Cancel"])
+            }
+            return@DesktopDialogFrame
+        }
 
-        if (signedIn && !canUseAccount) {
-            Text(
-                DesktopStrings["d_this_track_is_not_from_youtube_music_so_it_can_only_go_i", "This track is not from YouTube Music, so it can only go in a playlist kept here."],
-                style = MaterialTheme.typography.bodySmall,
-                color = DesktopSecondary,
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+        DialogAction(BitChordIcons.Plus, "New playlist", enabled = !busy) { creating = true }
+        val eligibleAccount = if (signedIn && canUseAccount) accountPlaylists else emptyList()
+        val account = remember(eligibleAccount, query) {
+            filterDesktopPlaylists(eligibleAccount, query, UserPlaylist::title)
+        }
+        val local = remember(localPlaylists, query) {
+            filterDesktopPlaylists(localPlaylists, query, DesktopPlaylist::title)
+        }
+        val available = eligibleAccount.map { DesktopPlaylistDestination(it.playlistId, account = true) } +
+            localPlaylists.map { DesktopPlaylistDestination(it.id, account = false) }
+        val pending = selected.filter { it in available && it !in completed }
+
+        fun pick(destination: DesktopPlaylistDestination) {
+            if (album) {
+                selected = if (destination in selected) selected - destination else selected + destination
+            } else {
+                onPick(listOf(destination))
+            }
+        }
+
+        if (album) {
+            val accountCount = target?.accountTracks?.size ?: 0
+            val playableCount = target?.playableSongs?.size ?: 0
+            val total = target?.songs?.size ?: 0
+            if (total > playableCount) DialogSectionHeading("${total - playableCount} unavailable tracks will be skipped")
+            if (signedIn && accountCount < playableCount) {
+                DialogSectionHeading(
+                    if (accountCount == 0) "These tracks can be added to playlists on this computer"
+                    else "$accountCount of $playableCount tracks can be added to your YouTube Music playlists",
+                )
+            }
+        } else if (signedIn && !canUseAccount) {
+            DialogSectionHeading("This track can be added to playlists on this computer")
+        }
+        if (available.isNotEmpty()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text(DesktopStrings["find_a_playlist", "Find a playlist"]) },
+                leadingIcon = { Icon(BitChordIcons.Search, null) },
+                trailingIcon = if (query.isEmpty()) null else ({
+                    IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Rounded.Close, DesktopStrings["clear_search", "Clear search"])
+                    }
+                }),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp),
             )
         }
-        val account = if (canUseAccount) accountPlaylists else emptyList()
-        when {
-            busy && account.isEmpty() && localPlaylists.isEmpty() -> Box(
-                Modifier.fillMaxWidth().height(96.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(color = DesktopAccent, modifier = Modifier.size(22.dp))
-            }
-            account.isEmpty() && localPlaylists.isEmpty() -> Text(
+        if (account.isEmpty() && local.isEmpty()) {
+            Text(
                 when {
+                    available.isNotEmpty() -> DesktopStrings["no_matching_playlists", "No matching playlists"]
                     !signedIn -> "No playlists on this computer yet. Sign in to see the ones on your account."
-                    // Signed in, but this track cannot go on the account — so offering to sign in
-                    // would be answering a question nobody asked.
-                    !canUseAccount -> "No playlists on this computer yet. Make one and this track goes straight into it."
-                    else -> "No playlists yet. Make one and this song goes straight into it."
+                    else -> "No playlists yet. Create one to keep these tracks."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = DesktopSecondary,
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
             )
-            else -> LazyColumn(
+        } else {
+            LazyColumn(
                 state = playlistListState,
-                modifier = Modifier.heightIn(max = 320.dp).desktopTopScrollFade(playlistListState),
+                modifier = Modifier.heightIn(max = 290.dp).desktopTopScrollFade(playlistListState),
             ) {
                 if (account.isNotEmpty()) {
                     item(key = "heading:account") { DialogSectionHeading("On your account") }
-                    items(account.size, key = { account[it].playlistId }) { index ->
+                    items(account.size, key = { "account:${account[it].playlistId}" }) { index ->
                         val playlist = account[index]
+                        val destination = DesktopPlaylistDestination(playlist.playlistId, account = true)
+                        val done = destination in completed
                         DialogAction(
-                            BitChordIcons.Queue,
-                            playlist.title,
-                            subtitle = playlist.subtitle,
-                            enabled = !busy,
-                        ) { onPickAccount(playlist) }
+                            icon = BitChordIcons.Queue,
+                            label = playlist.title,
+                            subtitle = if (done) "Added" else playlist.subtitle,
+                            enabled = !busy && !done,
+                            checked = (done || destination in selected).takeIf { album },
+                        ) { pick(destination) }
                     }
                 }
-                if (localPlaylists.isNotEmpty()) {
+                if (local.isNotEmpty()) {
                     item(key = "heading:local") { DialogSectionHeading("On this computer") }
-                    items(localPlaylists.size, key = { localPlaylists[it].id }) { index ->
-                        val playlist = localPlaylists[index]
+                    items(local.size, key = { "local:${local[it].id}" }) { index ->
+                        val playlist = local[index]
+                        val destination = DesktopPlaylistDestination(playlist.id, account = false)
+                        val done = destination in completed
                         DialogAction(
-                            BitChordIcons.Queue,
-                            playlist.title,
-                            subtitle = "${playlist.songs.size} songs",
-                            enabled = !busy,
-                        ) { onPickLocal(playlist) }
+                            icon = BitChordIcons.Queue,
+                            label = playlist.title,
+                            subtitle = if (done) "Added" else "${playlist.songs.size} songs",
+                            enabled = !busy && !done,
+                            checked = (done || destination in selected).takeIf { album },
+                        ) { pick(destination) }
                     }
                 }
             }
+        }
+        if (album) {
+            DialogButtons(
+                busy = busy,
+                confirmLabel = if (pending.isEmpty()) "Add" else "Add to ${pending.size}",
+                confirmEnabled = pending.isNotEmpty(),
+                onConfirm = { onPick(pending) },
+                onDismiss = onDismiss,
+            )
+        } else if (busy) {
+            CircularProgressIndicator(color = DesktopAccent, modifier = Modifier.padding(22.dp).size(20.dp))
         }
         Spacer(Modifier.height(6.dp))
     }
@@ -520,12 +594,12 @@ private fun DialogSectionHeading(text: String) {
 }
 
 @Composable
-private fun DialogError(message: String) {
+private fun DialogError(message: String, modifier: Modifier = Modifier) {
     Text(
         message,
         style = MaterialTheme.typography.bodySmall,
         color = DesktopAccent,
-        modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 10.dp),
+        modifier = modifier.padding(start = 22.dp, end = 22.dp, top = 10.dp),
     )
 }
 
@@ -535,17 +609,24 @@ private fun DialogAction(
     label: String,
     subtitle: String = "",
     enabled: Boolean = true,
+    checked: Boolean? = null,
     onClick: () -> Unit,
 ) {
+    val action = if (checked == null) Modifier.clickable(enabled = enabled, onClick = onClick)
+    else Modifier.toggleable(checked, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() })
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
-            .clickable(enabled = enabled, onClick = onClick)
+            .then(action)
             .padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = DesktopForeground.copy(alpha = 0.85f), modifier = Modifier.size(18.dp))
+        if (checked == null) {
+            Icon(icon, null, tint = DesktopForeground.copy(alpha = 0.85f), modifier = Modifier.size(18.dp))
+        } else {
+            Checkbox(checked, onCheckedChange = null, enabled = enabled, modifier = Modifier.size(18.dp))
+        }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(label, color = DesktopForeground, maxLines = 1, overflow = TextOverflow.Ellipsis)

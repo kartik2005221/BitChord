@@ -153,6 +153,7 @@ object DesktopLocalMusic {
         val added = attributes?.creationTime()?.toInstant() ?: modified ?: Instant.now()
         val identity = absolutePath.toString()
         val parsed = parseFileName(nameWithoutExtension)
+        val tags = DesktopLocalTags.read(absolutePath)
         val codec = extension.lowercase(Locale.ROOT).let { value ->
             when (value) {
                 "flac" -> "FLAC"
@@ -165,8 +166,12 @@ object DesktopLocalMusic {
         }
         return Song(
             videoId = "local:$identity",
-            title = parsed.title,
-            artist = parsed.artist,
+            title = tags.title ?: parsed.title,
+            artist = tags.artist ?: parsed.artist,
+            albumName = tags.album,
+            localTrackNumber = tags.track,
+            localDiscNumber = tags.disc,
+            localAlbumArtist = tags.albumArtist,
             thumbnailUrl = DesktopLocalArtwork.artworkUri(absolutePath),
             localUri = absolutePath.toUri().toString(),
             localPath = absolutePath.toString(),
@@ -223,4 +228,19 @@ private fun <T> DesktopLibrarySort.comparator(
         .thenBy(String.CASE_INSENSITIVE_ORDER, title)
     DesktopLibrarySort.DATE_MODIFIED -> compareByDescending<T> { modified(it) ?: Long.MIN_VALUE }
         .thenBy(String.CASE_INSENSITIVE_ORDER, title)
+}
+
+/** Tagged tracks come first, in disc/track order. Sorted ties keep their input order. */
+internal fun List<Song>.sortedForLocalAlbum(): List<Song> = sortedWith(
+    compareBy<Song> { it.localTrackNumber == null }
+        .thenBy { if (it.localTrackNumber == null) 0 else it.localDiscNumber ?: 1 }
+        .thenBy { it.localTrackNumber },
+)
+
+internal fun Song.desktopAlbumTitle(): String =
+    albumName?.takeIf(String::isNotBlank) ?: "Unknown Album"
+
+internal fun Song.desktopLocalAlbumKey(): String {
+    if (albumName.isNullOrBlank()) return desktopAlbumTitle()
+    return "${desktopAlbumTitle()}\u0000${localAlbumArtist ?: artist}"
 }
