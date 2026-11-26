@@ -25,6 +25,7 @@ data class DesktopRankedEntry(
     val browseId: String?,
     val ms: Long,
     val plays: Int,
+    val key: String = title,
 )
 
 /** The stretches a Replay can cover. Months and years, because that is how the listening is kept. */
@@ -256,9 +257,10 @@ object DesktopListeningStats {
         ?: "${song.albumName.orEmpty().trim().lowercase(Locale.ROOT)}\u0000${song.artist.trim().lowercase(Locale.ROOT)}"
 
     private fun rankAlbums(entries: List<DesktopReplayEntry>): List<DesktopRankedEntry> =
-        entries.groupBy { albumKey(it.song) }.values.map { plays ->
+        entries.groupBy { albumKey(it.song) }.map { (key, plays) ->
             val lead = plays.maxByOrNull(DesktopReplayEntry::listenedMs)!!.song
             DesktopRankedEntry(
+                key = key,
                 title = lead.albumName?.takeIf(String::isNotBlank) ?: "Unknown Album",
                 subtitle = lead.artist, artworkUrl = lead.thumbnailUrl, browseId = lead.albumId,
                 ms = plays.sumOf(DesktopReplayEntry::listenedMs), plays = plays.sumOf(DesktopReplayEntry::plays),
