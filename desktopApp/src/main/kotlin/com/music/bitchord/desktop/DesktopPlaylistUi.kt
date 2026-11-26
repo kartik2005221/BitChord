@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
@@ -313,6 +316,7 @@ internal fun DesktopRenamePlaylistDialog(
 @Composable
 internal fun DesktopDeletePlaylistDialog(
     title: String,
+    local: Boolean,
     busy: Boolean,
     error: String?,
     onDelete: () -> Unit,
@@ -321,8 +325,8 @@ internal fun DesktopDeletePlaylistDialog(
     DesktopDialogFrame(onDismiss = onDismiss) {
         DialogHeading(
             "Delete playlist",
-            "“$title” will be removed from your YouTube Music account, on every " +
-                "device. The songs in it are not deleted.",
+            if (local) "Delete “$title” from this computer? Your downloaded files will be kept."
+            else "Delete “$title” from your YouTube Music account and every connected device?",
         )
         error?.let { DialogError(it) }
         DialogButtons(
@@ -330,6 +334,116 @@ internal fun DesktopDeletePlaylistDialog(
             confirmLabel = DesktopStrings["delete", "Delete"],
             confirmEnabled = true,
             onConfirm = onDelete,
+            onDismiss = onDismiss,
+        )
+    }
+}
+
+@Composable
+internal fun DesktopRemovePlaylistOccurrenceDialog(
+    title: String,
+    song: Song?,
+    busy: Boolean,
+    error: String?,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DesktopDialogFrame(onDismiss = onDismiss) {
+        DialogHeading("Remove from playlist", "Remove “${song?.title.orEmpty()}” from “$title”?")
+        error?.let { DialogError(it) }
+        DialogButtons(
+            busy = busy,
+            confirmLabel = "Remove",
+            confirmEnabled = song != null,
+            onConfirm = onRemove,
+            onDismiss = onDismiss,
+        )
+    }
+}
+
+@Composable
+internal fun DesktopReorderPlaylistDialog(
+    title: String,
+    order: DesktopPlaylistOrder?,
+    busy: Boolean,
+    error: String?,
+    onSave: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val original = order?.entries.orEmpty()
+    var songs by remember(order) { mutableStateOf(original) }
+    val listState = rememberLazyListState()
+    var selectedEntry by remember(order) { mutableStateOf<String?>(null) }
+    var destination by remember(order) { mutableStateOf("") }
+    val selectedIndex = songs.indexOfFirst { it.setVideoId == selectedEntry }
+    val targetIndex = (destination.toIntOrNull() ?: 0) - 1
+
+    fun move(from: Int, to: Int) {
+        if (from !in songs.indices || to !in songs.indices || from == to) return
+        songs = songs.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
+    DesktopDialogFrame(onDismiss = onDismiss) {
+        DialogHeading("Reorder playlist", title)
+        error?.let { DialogError(it) }
+        if (order != null) {
+            LazyColumn(Modifier.heightIn(max = 320.dp), state = listState) {
+                itemsIndexed(songs, key = { _, song -> requireNotNull(song.setVideoId) }) { index, song ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(if (song.setVideoId == selectedEntry) DesktopForeground.copy(alpha = 0.08f) else Color.Transparent)
+                            .clickable(enabled = !busy) {
+                                selectedEntry = song.setVideoId
+                                destination = (index + 1).toString()
+                            }
+                            .padding(start = 22.dp, end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${index + 1}. ${song.title} · ${song.artist}",
+                            color = DesktopForeground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(enabled = !busy && index > 0, onClick = { move(index, index - 1) }) {
+                            Icon(Icons.Rounded.KeyboardArrowUp, "Move ${song.title} up")
+                        }
+                        IconButton(enabled = !busy && index < songs.lastIndex, onClick = { move(index, index + 1) }) {
+                            Icon(Icons.Rounded.KeyboardArrowDown, "Move ${song.title} down")
+                        }
+                    }
+                }
+            }
+            if (selectedIndex >= 0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Position", color = DesktopSecondary)
+                    Spacer(Modifier.width(12.dp))
+                    BasicTextField(
+                        value = destination,
+                        onValueChange = { destination = it.filter(Char::isDigit).take(5) },
+                        enabled = !busy,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = DesktopForeground),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { move(selectedIndex, targetIndex) }),
+                        modifier = Modifier.width(56.dp),
+                    )
+                    TextButton(
+                        onClick = { move(selectedIndex, targetIndex) },
+                        enabled = !busy && targetIndex in songs.indices && targetIndex != selectedIndex,
+                    ) { Text("Move") }
+                }
+            }
+        }
+        DialogButtons(
+            busy = busy,
+            confirmLabel = "Save order",
+            confirmEnabled = songs != original,
+            onConfirm = { onSave(songs.map { requireNotNull(it.setVideoId) }) },
             onDismiss = onDismiss,
         )
     }
