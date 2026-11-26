@@ -43,36 +43,59 @@ internal object DesktopSpotifyLibraryAuth {
     private const val CLIENT_TOKEN_URL = "https://clienttoken.spotify.com/v1/clienttoken"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val harvestMutex = Mutex()
+    private val bearerCache = DesktopSpotifyBearerCache(DesktopSpotifyToken::session)
 
-    @Volatile private var cachedCookie: String? = null
-    @Volatile private var cachedAccessToken: String? = null
-    @Volatile private var accessTokenExpiresAtMs = 0L
+    @Volatile private var clientSession: DesktopSpotifyToken.Session? = null
     @Volatile private var cachedClientId: String? = null
     @Volatile private var cachedClientToken: String? = null
     @Volatile private var clientTokenExpiresAtMs = 0L
     @Volatile private var cachedSession: SessionInfo? = null
 
     private data class SessionInfo(val clientVersion: String, val deviceId: String)
-    private data class HarvestedToken(val token: String, val expiresAt: Long, val clientId: String?)
 
     suspend fun tokens(): SpotifyLibrary.Tokens? = withContext(Dispatchers.IO) {
-        val cookie = DesktopSpotifyToken.cookie().ifBlank { return@withContext null }
-        useCookie(cookie)
-        // A saved sp_dc cookie means sign-in succeeded. A missing bearer is a *desktop token
-        // harvest failure*, not proof the Spotify account has expired.
-        val bearer = accessToken(cookie) ?: throw IllegalStateException(
+        val session = DesktopSpotifyToken.session()
+        if (session.cookie.isBlank()) return@withContext null
+        val bearer = accessToken(session) ?: throw IllegalStateException(
             "Spotify is connected, but its web-player token could not be loaded. " +
                 "Try Refresh, or choose Reconnect Spotify."
         )
-        SpotifyLibrary.Tokens(bearer, clientToken())
+        val client = clientToken(session, bearer.clientId)
+        DesktopSpotifyToken.withCurrent(session) { SpotifyLibrary.Tokens(bearer.token, client) }
+    }
+
+    /** The stable identity must come from the authenticated bearer minted for this saved session. */
+    suspend fun verifiedAccountId(session: DesktopSpotifyToken.Session): String? = withContext(Dispatchers.IO) {
+        val access = accessToken(session)?.takeIf { it.confirmedAuthenticated } ?: return@withContext null
+        val request = Request.Builder()
+            .url("https://api.spotify.com/v1/me")
+            .header("Authorization", "Bearer ${access.token}")
+            .header("Accept", "application/json")
+            .header("User-Agent", CANVAS_UA)
+            .build()
+        val accountId = runCatching {
+            Http.client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body?.string() ?: return@use null
+                val profile = json.parseToJsonElement(body).jsonObject
+                val id = profile["id"]?.jsonPrimitive
+                id?.takeIf { it.isString }?.contentOrNull?.takeIf(String::isNotBlank)
+            }
+        }.getOrNull()
+        DesktopSpotifyToken.withCurrent(session) {
+            accountId.takeIf { bearerCache.current(session) === access }
+        }
     }
 
     /** Clear cached access/client tokens without discarding the user's saved Spotify login. */
     @Synchronized
     fun invalidate() {
-        cachedAccessToken = null
-        accessTokenExpiresAtMs = 0L
+        bearerCache.clear()
+        clearClientToken()
+    }
+
+    private fun clearClientToken() {
+        clientSession = null
         cachedClientId = null
         cachedClientToken = null
         clientTokenExpiresAtMs = 0L
@@ -80,69 +103,35 @@ internal object DesktopSpotifyLibraryAuth {
     }
 
     /** Cached companion header for the synchronous HTTP helpers in the Canvas provider. */
-    fun cachedClientToken(): String? =
-        cachedClientToken?.takeIf { System.currentTimeMillis() < clientTokenExpiresAtMs - 30_000 }
-
-    /**
-     * Canvas follows the upstream provider and actively retries minting its client token
-     * when the cache is empty or expired, rather than silently skipping Pathfinder.
-     */
-    internal fun canvasClientToken(): String? = clientToken()
-
-    private fun useCookie(cookie: String) {
-        if (cachedCookie == cookie) return
-        synchronized(this) {
-            if (cachedCookie == cookie) return
-            cachedCookie = cookie
-            cachedAccessToken = null
-            accessTokenExpiresAtMs = 0L
-            cachedClientId = null
-            cachedClientToken = null
-            clientTokenExpiresAtMs = 0L
-            cachedSession = null
-        }
+    @Synchronized
+    fun cachedClientToken(): String? = cachedClientToken?.takeIf {
+        clientSession === DesktopSpotifyToken.session() && System.currentTimeMillis() < clientTokenExpiresAtMs - 30_000
     }
 
-    private suspend fun accessToken(cookie: String): String? {
-        val now = System.currentTimeMillis()
-        cachedAccessToken?.let { if (now < accessTokenExpiresAtMs - 30_000) return it }
+    internal fun canvasClientToken(): String? {
+        val session = DesktopSpotifyToken.session()
+        return clientToken(session, bearerCache.current(session)?.clientId)
+    }
 
-        return harvestMutex.withLock {
-            val stillNow = System.currentTimeMillis()
-            cachedAccessToken?.let { if (stillNow < accessTokenExpiresAtMs - 30_000) return@withLock it }
-
-            // A token refresh may follow a web-player release; do not reuse its old client token
-            // or version/device tuple with the newly harvested bearer.
-            cachedClientToken = null
-            clientTokenExpiresAtMs = 0L
-            cachedSession = null
-            val harvested = harvestViaWebEngine(cookie) ?: run {
-                // JavaFX WebKit may expose the document only after the Spotify player has
-                // fetched its token (or cannot execute its modern scripts at all).
-                // A locally installed Chromium is a fallback, not another account login.
+    private suspend fun accessToken(session: DesktopSpotifyToken.Session): DesktopSpotifyBearer? =
+        bearerCache.get(session) { cookie ->
+            DesktopWebCookies.sessionMutex.withLock {
+                if (DesktopSpotifyToken.session() !== session) return@withLock null
+                harvestViaWebEngine(cookie)
+            } ?: run {
+                if (DesktopSpotifyToken.session() !== session) return@run null
                 DesktopTrackLog.log("spotify: JavaFX token capture unavailable; trying local Chromium")
                 DesktopSpotifyChromiumToken.harvest(cookie)?.let(::parseTokenPayload)
             }
-            if (harvested == null) {
-                DesktopTrackLog.log("spotify: no authenticated web-player token was obtained")
-                return@withLock null
-            }
-            if (cachedCookie != cookie) return@withLock null
-            cachedAccessToken = harvested.token
-            accessTokenExpiresAtMs = harvested.expiresAt
-            harvested.clientId?.let { cachedClientId = it }
-            DesktopTrackLog.log("spotify: web-player token harvested")
-            harvested.token
         }
-    }
 
     /**
      * Opens a fresh web-player profile, applies the user's saved session cookie, and observes the
      * real token response. The page may mint an anonymous token first; only an authenticated token
      * is accepted, matching the mobile implementation.
      */
-    private suspend fun harvestViaWebEngine(cookie: String): HarvestedToken? {
-        val result = CompletableDeferred<HarvestedToken?>()
+    private suspend fun harvestViaWebEngine(cookie: String): DesktopSpotifyBearer? {
+        val result = CompletableDeferred<DesktopSpotifyBearer?>()
         val engineReady = CompletableDeferred<Unit>()
         val profile = runCatching { Files.createTempDirectory("bitchord-spotify-token-") }.getOrNull()
             ?: return null
@@ -159,6 +148,7 @@ internal object DesktopSpotifyLibraryAuth {
                     return@runLater
                 }
                 try {
+                    DesktopWebCookies.reset()
                     DesktopWebCookies.put(
                         URI("https://open.spotify.com/"),
                         mapOf(
@@ -177,7 +167,17 @@ internal object DesktopSpotifyLibraryAuth {
 
                     var reloadAttempted = false
                     val bridge = DesktopSpotifyTokenBridge(
-                        handler = { payload -> acceptTokenPayload(payload, result) },
+                        handler = { payload ->
+                            // The bridge is installed as documents load. Accept only the web
+                            // player origin with the exact cookie this harvest was started for.
+                            val spotify = URI("https://open.spotify.com/")
+                            val origin = runCatching { URI(engine.location) }.getOrNull()
+                            val cookies = DesktopWebCookies.get(spotify, emptyMap())["Cookie"].orEmpty()
+                            if (origin?.scheme == "https" && origin.host == spotify.host &&
+                                cookies.flatMap { it.split(';') }.map(String::trim)
+                                    .filter { it.startsWith("sp_dc=") } == listOf("sp_dc=$cookie")
+                            ) acceptTokenPayload(payload, result)
+                        },
                         onReloadRequested = {
                             if (result.isActive && !reloadAttempted) {
                                 reloadAttempted = true
@@ -261,6 +261,7 @@ internal object DesktopSpotifyLibraryAuth {
                     engineRef[0]?.let { engine ->
                         runCatching { engine.load("about:blank") }
                     }
+                    if (engineRef[0] != null) DesktopWebCookies.reset()
                     bridgeRef[0] = null
                     viewRef[0] = null
                 }
@@ -275,26 +276,26 @@ internal object DesktopSpotifyLibraryAuth {
         }
     }
 
-    /** Accept only authenticated Spotify tokens; anonymous player tokens cannot read playlists. */
-    private fun parseTokenPayload(payload: String?): HarvestedToken? {
+    /** A token payload without an explicit authentication flag cannot prove pin ownership. */
+    internal fun parseTokenPayload(payload: String?): DesktopSpotifyBearer? {
         if (payload.isNullOrBlank()) return null
         return runCatching {
             val root = json.parseToJsonElement(payload).jsonObject
             val token = root["accessToken"]?.jsonPrimitive?.contentOrNull
                 ?.takeIf { it.isNotBlank() } ?: return@runCatching null
             val anonymous = root["isAnonymous"]?.jsonPrimitive?.contentOrNull
-                ?.toBooleanStrictOrNull() ?: false
-            if (anonymous) return@runCatching null
+                ?.toBooleanStrictOrNull()
+            if (anonymous == true) return@runCatching null
             val expiresAt = root["accessTokenExpirationTimestampMs"]?.jsonPrimitive?.contentOrNull
                 ?.toLongOrNull()?.takeIf { it > System.currentTimeMillis() }
                 ?: (System.currentTimeMillis() + DEFAULT_TOKEN_LIFETIME_MS)
             val clientId = root["clientId"]?.jsonPrimitive?.contentOrNull
-            HarvestedToken(token, expiresAt, clientId)
+            DesktopSpotifyBearer(token, expiresAt, clientId, confirmedAuthenticated = anonymous == false)
         }.getOrNull()
     }
 
     /** Receives raw /api/token response bodies from the Spotify page. */
-    private fun acceptTokenPayload(payload: String?, result: CompletableDeferred<HarvestedToken?>) {
+    private fun acceptTokenPayload(payload: String?, result: CompletableDeferred<DesktopSpotifyBearer?>) {
         if (result.isCompleted) return
         parseTokenPayload(payload)?.let { result.complete(it) }
     }
@@ -386,11 +387,17 @@ internal object DesktopSpotifyLibraryAuth {
     """.trimIndent()
 
     @Synchronized
-    private fun clientToken(): String? {
+    private fun clientToken(session: DesktopSpotifyToken.Session, clientId: String?): String? {
+        if (DesktopSpotifyToken.session() !== session) return null
+        if (clientSession !== session || cachedClientId != clientId) {
+            clearClientToken()
+            clientSession = session
+            cachedClientId = clientId
+        }
         val now = System.currentTimeMillis()
         cachedClientToken?.let { if (now < clientTokenExpiresAtMs - 30_000) return it }
-        val clientId = cachedClientId ?: return null
-        val session = session() ?: return null
+        if (clientId == null) return null
+        val player = session() ?: return null
         val osName = System.getProperty("os.name").orEmpty().lowercase()
         val platform = when {
             osName.contains("win") -> "windows"
@@ -399,14 +406,14 @@ internal object DesktopSpotifyLibraryAuth {
         }
         val payload = buildJsonObject {
             putJsonObject("client_data") {
-                put("client_version", session.clientVersion)
+                put("client_version", player.clientVersion)
                 put("client_id", clientId)
                 putJsonObject("js_sdk_data") {
                     put("device_brand", "unknown")
                     put("device_model", "unknown")
                     put("os", platform)
                     put("os_version", System.getProperty("os.version").orEmpty())
-                    put("device_id", session.deviceId)
+                    put("device_id", player.deviceId)
                     put("device_type", "computer")
                 }
             }
@@ -462,6 +469,55 @@ internal object DesktopSpotifyLibraryAuth {
 
 }
 
+
+internal class DesktopSpotifyBearer(
+    val token: String,
+    val expiresAt: Long,
+    val clientId: String?,
+    val confirmedAuthenticated: Boolean,
+)
+
+/** The cache key is a login instance. Saving the same cookie again invalidates in-flight work. */
+internal class DesktopSpotifyBearerCache(
+    private val activeSession: () -> DesktopSpotifyToken.Session,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    private val harvestMutex = Mutex()
+    private var cached: Pair<DesktopSpotifyToken.Session, DesktopSpotifyBearer>? = null
+    private var generation = 0L
+
+    @Synchronized
+    fun clear() {
+        cached = null
+        generation++
+    }
+
+    @Synchronized
+    fun current(session: DesktopSpotifyToken.Session): DesktopSpotifyBearer? =
+        cached?.takeIf { (owner, token) ->
+            owner === session && activeSession() === session && now() < token.expiresAt - 30_000L
+        }?.second
+
+    suspend fun get(
+        session: DesktopSpotifyToken.Session,
+        harvest: suspend (String) -> DesktopSpotifyBearer?,
+    ): DesktopSpotifyBearer? {
+        if (session.cookie.isBlank()) return null
+        current(session)?.let { return it }
+        val requestedGeneration = synchronized(this) { generation }
+        return harvestMutex.withLock {
+            if (activeSession() !== session) return@withLock null
+            current(session)?.let { return@withLock it }
+            if (synchronized(this) { generation != requestedGeneration }) return@withLock null
+            val result = harvest(session.cookie) ?: return@withLock null
+            synchronized(this) {
+                if (activeSession() !== session || generation != requestedGeneration) return@synchronized null
+                cached = session to result
+                result
+            }
+        }
+    }
+}
 
 /** Public JVM bridge surface required by JavaFX's JavaScript-to-Java bridge. */
 class DesktopSpotifyTokenBridge(

@@ -79,8 +79,16 @@ object DesktopPlaylistDownloads {
     }
 
     /** The record for a page's browse id, when the page has been asked for as a whole. */
-    fun recordOf(browseId: String): DesktopPlaylistDownload? =
-        _records.value.firstOrNull { it.id == browseId }
+    internal fun recordOf(browseId: String, scope: DesktopPlaylistPinScope? = null): DesktopPlaylistDownload? =
+        _records.value.firstOrNull { it.id == browseId && it.isVisibleToSpotify(scope) }
+
+    internal fun migrateSpotifyOwner(binding: DesktopSpotifyPinBinding) {
+        synchronized(lock) {
+            val current = _records.value
+            val migrated = migrateSpotifyDownloadOwner(current, binding)
+            if (migrated != current) save(migrated)
+        }
+    }
 
     /**
      * The page was asked for as a whole: remember it (merging into the record
@@ -100,7 +108,7 @@ object DesktopPlaylistDownloads {
         val now = System.currentTimeMillis()
         val record: DesktopPlaylistDownload = synchronized(lock) {
             val existing = _records.value.firstOrNull {
-                it.id == collection.browseId && (pinOwner == null || it.pinOwner == pinOwner)
+                it.sameRecord(collection.browseId, pinOwner) && (pinOwner == null || it.pinOwner == pinOwner)
             }
             val snapshot = mergedSnapshot(existing?.songs.orEmpty(), collection.songs)
                 .map { song ->
@@ -117,7 +125,7 @@ object DesktopPlaylistDownloads {
                 updatedAt = now,
                 pinOwner = pinOwner,
             )
-            save(_records.value.filterNot { it.id == merged.id } + merged)
+            save(_records.value.filterNot { it.sameRecord(merged.id, pinOwner) } + merged)
             merged
         }
         return record
@@ -152,13 +160,43 @@ object DesktopPlaylistDownloads {
      * record claims — the caller deletes their files and library records; a
      * song two playlists share, or one saved on its own, stays.
      */
-    fun forget(id: String): List<Song> {
+    fun forget(id: String, pinOwner: String? = null): List<Song> {
         synchronized(lock) {
-            val record = _records.value.firstOrNull { it.id == id }
+            val record = _records.value.firstOrNull { it.sameRecord(id, pinOwner) }
                 ?: return emptyList()
-            val rest = _records.value.filterNot { it.id == id }
+            val rest = _records.value.filterNot { it.sameRecord(id, pinOwner) }
             save(rest)
             return songsUnclaimedBy(record.songs, rest)
+        }
+    }
+}
+
+internal fun DesktopPlaylistDownload.isVisibleToSpotify(scope: DesktopPlaylistPinScope?): Boolean =
+    !isSpotifyLikedPlaylist(id) || (scope != null && pinOwner == scope.downloadOwner)
+
+private fun DesktopPlaylistDownload.sameRecord(browseId: String, owner: String?): Boolean =
+    id == browseId && (!isSpotifyLikedPlaylist(browseId) || pinOwner == owner)
+
+internal fun migrateSpotifyDownloadOwner(
+    records: List<DesktopPlaylistDownload>,
+    binding: DesktopSpotifyPinBinding,
+): List<DesktopPlaylistDownload> {
+    val previous = records.firstOrNull {
+        isSpotifyLikedPlaylist(it.id) && it.pinOwner == binding.legacy.downloadOwner
+    } ?: return records
+    val stable = records.firstOrNull { it.sameRecord(previous.id, binding.account.downloadOwner) }
+    val migrated = if (stable == null) previous.copy(pinOwner = binding.account.downloadOwner) else {
+        stable.copy(
+            songs = mergedSnapshot(previous.songs, stable.songs),
+            createdAt = minOf(previous.createdAt, stable.createdAt),
+            updatedAt = maxOf(previous.updatedAt, stable.updatedAt),
+        )
+    }
+    return records.mapNotNull {
+        when {
+            it === previous -> if (stable == null) migrated else null
+            it === stable -> migrated
+            else -> it
         }
     }
 }

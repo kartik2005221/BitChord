@@ -1,10 +1,12 @@
 package com.music.bitchord.desktop
 
+import com.music.bitchord.data.model.Song
 import java.util.prefs.Preferences
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -92,6 +94,85 @@ class DesktopPlaylistPinsTest {
         assertFalse(restored.isVisibleIn(personal, otherSpotify))
         assertFalse(restored.isVisibleIn(personal, null))
     }
+    @Test
+    fun migratesOnlyPinsProvedByTheCurrentCookieAndRestoresThemAfterRotation() {
+        val identity = DesktopSpotifyPinIdentity(persistence)
+        val pins = DesktopPlaylistPins(persistence)
+        val oldSession = DesktopPlaylistPinScope.spotify("session-a")
+        val otherSession = DesktopPlaylistPinScope.spotify("session-b")
+        val likedA = DesktopPlaylistPin("spotify:playlist:liked", "Liked by A", null, oldSession)
+        val likedB = likedA.copy(title = "Liked by B", scope = otherSession)
+        val regularA = likedA.copy(browseId = "spotify:playlist:abc", title = "Regular playlist")
+        listOf(likedA, likedB, regularA).forEach(pins::toggle)
+        assertNull(identity.cached("session-a"))
+
+        val first = assertNotNull(identity.rememberVerified("session-a", "account-a"))
+        pins.migrateSpotifyScope(first)
+        val stable = likedA.copy(scope = first.account)
+        assertEquals(
+            listOf(stable, regularA.copy(scope = first.account)),
+            pins.pins.value.filter { it.isVisibleIn(personal, first.account) },
+        )
+        assertTrue(likedB in pins.pins.value)
+        assertNull(identity.cached("rotated-a"))
+        val rotated = assertNotNull(identity.rememberVerified("rotated-a", "account-a"))
+        pins.migrateSpotifyScope(rotated)
+        assertEquals(first.account, rotated.account)
+        assertEquals(first.account, DesktopSpotifyPinIdentity(persistence).cached("rotated-a"))
+        assertTrue(stable in DesktopPlaylistPins(persistence).pins.value)
+        assertNull(identity.cached(""))
+
+        val other = assertNotNull(identity.rememberVerified("session-b", "account-b"))
+        pins.migrateSpotifyScope(other)
+        assertEquals(
+            listOf(likedB.copy(scope = other.account)),
+            pins.pins.value.filter { it.isVisibleIn(personal, other.account) },
+        )
+        assertTrue(pins.pins.value.none { it.isVisibleIn(personal, null) })
+    }
+
+    @Test
+    fun neverClaimsUnscopedSpotifyPinsOrConflictingCookieBindings() {
+        persistence.saveString("pinned_playlists", "spotify:playlist:liked")
+        val identity = DesktopSpotifyPinIdentity(persistence)
+        val pins = DesktopPlaylistPins(persistence)
+        val binding = assertNotNull(identity.rememberVerified("session", "account-a"))
+        pins.refresh(listOf(DesktopPlaylistPin("spotify:playlist:liked", "Liked Songs", null, binding.account)))
+        assertTrue(pins.pins.value.isEmpty())
+        assertEquals("spotify:playlist:liked", persistence.string("pinned_playlists"))
+        assertNull(identity.rememberVerified("session", "account-b"))
+        assertNull(identity.cached("session"))
+        assertNull(identity.rememberVerified("session", "account-b"))
+    }
+
+    @Test
+    fun movesOnlyOwnedLikedSnapshotsAndPreservesAnExistingStableSnapshot() {
+        val identity = DesktopSpotifyPinIdentity(persistence)
+        val binding = assertNotNull(identity.rememberVerified("session-a", "account-a"))
+        val other = assertNotNull(identity.rememberVerified("session-b", "account-b"))
+        val previous = DesktopPlaylistDownload(
+            "spotify:playlist:liked", "Previous liked", "", null, true,
+            listOf(Song(videoId = "old", title = "Old", artist = "Artist", thumbnailUrl = null)),
+            1L, 2L, binding.legacy.downloadOwner,
+        )
+        val stable = previous.copy(
+            title = "Current liked",
+            songs = listOf(Song(videoId = "new", title = "New", artist = "Artist", thumbnailUrl = null)),
+            createdAt = 3L, updatedAt = 4L, pinOwner = binding.account.downloadOwner,
+        )
+        val ownerless = previous.copy(pinOwner = null)
+        val anotherOwner = previous.copy(pinOwner = other.account.downloadOwner)
+        val regular = ownerless.copy(id = "spotify:playlist:regular")
+        val all = listOf(previous, ownerless, anotherOwner, stable, regular)
+        val migrated = migrateSpotifyDownloadOwner(all, binding)
+        val merged = stable.copy(songs = stable.songs + previous.songs, createdAt = 1L)
+        assertEquals(listOf(ownerless, anotherOwner, merged, regular), migrated)
+        assertEquals(migrated, migrateSpotifyDownloadOwner(migrated, binding))
+        assertEquals(listOf(merged, regular), migrated.filter { it.isVisibleToSpotify(binding.account) })
+        assertEquals(listOf(anotherOwner, regular), migrated.filter { it.isVisibleToSpotify(other.account) })
+        assertEquals(listOf(regular), migrated.filter { it.isVisibleToSpotify(null) })
+    }
+
     @Test
     fun usesOfflineSnapshotsOnlyWhenTheyMatchThePinnedPlaylistAndItsOwner() {
         val liked = DesktopPlaylistPin("VLLM", "Liked Music", null, personal)

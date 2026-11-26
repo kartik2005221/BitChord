@@ -400,11 +400,25 @@ private fun ByteArrayOutputStream.writeVarint(value: Long) {
  * by DesktopSpotifyLibraryAuth, matching the mobile v1.8.1 implementation.
  */
 internal object DesktopSpotifyToken {
-    fun cookie(): String = DesktopPersistence().string(KEY_SPDC).trim()
+    internal class Session(val cookie: String)
 
+    @Volatile
+    private var current = Session(DesktopPersistence().string(KEY_SPDC).trim())
+
+    fun session(): Session = current
+
+    fun cookie(): String = current.cookie
+
+    @Synchronized
     fun setCookie(value: String) {
-        DesktopPersistence().saveString(KEY_SPDC, value.trim())
+        val cookie = value.trim()
+        DesktopPersistence().saveString(KEY_SPDC, cookie)
+        current = Session(cookie)
     }
+
+    @Synchronized
+    fun <T> withCurrent(session: Session, action: () -> T): T? =
+        if (current === session) action() else null
 
     internal const val KEY_SPDC = "spotify_spdc_token"
 }

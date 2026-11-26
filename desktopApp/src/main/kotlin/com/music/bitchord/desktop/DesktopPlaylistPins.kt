@@ -18,8 +18,7 @@ internal data class DesktopPlaylistPinScope(
     companion object {
         fun spotify(cookie: String): DesktopPlaylistPinScope? {
             val credential = cookie.trim().takeIf(String::isNotBlank) ?: return null
-            // Desktop exposes a session credential, but no stable Spotify account identifier.
-            // Never persist the credential itself or match Spotify Liked Songs across sessions.
+            // Legacy scope. Its hash identifies exactly one credential, never an account.
             val digest = MessageDigest.getInstance("SHA-256").digest(credential.toByteArray(Charsets.UTF_8))
             return DesktopPlaylistPinScope(Base64.getUrlEncoder().withoutPadding().encodeToString(digest), null, "spotify")
         }
@@ -40,8 +39,11 @@ internal data class DesktopPlaylistPin(
 }
 
 /** Spotify and YouTube's built-in lists can resolve to account-relative content. */
+internal fun isSpotifyLikedPlaylist(browseId: String): Boolean =
+    browseId == SPOTIFY_PAGE_PREFIX + SpotifyLibrary.LIKED_ID
+
 internal fun requiresPlaylistDownloadOwner(browseId: String): Boolean =
-    browseId == SPOTIFY_PAGE_PREFIX + SpotifyLibrary.LIKED_ID ||
+    isSpotifyLikedPlaylist(browseId) ||
         browseId.removePrefix("VL") in accountRelativeYouTubePlaylists
 
 private val accountRelativeYouTubePlaylists = setOf("LM", "SE")
@@ -74,12 +76,23 @@ internal class DesktopPlaylistPins(persistence: DesktopPersistence) {
         // Legacy entries had no account data. Keep them out of other profiles until their
         // playlist has been resolved in a known scope.
         val byId = known.associateBy { it.identity.first }
-        val adopted = legacy.mapNotNull(byId::get)
+        val adopted = legacy.mapNotNull(byId::get).filterNot { it.browseId.startsWith(SPOTIFY_PAGE_PREFIX) }
         save((current + adopted).distinctBy { it.identity })
         if (adopted.isNotEmpty()) {
             legacy = legacy - adopted.map { it.identity.first }.toSet()
             DesktopPreferenceChunks.write(preferences, KEY_LEGACY, legacy.joinToString("\n"))
         }
+    }
+
+    fun migrateSpotifyScope(binding: DesktopSpotifyPinBinding) {
+        val migrated = pins.value.map { pin ->
+            if (pin.scope == binding.legacy && pin.browseId.startsWith(SPOTIFY_PAGE_PREFIX)) {
+                pin.copy(scope = binding.account)
+            } else pin
+        }
+        // Retain the position of the first pin and prefer metadata already saved for the account.
+        val accountPins = pins.value.filter { it.scope == binding.account }.associateBy { it.identity }
+        save(migrated.map { accountPins[it.identity] ?: it }.distinctBy { it.identity })
     }
 
     fun toggle(pin: DesktopPlaylistPin) {
@@ -129,5 +142,43 @@ internal class DesktopPlaylistPins(persistence: DesktopPersistence) {
             }
             DesktopPlaylistPin(fields[0], fields[1], fields[2].takeIf(String::isNotBlank), scope)
         }.getOrNull()
+    }
+}
+
+/** A Spotify account and the one legacy cookie scope the same authenticated session proves. */
+internal class DesktopSpotifyPinBinding(
+    val legacy: DesktopPlaylistPinScope,
+    val account: DesktopPlaylistPinScope,
+)
+
+internal class DesktopSpotifyPinIdentity(private val persistence: DesktopPersistence) {
+    fun cached(cookie: String): DesktopPlaylistPinScope? {
+        val legacy = DesktopPlaylistPinScope.spotify(cookie) ?: return null
+        return accountScope(persistence.string(key(legacy)).takeUnless { it == CONFLICT }.orEmpty())
+    }
+
+    fun rememberVerified(cookie: String, accountId: String): DesktopSpotifyPinBinding? {
+        val legacy = DesktopPlaylistPinScope.spotify(cookie) ?: return null
+        val account = accountScope(accountId) ?: return null
+        // If a credential ever resolves to a different account, do not move its old records.
+        val key = key(legacy)
+        val old = persistence.string(key)
+        if (old == CONFLICT) return null
+        if (old.isNotBlank() && old != accountId) {
+            persistence.saveString(key, CONFLICT)
+            return null
+        }
+        if (old.isBlank()) persistence.saveString(key, accountId)
+        return DesktopSpotifyPinBinding(legacy, account)
+    }
+
+    private fun key(legacy: DesktopPlaylistPinScope) = "spotify_pin_account_${legacy.accountId}"
+
+    private fun accountScope(accountId: String): DesktopPlaylistPinScope? =
+        accountId.takeIf { it.isNotBlank() && it.none { ch -> ch == '|' || ch.isISOControl() } }
+            ?.let { DesktopPlaylistPinScope("account:$it", null, "spotify") }
+
+    private companion object {
+        const val CONFLICT = "|conflicting_accounts"
     }
 }
