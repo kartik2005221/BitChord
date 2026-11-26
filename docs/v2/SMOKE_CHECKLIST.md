@@ -61,7 +61,7 @@ bash desktopApp/packaging/tests/linux-automix-check.sh
 
 Gate A1 requires successful Linux and Windows desktop checks, including `:shared:jvmTest` and `:sharedUi:jvmTest` in both jobs. Android, TV, Wear and web CI are outside the A1 merge criteria. Record the exact command, exit code, test report and any platform gaps. [CI definition](../../.github/workflows/check.yml)
 
-For the last A1 change, compare paired before/after AutoMix installers on Windows and Linux. Match format, toolchain, packaging and signing conditions. Record revisions, each installer and extracted size, and absolute and percentage deltas. Verify first-enable download, installed inference, restart and offline fallback. Use test builds for the comparison. Publication waits for separate approval.
+For the final Part A item, after Gate A1, compare paired before/after AutoMix installers on Windows and Linux. Match format, toolchain, packaging and signing conditions. Record revisions, each installer and extracted size, and absolute and percentage deltas. Verify first-enable download, installed inference, restart and offline fallback. Use test builds for the comparison. Publication waits for separate approval.
 
 | Record per baseline or rerun | Details |
 | --- | --- |
@@ -79,3 +79,24 @@ For the last A1 change, compare paired before/after AutoMix installers on Window
 | Replay on Linux X11 using a synthetic history | FAIL | The fresh distributable showed a blocking duplicate album-key error dialog for All time and This year. See [fixture and exception](KNOWN_ISSUES.md). This case is missing from the green baseline suite. |
 | Signed-in integrations, two-client party, Fedora/GNOME/Wayland, hardware outputs and other manual scenarios | UNTESTED at A0 | Run the relevant subset against comparable profiles before and after the first affected feature. |
 | Windows and Android | No new A0 execution | This branch contains documentation. The earlier [PR #13 checks](https://github.com/kartik2005221/BitChord/pull/13/checks) describe that merge. The A1 desktop checks need a fresh run for each feature PR. |
+
+## Gate A1 packaged Linux observations
+
+These feature-branch runs used the actual Linux launcher, a 1280 × 800 Xvfb display and isolated preferences.
+
+| Build and fixture | Observation |
+| --- | --- |
+| Replay, `72a49ee8`. Two albums with the same title and different artists and IDs. | Both rows rendered under All time and This year. The baseline had raised a duplicate-key error in both periods. [All time](evidence/replay-fixed-all-time.png) · [This year](evidence/replay-fixed-this-year.png) |
+| Queue, `ec1534cf`. Four history entries, one current and 18 upcoming. Two history entries shared a video ID. | The sidebar and expanded queue opened at Upcoming. Replaying the second duplicate selected that occurrence. Next selected the original first upcoming song. Saved queue order agreed with the display. The runner had no supported audio output. [Upcoming](evidence/queue-sidebar-upcoming.png) · [History](evidence/queue-expanded-history.png) · [Selected occurrence](evidence/queue-replayed-occurrence.png) · [Next song](evidence/queue-next-song.png) |
+| Local playlist editing, `84b91646`. Signed out with a pinned local import containing two occurrences of one song. | Removing the second occurrence preserved the first. The change survived reopening the packaged app. [Confirmation](evidence/playlist-remove-confirm.png) · [After removal](evidence/playlist-after-removal.png) |
+| Long playlist edits, packaged classes at `84b91646`. A synthetic 501-entry playlist across six pages repeated a song at the page boundary. | The harness retained both occurrence IDs, moved the last occurrence to the first position, and rejected a save after an external reorder. The harness used fixture responses. Live YouTube ownership, writes and retries still need a disposable account playlist. |
+
+## Maintainer test order on Fedora
+
+1. Open Library → Replay → Top albums under This year and All time. If two releases have the same title, check that both artists and their listening totals are visible.
+2. Use a disposable owned playlist containing a duplicate. Choose a displayed sort, search for the track, start the second occurrence, and check Next. Reorder across a page boundary, reopen, and verify the new order in YouTube Music. Repeat after making an external edit with the reorder dialog open. Saving the stale order should ask you to reopen.
+3. Open the sidebar queue and the expanded queue. Replay one of two duplicate history entries and press Next. Confirm the original upcoming song and listen for the transition.
+4. Rename an imported local copy, remove one occurrence and reopen it. Confirm the pin and downloaded files. Use the same disposable copy to exercise delete. Check that the local copy's source playlist is still available on the service.
+5. Search in Add to playlists, select two disposable destinations and add a short album. Verify their contents on the service. Open a tagged local two-disc album and check disc order and tracks 2 and 10.
+6. With a verified Spotify login, pin a playlist, reconnect to the same account, and restart offline. Check that the pin remains available. Switch to a second test account and check that the first account's Liked Songs stays private.
+7. Play a track with an accented title and another with a CJK title and credited romanization. Check artist, version and duration when the source changes. Compare a studio recording with a live version.
