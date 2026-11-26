@@ -131,7 +131,14 @@ internal suspend fun loadSpotifyPlaylist(
                 pages.cancel()
                 break
             }
-            update { it.copy(songs = soFar.map(SpotifyTrack::asPendingSong), loading = false) }
+            update { page ->
+                // A foreground tap can already have resolved a row from an earlier page.
+                val previous = if (page.loading) emptyList() else page.songs
+                page.copy(
+                    songs = previous + soFar.drop(previous.size).map(SpotifyTrack::asPendingSong),
+                    loading = false,
+                )
+            }
         }
     }
     val tracks = try {
@@ -151,13 +158,7 @@ internal suspend fun loadSpotifyPlaylist(
                 val match = runCatching { SpotifyImporter.matchTrack(track) }.getOrNull()
                 val row = match?.copy(thumbnailUrl = match.thumbnailUrl ?: track.imageUrl)
                     ?: track.asPendingSong().copy(videoId = SPOTIFY_MISSING_PREFIX + track.id)
-                update { page ->
-                    if (index < page.songs.size) {
-                        page.copy(songs = page.songs.toMutableList().also { it[index] = row })
-                    } else {
-                        page
-                    }
-                }
+                update { it.resolveSpotifyOccurrence(index, track.id, row) }
             }
         }
     }
