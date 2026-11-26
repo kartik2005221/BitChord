@@ -1,0 +1,123 @@
+# Gates A0 and A1 · BitChord Desktop upstream port
+
+**Review baseline.** The original author's v1.10 phone/TV release is `7448b92e`. The release branch landed via #1717. Its source tree and the resulting original main tree differ only in Banner.png. The desktop reference is kartik2005221/BitChord master at `926489c1`, the merge of PR #13. Its sidebar Back/Refresh, pins, settings groups, quality indicator and Downloads sort are part of the baseline. [Original release][release] · [Original source][orig] · [Release PR][p1717] · [Desktop source][fork] · [Desktop PR #13][batch]
+
+**License and attribution.** I compared both LICENSE files and both READMEs. Both specify GNU GPLv3. The two LICENSE files are byte-identical (SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`). Covered code can be adapted under those terms. Retain the copyright and license notices, credit the original author and PR contributors, identify changes and dates, and provide corresponding source with binary distribution. Reference the original PR/commit in each port. Third-party model files have their own notices, discussed below. [Original license][ol] · [Fork license][fl]
+
+**Reading the table.** APPLIES means there is a desktop use case and a place to implement it. PARTIAL identifies an existing behavior, a platform-specific part, or a missing prerequisite. N/A is used for individual operations with no desktop counterpart. Effort includes focused tests. S is one bounded change, M spans a few components, and L needs multiple independently verifiable pieces or platforms. The estimates describe engineering scope. Original filenames in the evidence column refer to v1.10. The linked PRs and commits contain their full paths and diffs.
+
+| Item | Desktop fit and reason | Original files and changes | Desktop plan and acceptance risk | Effort |
+| --- | --- | --- | --- | :---: |
+| 1. Radio | **APPLIES**. There is a desktop sidebar and a signed-in YouTube Music mixes feed. | MainActivity.kt, MainViewModel.kt, MixesScreen.kt, YtMusicRepository.kt. [Radio page][c-e7d10c0e] · [queue ordering][p893] | Add a Radio destination to both sidebar modes and the compact fallback. Hook Back and Refresh into PR #13. Open each card's underlying playlist. Keep explicit Start Radio, queue ownership and AutoPlay semantics. Handle sign-out or a second selection during loading. | L |
+| 2. Keep liked songs downloaded | **APPLIES**. Desktop has playlist snapshots, downloads and retry controls, but the liked list belongs to an account. | AppSettings.kt, PlaylistSync.kt, Downloads.kt, SettingsSheet.kt. [#1853][p1853] | Off by default under Downloads. Show a first-fill size estimate and enforce a storage cap on automatic likes. Reconcile the signed-in account's likes through the existing queue. Qualify collection ownership and track manual/overlapping claims before changing any file. Show storage limits, paused work, retry, progress and finished files in Downloads. | L |
+| 3. Smaller AutoMix install | **APPLIES**. Both model weights ship in the desktop JAR. Paired desktop installers are needed to measure the saving. | AutomixModels.kt, TrackAnalyzer.kt, Android/TV Gradle files and native/onnxruntime. [Size change][c-1db2b0c1] · [release URLs][c-e7d10c0e] | Fetch pinned, verified weights into the desktop cache on enable. Reuse verified old weights and allow normal playback or ordinary crossfade while offline. Test packaged inference, failure, restart and the final Linux/Windows size delta. | L |
+| 4. Player motion and three settings | **APPLIES**. The expanded controls are shared and the desktop mini players have their own controls. | PlayerControls.kt, PlayerPlayPauseMotion.kt, PlayerSkipMotion.kt, NowPlayingScreen.kt and settings. [Motion][p1827] · [duration][p1487] · [preview][p1389] · [Canvas][p1489] | Small interruptible transport animation with a reduced-motion path. Persist remaining/total duration, preview visibility and Spotify Canvas separately. Hiding the strip keeps full lyrics accessible. Disabling Spotify Canvas also stops the provider lookup without affecting other art providers. | M |
+| 5. Sleep fade | **APPLIES**. The desktop timer already has a monotonic deadline and an after-track mode. | SleepTimer.kt, PlaybackService.kt and AppSettings.kt. [#1509][p1509] | Multiply the output by a temporary fade gain over the last 30 seconds of a timed sleep. Clear it on expiry, cancellation or replacement. Preserve the user's volume and after-track behavior. Test with manual volume changes and output switches. | M |
+| 6. Library-scoped Search and live actions | **APPLIES**. The catalogue accepts an authenticated Library filter. Both desktop Search and Ctrl+K accept keyboard and pointer input. | Models.kt, MainViewModel.kt, SearchScreen.kt and web SearchField.tsx. [Scope][p1506] · [live rows][p1570] · [web menu][p1047] | Scope the catalogue request to the active account. Expose queue and song menu via hover/right-click and keyboard for playable live results. Preserve Enter to play, Escape, focus return and ordinary search submission. Prevent stale replies after account or query changes. | M |
+| 7. Playlist picker, album menus and track numbers | **APPLIES**. The picker and album actions exist. Tagged local album sorting needs actual tags. | PlaylistFilter.kt, PlaylistPickerSheet.kt, BrowseActionsMenu.kt, MainActivity.kt and DetailScreen.kt. [Picker][p1448] · [album actions][p1587] · [track numbers][c-4d109ae7] | Filter eligible local/account destinations. Add an album, in order, to selected playlists and report per-target failures. Read album, disc and numeric track tags in the desktop scanner, with deterministic fallbacks. Keep selection and playback tied to the displayed occurrence. | L |
+| 8. Artwork | **PARTIAL**. Large YouTube video stills and transitions need work. Desktop already reads individual local covers. Direct file-manager launch has no equivalent entry point at this revision. | Models.kt, PlayerState.kt, NowPlayingScreen.kt and LocalMediaRepository.kt. [YouTube art][p1511] · [fallback][c-4cb4076e] · [hold-last][p1366] · [full-size cache][p1817] · [per-file][p1188] · [opened file][p1359] | Request high-resolution stills with a verified fallback. Keep a correctly sized decoded placeholder across delayed loads and respect privacy/identity changes. Test per-file covers on desktop. The pictured square crop requires a separate aspect-ratio test using the original still. | M |
+| 9. Lyrics | **APPLIES**. Provider selection, local tag parsing and the karaoke clock each have desktop consumers. | YouTubeLyrics.kt, Innertube.kt, LyricsRepository.kt, EmbeddedLyrics.kt, PlayerLyrics.kt and LyricsTranslation.kt. [Timed YouTube][p1861] · [ranking][p1094] · [MP3][p1360] · [clock][p1691] · [strip][p1560] · [glow][p1773] · [scroll][p1770] · [RTL][p1574] · [Chinese][p1369] | Prefer genuine timed results, retain a plain fallback, read MP3 lyrics offline and preserve explicit provider choice. Freeze sweep on pause and re-anchor on resume/seek. Verify translated line layout and marker parsing. Split data work from the desktop presentation. | L |
+| 10. Playback order, AC-4 and limiter | **PARTIAL**. Desktop has its own queue and DSP. Linux's bundled decoder lacks AC-4. | MainActivity.inPageOrder, InPageOrderTest, PlaybackService.kt, native/ffmpeg/build.sh and DspChain.kt. [Order][p1247] · [AC-4][c-1407da69] · [limiter][p1460] | Follow the exact displayed occurrence for selections and subsequent playback, including duplicates. Limit spatial peaks after DSP/mixing while preserving the bypass path. Defer a new native AC-4 distribution pending actual desktop input, decode tests and Windows/Linux qualification. | L |
+| 11. Queue | **APPLIES**. The desktop queue has a playhead, upcoming tiers and a redundant current row. | PlayerQueue.kt, QueueCoordinator.kt, PlaybackService.kt and MainActivity.kt. [Remove row][p1816] · [initial scroll][c-a99ae131] · [history replay][c-991f5e81] | Open the queue at the first upcoming item, with history reachable above it. Replay precisely one historical occurrence without putting later history back in Upcoming. Cover sidebar and full-player variants, duplicates, empty tail and party host/follower permissions. | M |
+| 12. Library paging, full reorder and imported edits | **APPLIES**. Desktop can edit its own local copies and authorized YouTube playlists. Live Spotify browsing is read-only. | InnertubeParser.parsePlaylistShelf, YtMusicRepository, LocalPlaylistStore.kt and SongActionsMenu.kt. [Continuation][p1361] · [imported copies][p1395] | Preserve YouTube entry IDs through every page. Require a complete, owned, current listing before a move. Edit local imports by local ID and occurrence, update sidebar details and retain downloads. Handle partial remote writes explicitly. Address reconnecting Spotify pins alongside account identity. | L |
+| 13. Replay | **PARTIAL**. Desktop has a concrete duplicate album-key path. Receiver-owned playback is **N/A** because desktop has no casting transport. | PlaybackService.reportProgress, ListeningStats.kt, ReplayScreen.kt and ReplayAlbumFoldTest.kt. [Remote recording][p1688] · [album collision][c-60587a74] | Reproduced in the real desktop list in both periods. Give distinct albums stable row identities even when titles match. Test This year and All time. An OS-routed Bluetooth/network output uses the existing desktop clock. Count genuine receiver-owned playback only when there is such a desktop transport. | M |
+| 14. Song matching | **APPLIES**. Desktop source fallback has its own matcher and can benefit from the upstream normalization rules. | TrackMatcher.kt, TrackMatcherAccentsTest.kt and the romanized-aside follow-up. [Accent folding][p1378] · [CJK follow-up][c-7f15a6fe] | Adapt the upstream comparator in DesktopTrackMatcher, which strips bracketed asides today. Fold Latin accents, including a romanized CJK aside, on the actual desktop provider and Radio paths. Prefer exact matches and preserve duration, artist, version and recording checks. Test false positives, Turkish dotless ı, composed/decomposed accents and non-Latin combining marks. | M |
+
+## Implementation decisions behind the estimates
+
+**Radio and Search.** Radio fetches YouTube Music's account-relative `FEmusic_mixed_for_you` browse feed. Upstream matches localized cards to English classification labels by browse ID and groups stations and personalized mixes. A card opens its playlist. Explicit Start Radio follows a different path that seeds a watch queue from a song's video ID. Desktop already tries a YouTube match for non-YouTube seeds. A failed or superseded request must preserve the current queue. Search Library uses the authenticated catalogue parameter `agIYBA==`. The fork's six catalogue filters have no Library option. A text filter on Library's shelves is a separate open upstream proposal outside this port. [Radio source][c-e7d10c0e] · [Library scope][p1506] · [separate Library proposal][p1724]
+
+**Data ownership.** Upstream initially follows all continuations for Liked Music (`VLLM`), schedules a debounced check after likes, periodically reconciles, and requests approval for more than 50 later additions. Unlikes are additive with respect to stored files. Desktop currently looks up and replaces collection records by browse ID, although some snapshots have pin-owner metadata. A standalone download is also not represented by the collection-only unclaimed-files check. Bind subscriptions to the verified account and profile. Treat incomplete pages as inconclusive, deduplicate work, retry missing files, and recheck owner and subscription generation before applying it. Keep the setting off by default. Before enabling it, show the number of tracks, estimated storage use and available disk space. Mark estimates with missing sizes as incomplete. Enforce a storage cap and pause automatic work at the cap or on low disk. Unliking or disabling stops future automatic work for the removed claim and retains completed files. Explicit removal must account for manual and other playlist claims. Deletion rights stay with the original owner. [Upstream synchronization][p1853] · [Desktop download settings][downloads]
+
+**Playlists and pins.** A displayed song ID can occur several times in one YouTube playlist. The mutation API needs the occurrence's setVideoId. A new continuation response shape, deduplication by video ID, and treating an unparsed page as the end can each lose rows. Keep retryable pagination and an editing snapshot with complete entry identities. Abort or refetch on stale owner, repeated token, parse miss, or external edit. Retrying a partially completed album add/reorder must not repeat successful changes. A Spotify import creates a local or YouTube copy. Renaming/deleting the copy and writing to the original remote Spotify playlist are different permissions. A stable, verified account binding is also needed to migrate same-account sidebar pins across cookie rotation. Preserve ambiguous old pins, including account-relative Liked Songs, until ownership can be established. [Paging][p1361] · [Imported edit][p1395] · [Fork pin scopes][pins]
+
+**Artwork and lyrics.** The desktop scanner already fingerprints each file and prefers its embedded MP3 APIC, FLAC PICTURE or MP4 covr before a folder fallback. Cover extraction differs from MP3 ULT/USLT lyric reading, which desktop still lacks. The fork launches via a parameterless desktop main with a folder picker for scanning. Recommend keeping direct OS file opening as a separate integration decision. For #8 verify full-size placeholders independently of blur/palette caches, privacy changes and dark/cleared frames. For #9, YouTube supplies line timecodes only. Keep timings as delivered. Honor explicit provider selection, sort real timecodes, and treat offline or missing timing as valid plain-text states. Test ID3 versions/encodings/malformed tags, Chinese translation marker variants, single-lead and duet RTL lines, pause/resume, seek, speed and sparse clock samples. [Local art][p1188] · [OS-opened audio][p1359] · [MP3 lyric follow-up][c-6a05577c] · [Screenshot observations](SCREENSHOT_INTAKE.md)
+
+**Playback and Replay.** Ordinary detail rows already pass collection order on desktop, while first-match-by-video-ID selection can still choose the wrong duplicate. Test sorted and filtered views, later pages, shuffled play, manual queue inserts and returning from a historical occurrence. For spatial limiting, include hot peaks with EQ and normalization off, channel balance, transitions, output conversion and quiet/bit-perfect passthrough. A native Linux probe against the packaged Bytedeco FFmpeg 7.1.1-1.5.12 found E-AC-3, AAC, ALAC and Opus decoders and no decoder named ac4. Windows and an actual AC-4 stream remain unverified. Upstream remote Replay samples the active receiver while the local player is paused. Desktop samples its own engine's position delta. MPRIS sends desktop control commands. The playing engine supplies the clock. [AC-4 routing][c-1407da69] · [Upstream DSP][p1460] · [Remote recorder][p1688] · [Desktop Replay][replay]
+
+## AutoMix footprint and distribution
+
+| Measured artifact | Bytes |
+| --- | ---: |
+| Published fork v1.12.1 RPM | 351,850,624 |
+| Published fork v1.12.1 AppImage / DEB | 345,487,864 / 328,750,488 |
+| Published fork v1.12.1 Windows setup / MSI / portable ZIP | 341,526,068 / 341,471,748 / 338,608,530 |
+| Beat This! final0 Q8 / Open-Unmix UMXHQ vocals INT8 weights | 23,138,816 / 9,054,206 |
+| Controlled desktop app JAR with both weights / same JAR with them removed | 36,764,769 / 14,034,292 |
+
+Release asset byte lengths came from HTTP Content-Range. That release is older than PR #13. The raw model payload is 32,193,022 bytes. Removing only its two entries from the controlled JAR saves 22,730,477 bytes, about 21.7 MiB. Keep the JVM runtime and native analyzer through this port. Evaluate the AutoMix distribution change last. Recommend skipping it if matched installer builds show a small saving. For each Windows and Linux installer format under comparison, build a before/after pair with the same toolchain, packaging options and signing mode. Record each installer and its extracted size in bytes, with the revisions, format and absolute and percentage deltas. [Published desktop packages][packages] · [Original APK changes][c-1db2b0c1]
+
+As a second check, the published RPM and Windows portable ZIP matched their release SHA-256 sums. Recompressing the same RPM payload with and without the models saved **22,709,756 bytes**. Re-encoding the portable ZIP’s app-JAR entry with and without them saved **22,709,945 bytes**. Both are paired payload measurements, before installer/signing overhead.
+
+The original v1.10 model assets match the embedded bytes. Beat This! SHA-256 is `7801f9c1adfd5ff193f37ececa3320bf1fda1ddee2bf7de341cea4c25ffd0acd`. UMXHQ SHA-256 is `a2be987b55a29bc149d3a6ae99b08175d81f85ee292a8ea21f96c3a473bc94cb`. Upstream identifies these two exports as MIT. Beat This! explicitly licenses its published weights under MIT. Open-Unmix distinguishes UMXHQ from the noncommercial UMXL weights. Carry the matching notices and export provenance in the versioned manifest. Use immutable release URLs, byte bounds and digest checks for existing and freshly received files. Upstream follows a latest-release URL and accepts a cached file by length alone. Stage atomically, support retry after interrupted/partial fetch, and reuse a valid existing model on upgrade. Current CI asserts models are embedded. Replace that assertion only with packaged-model absence, native loading, first-enable download, real inference and offline fallback checks. [Upstream weights][weights] · [Beat This! license][beat] · [Open-Unmix checkpoints][umx]
+
+## Gate A1 delivery order
+
+1. **Fix Replay first in its own PR.** Use the two same-title albums from the [reproduction](KNOWN_ISSUES.md) as the regression test. Verify the packaged app in This year and All time.
+2. **Finish the correctness group.** Port desktop song matching, queue history, displayed playback order, complete and safely editable playlist listings, imported playlist edits, playlist picker and album actions, and numeric track/disc ordering. Verify account binding for Spotify pins. Include duplicate occurrences, legacy data, and retries in the fixtures.
+3. **Stop at Gate A1.** Give the maintainer a testable desktop build identified by commit, evidence for the affected flows, and a short report of failures and gaps. Wait for the maintainer to test and approve before continuing.
+4. **After Gate A1 approval**, proceed with lyrics, artwork, Search, sleep timer, player settings, liked downloads, Radio and the spatial limiter. Confirm Radio's data source and navigation against the released upstream implementation again before coding. Its PR must list every desktop difference and explain how the independent song-seeded action works.
+5. **Evaluate AutoMix last.** Measure paired Windows and Linux installer builds *before* implementing lazy model delivery. If the real saving is small, report the measurements and recommend skipping. Otherwise implement the verified first-enable download and test packaged inference, recovery and offline fallback.
+
+Use one conventional-commit branch and PR per item or tightly coupled slice in the desktop fork. Include upstream source credit, behavior tests, relevant manual cases before and after, and gaps in coverage. Keep shared edits small so the desktop code remains easy to maintain and future upstream changes are easier to pull.
+
+Require green `Desktop · Linux` and `Desktop · Windows` checks for A1 merges. Both run `:desktopApp:test`, `:shared:jvmTest` and `:sharedUi:jvmTest` and check the packaged distributable. Phone, TV, Wear and web CI are outside the A1 merge criteria. The fork's `master` had no required status checks or visible rulesets when reviewed, so verify the desktop checks in each PR. Preserve the existing desktop and JVM test suites. Record failures and untested environments. Stop at the Part A report. A release, prerelease, overhaul branch and all other Part B work require a later approval. [Smoke checklist](SMOKE_CHECKLIST.md) · [Decisions](DECISIONS.md) · [Known issues](KNOWN_ISSUES.md)
+
+[release]: https://github.com/kushagrasinghx/BitChord/releases/tag/v1.10
+[orig]: https://github.com/kushagrasinghx/BitChord/tree/7448b92e032af7e5666c93b0e04c6b9fa3abf898
+[fork]: https://github.com/kartik2005221/BitChord/tree/926489c1dda7032bca3ab3eaccdd6763ec27ad06
+[batch]: https://github.com/kartik2005221/BitChord/pull/13
+[ol]: https://github.com/kushagrasinghx/BitChord/blob/7448b92e032af7e5666c93b0e04c6b9fa3abf898/LICENSE
+[fl]: https://github.com/kartik2005221/BitChord/blob/926489c1dda7032bca3ab3eaccdd6763ec27ad06/LICENSE
+[packages]: https://github.com/kartik2005221/BitChord/releases/tag/v1.12.1
+[weights]: https://github.com/kushagrasinghx/BitChord/releases/expanded_assets/v1.10
+[beat]: https://github.com/CPJKU/beat_this#license
+[umx]: https://github.com/sigsep/open-unmix-pytorch#pretrained-models
+[pins]: https://github.com/kartik2005221/BitChord/blob/926489c1dda7032bca3ab3eaccdd6763ec27ad06/desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopPlaylistPins.kt
+[downloads]: https://github.com/kartik2005221/BitChord/blob/926489c1dda7032bca3ab3eaccdd6763ec27ad06/desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopDownloadsSettings.kt
+[replay]: https://github.com/kartik2005221/BitChord/blob/926489c1dda7032bca3ab3eaccdd6763ec27ad06/desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopReplayUi.kt
+[p893]: https://github.com/kushagrasinghx/BitChord/pull/893
+[p1047]: https://github.com/kushagrasinghx/BitChord/pull/1047
+[p1094]: https://github.com/kushagrasinghx/BitChord/pull/1094
+[p1188]: https://github.com/kushagrasinghx/BitChord/pull/1188
+[p1247]: https://github.com/kushagrasinghx/BitChord/pull/1247
+[p1359]: https://github.com/kushagrasinghx/BitChord/pull/1359
+[p1360]: https://github.com/kushagrasinghx/BitChord/pull/1360
+[p1361]: https://github.com/kushagrasinghx/BitChord/pull/1361
+[p1366]: https://github.com/kushagrasinghx/BitChord/pull/1366
+[p1369]: https://github.com/kushagrasinghx/BitChord/pull/1369
+[p1378]: https://github.com/kushagrasinghx/BitChord/pull/1378
+[p1389]: https://github.com/kushagrasinghx/BitChord/pull/1389
+[p1395]: https://github.com/kushagrasinghx/BitChord/pull/1395
+[p1448]: https://github.com/kushagrasinghx/BitChord/pull/1448
+[p1460]: https://github.com/kushagrasinghx/BitChord/pull/1460
+[p1487]: https://github.com/kushagrasinghx/BitChord/pull/1487
+[p1489]: https://github.com/kushagrasinghx/BitChord/pull/1489
+[p1506]: https://github.com/kushagrasinghx/BitChord/pull/1506
+[p1509]: https://github.com/kushagrasinghx/BitChord/pull/1509
+[p1511]: https://github.com/kushagrasinghx/BitChord/pull/1511
+[p1560]: https://github.com/kushagrasinghx/BitChord/pull/1560
+[p1570]: https://github.com/kushagrasinghx/BitChord/pull/1570
+[p1574]: https://github.com/kushagrasinghx/BitChord/pull/1574
+[p1587]: https://github.com/kushagrasinghx/BitChord/pull/1587
+[p1688]: https://github.com/kushagrasinghx/BitChord/pull/1688
+[p1691]: https://github.com/kushagrasinghx/BitChord/pull/1691
+[p1717]: https://github.com/kushagrasinghx/BitChord/pull/1717
+[p1724]: https://github.com/kushagrasinghx/BitChord/pull/1724
+[p1770]: https://github.com/kushagrasinghx/BitChord/pull/1770
+[p1773]: https://github.com/kushagrasinghx/BitChord/pull/1773
+[p1816]: https://github.com/kushagrasinghx/BitChord/pull/1816
+[p1817]: https://github.com/kushagrasinghx/BitChord/pull/1817
+[p1827]: https://github.com/kushagrasinghx/BitChord/pull/1827
+[p1853]: https://github.com/kushagrasinghx/BitChord/pull/1853
+[p1861]: https://github.com/kushagrasinghx/BitChord/pull/1861
+[c-1407da69]: https://github.com/kushagrasinghx/BitChord/commit/1407da69
+[c-1db2b0c1]: https://github.com/kushagrasinghx/BitChord/commit/1db2b0c1
+[c-4cb4076e]: https://github.com/kushagrasinghx/BitChord/commit/4cb4076e
+[c-4d109ae7]: https://github.com/kushagrasinghx/BitChord/commit/4d109ae7
+[c-60587a74]: https://github.com/kushagrasinghx/BitChord/commit/60587a74
+[c-6a05577c]: https://github.com/kushagrasinghx/BitChord/commit/6a05577c
+[c-7f15a6fe]: https://github.com/kushagrasinghx/BitChord/commit/7f15a6fe
+[c-991f5e81]: https://github.com/kushagrasinghx/BitChord/commit/991f5e81
+[c-a99ae131]: https://github.com/kushagrasinghx/BitChord/commit/a99ae131
+[c-e7d10c0e]: https://github.com/kushagrasinghx/BitChord/commit/e7d10c0e
