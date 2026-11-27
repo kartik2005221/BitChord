@@ -6,6 +6,7 @@ import java.net.URI
 import javax.imageio.ImageIO
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -61,10 +62,18 @@ class DesktopLocalArtworkTest {
     fun changingFolderCoverGivesComposeANewUri() = withWorkspace { music, cache ->
         val song = Files.write(music.resolve("song.wav"), byteArrayOf(4))
         val cover = Files.write(music.resolve("folder.png"), png)
+        val initialMillis = 1_600_000_000_000L
+        Files.setLastModifiedTime(cover, FileTime.fromMillis(initialMillis))
         val first = assertNotNull(DesktopLocalArtwork.artworkUri(song, cache))
-        Files.write(cover, makeImage("png", width = 8))
+
+        // ImageIO can encode both sizes to the same length. Set the revision
+        // explicitly so the filesystem clock cannot give both writes the same timestamp.
+        val replacement = makeImage("png", width = 8)
+        Files.write(cover, replacement)
+        Files.setLastModifiedTime(cover, FileTime.fromMillis(initialMillis + 2_000))
         val second = assertNotNull(DesktopLocalArtwork.artworkUri(song, cache))
         assertNotEquals(first, second)
+        assertTrue(Files.readAllBytes(Path.of(URI(second))).contentEquals(replacement))
         assertRealImage(second)
     }
 
