@@ -989,9 +989,9 @@ object Innertube {
             ?: error("playlist created but no id came back")
     }
 
-    suspend fun deletePlaylist(playlistId: String) {
+    suspend fun deletePlaylist(playlistId: String, checkSession: (() -> Unit)? = null) {
         requireSession()
-        postMusic("playlist/delete") { put("playlistId", playlistId.removePrefix("VL")) }
+        postMusic("playlist/delete", checkSession = checkSession) { put("playlistId", playlistId.removePrefix("VL")) }
     }
 
     /**
@@ -1003,10 +1003,11 @@ object Innertube {
      */
     private suspend fun editPlaylist(
         playlistId: String,
+        checkSession: (() -> Unit)? = null,
         actions: JsonArrayBuilder.() -> Unit,
     ): JsonObject {
         requireSession()
-        val response = postMusic("browse/edit_playlist") {
+        val response = postMusic("browse/edit_playlist", checkSession = checkSession) {
             // The edit endpoint takes the raw id; `VL` is the browse prefix.
             put("playlistId", playlistId.removePrefix("VL"))
             putJsonArray("actions", actions)
@@ -1061,8 +1062,12 @@ object Innertube {
      * id: the same track added twice is two entries, and only the pair says
      * which of them to drop.
      */
-    suspend fun removeFromPlaylist(playlistId: String, entries: List<Pair<String, String>>) {
-        editPlaylist(playlistId) {
+    suspend fun removeFromPlaylist(
+        playlistId: String,
+        entries: List<Pair<String, String>>,
+        checkSession: (() -> Unit)? = null,
+    ) {
+        editPlaylist(playlistId, checkSession) {
             entries.forEach { (setVideoId, videoId) ->
                 addJsonObject {
                     put("action", "ACTION_REMOVE_VIDEO")
@@ -1078,9 +1083,13 @@ object Innertube {
      * given — see [com.music.bitchord.data.model.playlistMoves] for building
      * them. A move with no successor goes to the end.
      */
-    suspend fun movePlaylistItems(playlistId: String, moves: List<PlaylistMove>) {
+    suspend fun movePlaylistItems(
+        playlistId: String,
+        moves: List<PlaylistMove>,
+        checkSession: (() -> Unit)? = null,
+    ) {
         if (moves.isEmpty()) return
-        editPlaylist(playlistId) {
+        editPlaylist(playlistId, checkSession) {
             moves.forEach { move ->
                 addJsonObject {
                     put("action", "ACTION_MOVE_VIDEO_BEFORE")
@@ -1091,8 +1100,8 @@ object Innertube {
         }
     }
 
-    suspend fun renamePlaylist(playlistId: String, title: String) {
-        editPlaylist(playlistId) {
+    suspend fun renamePlaylist(playlistId: String, title: String, checkSession: (() -> Unit)? = null) {
+        editPlaylist(playlistId, checkSession) {
             addJsonObject {
                 put("action", "ACTION_SET_PLAYLIST_NAME")
                 put("playlistName", title)
@@ -1111,6 +1120,7 @@ object Innertube {
     private suspend fun postMusic(
         endpoint: String,
         query: Map<String, String> = emptyMap(),
+        checkSession: (() -> Unit)? = null,
         bodyExtras: JsonObjectBuilder.() -> Unit,
     ): JsonObject {
         // This is the common authenticated request path: Home, Library,
@@ -1120,7 +1130,15 @@ object Innertube {
         if (cookie != null) ensureSessionScope()
         val session = scope
         val clientVersion = webRemixVersion
-        val response = withRetry {
+        // Freeze the credentials before checking the caller's binding. A guarded
+        // write is sent once, with these credentials, even if the active user
+        // changes as the HTTP request is being built.
+        val requestCookie = cookie
+        val requestAuthUser = authUserFor(session)
+        val requestPageId = pageIdFor(session)
+        val requestDataSyncId = dataSyncIdFor(session)
+        checkSession?.invoke()
+        val response = withRetry(attempts = if (checkSession != null) 1 else 3) {
             client.post("$MUSIC_BASE/$endpoint") {
                 contentType(ContentType.Application.Json)
                 parameter("prettyPrint", "false")
@@ -1136,13 +1154,13 @@ object Innertube {
                 header("X-YouTube-Client-Name", WEB_REMIX_CLIENT_ID)
                 header("X-YouTube-Client-Version", clientVersion)
                 visitorData?.let { header("X-Goog-Visitor-Id", it) }
-                cookie?.let { c ->
+                requestCookie?.let { c ->
                     header("Cookie", c)
                     // Which account in the jar, and which brand channel of it.
                     // Both were fixed at "the first one" before — see
                     // [SessionScope].
-                    header("X-Goog-AuthUser", authUserFor(session))
-                    pageIdFor(session)?.let { header("X-Goog-PageId", it) }
+                    header("X-Goog-AuthUser", requestAuthUser)
+                    requestPageId?.let { header("X-Goog-PageId", it) }
                     sapisidFrom(c)?.let { header("Authorization", sapisidHash(it)) }
                 }
                 setBody(
@@ -1162,7 +1180,7 @@ object Innertube {
                                 // `onBehalfOfUser` it cannot tie to the cookie
                                 // with 401, so a guess here would take the
                                 // whole app down rather than just history.
-                                dataSyncIdFor(session)?.let { put("onBehalfOfUser", it) }
+                                requestDataSyncId?.let { put("onBehalfOfUser", it) }
                             }
                             putJsonObject("request") { put("useSsl", true) }
                         }
