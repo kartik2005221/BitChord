@@ -1,0 +1,16 @@
+name: Gate A1 test AppImage
+
+on:
+  push:
+    branches: ['test/gate-a1-appimage']
+    paths: ['.github/workflows/gate-a1-test-appimage.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-test-appimage.yml
+    with:
+      version: test-visua
+      run_tests: true
