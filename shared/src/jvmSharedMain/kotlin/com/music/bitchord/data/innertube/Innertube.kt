@@ -971,9 +971,10 @@ object Innertube {
         privacy: PlaylistPrivacy,
         description: String? = null,
         videoIds: List<String> = emptyList(),
+        checkSession: (() -> Unit)? = null,
     ): String {
         requireSession()
-        val response = postMusic("playlist/create") {
+        val response = postMusic("playlist/create", checkSession = checkSession) {
             put("title", title)
             put("description", description.orEmpty())
             put("privacyStatus", privacy.apiValue)
@@ -1033,8 +1034,12 @@ object Innertube {
      * Absences are normal and not an error — the add still happened; only the
      * id for undoing it is unknown.
      */
-    suspend fun addToPlaylist(playlistId: String, videoIds: List<String>): Map<String, String> {
-        val response = editPlaylist(playlistId) {
+    suspend fun addToPlaylist(
+        playlistId: String,
+        videoIds: List<String>,
+        checkSession: (() -> Unit)? = null,
+    ): Map<String, String> {
+        val response = editPlaylist(playlistId, checkSession) {
             videoIds.forEach { videoId ->
                 addJsonObject {
                     put("action", "ACTION_ADD_VIDEO")

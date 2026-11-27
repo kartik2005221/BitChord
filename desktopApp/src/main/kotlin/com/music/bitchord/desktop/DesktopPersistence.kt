@@ -315,6 +315,9 @@ class DesktopPersistence internal constructor(internal val preferences: Preferen
         song.localDateModifiedSeconds?.toString().orEmpty(),
         song.sourceQuality.orEmpty(),
         song.isExplicit?.toString().orEmpty(),
+        song.localTrackNumber?.toString().orEmpty(),
+        song.localDiscNumber?.toString().orEmpty(),
+        song.localAlbumArtist.orEmpty(),
     ).joinToString(DELIMITER, transform = ::encode)
 
     private fun decodeSong(value: String): Song? {
@@ -340,6 +343,10 @@ class DesktopPersistence internal constructor(internal val preferences: Preferen
             localDateModifiedSeconds = fields.getOrNull(15)?.toLongOrNull(),
             sourceQuality = fields.getOrNull(16)?.ifBlank { null },
             isExplicit = fields.getOrNull(17)?.toBooleanStrictOrNull(),
+        ).copy(
+            localTrackNumber = fields.getOrNull(18)?.toIntOrNull()?.takeIf { it > 0 },
+            localDiscNumber = fields.getOrNull(19)?.toIntOrNull()?.takeIf { it > 0 },
+            localAlbumArtist = fields.getOrNull(20)?.ifBlank { null },
         )
     }
 
@@ -418,6 +425,9 @@ private fun DesktopPlaylist.toPreferenceLine(): String = listOf(
             song.localDateModifiedSeconds?.toString().orEmpty(),
             song.sourceQuality.orEmpty(),
             song.isExplicit?.toString().orEmpty(),
+            song.localTrackNumber?.toString().orEmpty(),
+            song.localDiscNumber?.toString().orEmpty(),
+            song.localAlbumArtist.orEmpty(),
         ).joinToString("|", transform = { field ->
             Base64.getUrlEncoder().withoutPadding().encodeToString(field.toByteArray(StandardCharsets.UTF_8))
         })

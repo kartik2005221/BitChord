@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Delete
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -402,6 +404,7 @@ internal data class DesktopCollectionMenuActions(
     val onAddToQueue: (() -> Unit)?,
     val onDownloadAll: (() -> Unit)?,
     val onShare: (() -> Unit)?,
+    val onAddToPlaylists: (() -> Unit)? = null,
     val onSaveToLibrary: (() -> Unit)? = null,
     val savedToLibrary: Boolean = false,
     val onPin: (() -> Unit)? = null,
@@ -434,6 +437,9 @@ internal fun DesktopCollectionContextMenu(
         }
         actions.onAddToQueue?.let { queue ->
             DesktopMenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue") { onDismiss(); queue() }
+        }
+        actions.onAddToPlaylists?.let { add ->
+            DesktopMenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlists") { onDismiss(); add() }
         }
         actions.onSaveToLibrary?.let { save ->
             DesktopMenuRow(
@@ -784,5 +790,26 @@ internal fun DesktopMoreButton(onClick: () -> Unit, modifier: Modifier = Modifie
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun DesktopAlbumPlaylistMenu(onAdd: () -> Unit, onDismiss: () -> Unit) {
+    DesktopMenuSurface(onDismiss = onDismiss) {
+        DesktopMenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlists") {
+            onDismiss()
+            onAdd()
+        }
+    }
+}
+
+@Composable
+internal fun DesktopAlbumPlaylistMenuButton(modifier: Modifier = Modifier, onAdd: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreHoriz, DesktopStrings["more", "More"])
+        }
+        if (open) DesktopAlbumPlaylistMenu(onAdd = onAdd, onDismiss = { open = false })
     }
 }
