@@ -18,6 +18,8 @@ import javafx.scene.web.WebView
 import javafx.stage.Stage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * In-app sign-in, as Android does it: the provider's own web login in a WebView, and the session read
@@ -56,7 +58,13 @@ internal object DesktopWebSignIn {
 
     private suspend fun capture(service: Service): String {
         check(available) { "This desktop cannot show a sign-in window (JavaFX did not start)." }
-        return suspendCancellableCoroutine { continuation ->
+        return DesktopWebCookies.sessionMutex.withLock {
+            captureWindow(service)
+        }
+    }
+
+    private suspend fun captureWindow(service: Service): String =
+        suspendCancellableCoroutine { continuation ->
             Platform.runLater {
                 val window = SignInWindow(service) { result ->
                     if (continuation.isActive) continuation.resumeWith(result)
@@ -65,7 +73,6 @@ internal object DesktopWebSignIn {
                 window.show()
             }
         }
-    }
 
     private const val SPOTIFY_COOKIE = "sp_dc"
 
@@ -209,6 +216,9 @@ internal object DesktopWebSignIn {
  * `java.net.CookieManager` drops cookies Spotify's login depends on.
  */
 internal object DesktopWebCookies : CookieHandler() {
+    // Sign-in windows and token harvesting must never share Spotify cookies concurrently.
+    val sessionMutex = Mutex()
+
     @Volatile
     private var jar: CookieHandler = com.sun.webkit.network.CookieManager()
 
