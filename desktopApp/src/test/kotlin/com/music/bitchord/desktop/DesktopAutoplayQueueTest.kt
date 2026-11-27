@@ -1,6 +1,9 @@
 package com.music.bitchord.desktop
 
+import com.music.bitchord.data.model.SearchFilter
+import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.Song
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
@@ -62,5 +65,29 @@ class DesktopAutoplayQueueTest {
     fun `a queue at its last track has nothing after it to drop`() {
         val queue = DesktopQueue(songs = listOf(song("a"), song("b", fromAutoplay = true)), index = 1)
         assertSame(queue, queue.withoutAutoplay())
+    }
+
+    @Test
+    fun `a station seed can fall back to a provider title's romanization`() = runBlocking {
+        val providerRow = Song("jiosaavn:tokyo", "東京 (Tōkyō)", "Artíst", null, durationText = "3:30")
+        val youtubeRow = Song("yt-tokyo", "Tokyo", "Artist", null, durationText = "3:30")
+        val queries = mutableListOf<String>()
+
+        val seed = DesktopAutoplay.youtubeSeedFor(providerRow) { query, filter ->
+            assertEquals(SearchFilter.SONGS, filter)
+            queries += query
+            val results = if (query == "tōkyō artíst") {
+                listOf(
+                    SearchResult.Track(youtubeRow.copy(videoId = "yt-live", title = "Tokyo (Live)")),
+                    SearchResult.TopTrack(youtubeRow),
+                )
+            } else {
+                emptyList()
+            }
+            Result.success(results)
+        }
+
+        assertEquals("yt-tokyo", seed)
+        assertEquals(listOf("東京 artíst", "東京", "tōkyō artíst"), queries)
     }
 }
