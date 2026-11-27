@@ -97,6 +97,23 @@ class DesktopReplayTest {
     }
 
     @Test
+    fun `albums with the same title keep distinct row identities across replay periods`() {
+        val first = song("fixture-a", "First track", "Artist One", "Shared Album").copy(albumId = "id-a")
+        val second = song("fixture-b", "Second track", "Artist Two", "Shared Album").copy(albumId = "id-b")
+        val history = listOf(
+            bucket("2026-11", Triple(first, 180_000L, 2)),
+            bucket("2026-10", Triple(second, 160_000L, 2)),
+        )
+        for (period in listOf(DesktopReplayPeriod.THIS_YEAR, DesktopReplayPeriod.ALL_TIME)) {
+            val summary = DesktopListeningStats.summarise(history, period, LocalDate.of(2026, 11, 21))
+            val rows = summary.albumRows(5)
+            assertEquals(listOf("Shared Album", "Shared Album"), rows.map { it.title })
+            assertEquals(listOf("Artist One", "Artist Two"), rows.map { it.subtitle })
+            assertEquals(2, rows.map { it.key }.distinct().size)
+        }
+    }
+
+    @Test
     fun `distinct counts are of distinct things`() {
         val summary = DesktopListeningStats.summarise(history, DesktopReplayPeriod.ALL_TIME, today)
         assertEquals(3, summary.distinctSongs)

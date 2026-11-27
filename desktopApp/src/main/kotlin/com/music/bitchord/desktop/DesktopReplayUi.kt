@@ -232,7 +232,7 @@ private fun LazyListScope.chart(
             modifier = Modifier.padding(start = GUTTER, end = GUTTER, top = 8.dp, bottom = 10.dp),
         )
     }
-    items(rows, key = { "$key-${it.key}" }) { row ->
+    items(rows, key = { "$key-row-${it.key}" }) { row ->
         ChartRow(row, circular, playable = key == "songs") { onClick(row.rank - 1) }
     }
     item("$key-gap") { Spacer(Modifier.height(20.dp)) }
@@ -486,7 +486,7 @@ internal fun DesktopReplaySummary.genreRows(limit: Int): List<DesktopReplayRow> 
     genres.take(limit).mapIndexed { index, entry -> entry.toRow(index) }
 
 private fun DesktopRankedEntry.toRow(index: Int) = DesktopReplayRow(
-    key = title,
+    key = key,
     rank = index + 1,
     title = title,
     subtitle = subtitle,
