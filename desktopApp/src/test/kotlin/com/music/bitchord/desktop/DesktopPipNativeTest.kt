@@ -17,6 +17,8 @@ import com.music.bitchord.data.lyrics.LyricLine
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.playback.PlaybackPosition
 import java.awt.EventQueue
+import java.awt.MouseInfo
+import java.awt.Point
 import java.awt.Robot
 import java.awt.event.WindowEvent
 import java.io.File
@@ -33,6 +35,7 @@ class DesktopPipNativeTest {
         com.music.bitchord.ui.player.PlayerPlatform.install(DesktopPlayerHost)
         val before = DesktopPipSettings.state.value
         val mainVisible = mutableStateOf(true)
+        val ownerTitle = "PiP track test owner"
         val controller = DesktopPipController({ true }, { mainVisible.value = false }, { mainVisible.value = true }, { true })
         val host = DesktopPipHost(controller)
         val lyrics = DesktopLyricsSession()
@@ -50,17 +53,45 @@ class DesktopPipNativeTest {
             node.children.flatMap(::text)
         fun renderedText() = pip()?.semanticsOwners?.flatMap { text(it.unmergedRootSemanticsNode) }.orEmpty()
         fun nodes(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::nodes)
-        fun click(tag: String) {
-            val node = pip()!!.semanticsOwners.flatMap { nodes(it.unmergedRootSemanticsNode) }
-                .single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
+        suspend fun await(label: String, predicate: () -> Boolean) {
+            repeat(100) { if (predicate()) return; delay(30) }
+            error("native track change timed out: $label; rendered=${renderedText()}")
+        }
+        fun clickPoint(tag: String): Point? {
+            val native = pip()?.takeIf { it.isShowing && it.isFocused } ?: return null
+            if (java.awt.Window.getWindows().filterIsInstance<ComposeWindow>()
+                    .any { it.title == ownerTitle && it.isShowing }
+            ) return null
+            val node = native.semanticsOwners.flatMap { nodes(it.unmergedRootSemanticsNode) }
+                .singleOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == tag } ?: return null
             val bounds = node.boundsInRoot
-            val native = pip()!!
-            val point = native.contentPane.locationOnScreen
-            Robot().apply {
-                mouseMove(point.x + bounds.center.x.toInt(), point.y + bounds.center.y.toInt())
-                mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
-                mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
+            if (bounds.isEmpty) return null
+            val origin = native.contentPane.locationOnScreen
+            val scale = native.graphicsConfiguration.defaultTransform
+            return Point(
+                origin.x + (bounds.center.x / scale.scaleX).toInt(),
+                origin.y + (bounds.center.y / scale.scaleY).toInt(),
+            )
+        }
+        suspend fun click(tag: String) {
+            var point: Point? = null
+            // A Compose semantics tree is available before the native peer accepts mouse input.
+            await("$tag on a focused PiP peer with stable bounds") {
+                val current = clickPoint(tag)
+                val settled = current != null && current == point
+                point = current
+                settled
             }
+            val target = checkNotNull(point)
+            val native = checkNotNull(pip())
+            val robot = Robot()
+            robot.mouseMove(target.x, target.y)
+            await("$tag under the native pointer") {
+                clickPoint(tag) == target && MouseInfo.getPointerInfo()?.location == target &&
+                    native.mousePosition != null
+            }
+            robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
+            robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
         }
         fun moveSong(by: Int) {
             val index = songs.indexOfFirst { it.videoId == model.value.song?.videoId }
@@ -70,7 +101,7 @@ class DesktopPipNativeTest {
             DesktopPipSettings.update { it.copy(lyrics = true, bounds = DesktopPipBounds(80, 80, 500, 340)) }
             application(exitProcessOnExit = false) {
                 DesktopPipHostWindow(host)
-                Window(onCloseRequest = {}, visible = mainVisible.value, title = "PiP track test owner") {
+                Window(onCloseRequest = {}, visible = mainVisible.value, title = ownerTitle) {
                     LaunchedEffect(Unit) {
                         lyrics.follow(snapshotFlow {
                             DesktopLyricsRequest(model.value.song, 180000, true, false, false, emptySet(), emptyList(), null)
@@ -93,10 +124,6 @@ class DesktopPipNativeTest {
                 }
                 LaunchedEffect(Unit) {
                     try {
-                        suspend fun await(label: String, predicate: () -> Boolean) {
-                            repeat(100) { if (predicate()) return; delay(30) }
-                            error("native track change timed out: $label; rendered=${renderedText()}")
-                        }
                         controller.show()
                         await("first song in hidden main") { !mainVisible.value && "First song" in renderedText() && "First verse" in renderedText() }
                         click("pip-play")
