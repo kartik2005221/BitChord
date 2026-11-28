@@ -69,7 +69,12 @@ import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
@@ -338,8 +343,15 @@ internal fun PlaybackQualityLabel(
 }
 
 /** Compact version of the player quality badge, with the same state precedence. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaybackQualityIcon(song: Song?, isLoading: Boolean, modifier: Modifier = Modifier, tint: Color = LocalPlayerTint.current) {
+fun PlaybackQualityIcon(
+    song: Song?,
+    isLoading: Boolean,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalPlayerTint.current,
+    size: Dp = 18.dp,
+) {
     if (song == null) return
     val state = observePlaybackQuality(song, isLoading)
     val label = when (state) {
@@ -358,11 +370,19 @@ fun PlaybackQualityIcon(song: Song?, isLoading: Boolean, modifier: Modifier = Mo
             label = "miniQualityPulseAlpha",
         )
     } else null
-    val iconModifier = modifier.size(18.dp).graphicsLayer { alpha = pulse?.value ?: 1f }
-    if (state == PlaybackQuality.HIGH) {
-        Icon(Icons.Rounded.Headphones, label, iconModifier, tint = tint)
-    } else {
-        Icon(painterResource(if (state == PlaybackQuality.DOLBY) Res.drawable.ic_dolby_atmos else Res.drawable.ic_lossless), label, iconModifier, tint = tint)
+    val iconModifier = Modifier.size(size).graphicsLayer { alpha = pulse?.value ?: 1f }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+        modifier = modifier,
+        focusable = false,
+    ) {
+        if (state == PlaybackQuality.HIGH) {
+            Icon(Icons.Rounded.Headphones, label, iconModifier, tint = tint)
+        } else {
+            Icon(painterResource(if (state == PlaybackQuality.DOLBY) Res.drawable.ic_dolby_atmos else Res.drawable.ic_lossless), label, iconModifier, tint = tint)
+        }
     }
 }
 

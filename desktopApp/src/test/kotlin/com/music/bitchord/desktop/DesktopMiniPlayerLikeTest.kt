@@ -58,10 +58,11 @@ class DesktopMiniPlayerLikeTest {
         var queued: Song? = null
         var expanded = 0
         var menuOpen by mutableStateOf(false)
+        var thumbsDown by mutableStateOf(false)
         val portal = DesktopMenuPortalState()
         val actions = DesktopSongActions(
             signedIn = true, disliked = false, downloaded = false, downloadInProgress = false,
-            sleepTimerMinutes = null, sleepAfterTrack = false, onToggleDislike = {},
+            sleepTimerMinutes = null, sleepAfterTrack = false, onToggleDislike = { thumbsDown = !thumbsDown },
             onAddToPlaylist = {}, onDownload = {}, onRemoveDownload = {}, onStartRadio = {},
             onPlayNext = {}, onAddToQueue = { queued = it }, onOpenAlbum = {}, onOpenArtist = {},
             onSleepTimer = {}, onSleepAfterTrack = {}, onShare = {},
@@ -81,7 +82,7 @@ class DesktopMiniPlayerLikeTest {
                                 Box {
                                     DesktopMoreButton(onClick = { menuOpen = true })
                                     if (menuOpen) {
-                                        DesktopSongMenuFor(song, false, actions, {}, null, null, onDismiss = { menuOpen = false })
+                                        DesktopSongMenuFor(song, false, actions.copy(disliked = thumbsDown), {}, null, null, onDismiss = { menuOpen = false })
                                     }
                                 }
                             },
@@ -94,6 +95,9 @@ class DesktopMiniPlayerLikeTest {
         val more = onNodeWithContentDescription("More options")
         val buttonTop = more.fetchSemanticsNode().boundsInRoot.top
         more.performMouseInput { click() }
+        onNodeWithText("Thumbs down").assertIsDisplayed().performClick()
+        onNodeWithText("Undo thumbs down").assertIsDisplayed().performClick()
+        onNodeWithText("Thumbs down").assertIsDisplayed()
         val addToQueue = onNodeWithText("Add to queue").assertIsDisplayed()
         assertTrue(addToQueue.fetchSemanticsNode().boundsInRoot.bottom < buttonTop)
         addToQueue.performMouseInput { click() }
@@ -117,7 +121,12 @@ class DesktopMiniPlayerLikeTest {
                     )
                 }
             }
-            onNodeWithContentDescription("Upgrading quality").assertIsDisplayed()
+            val indicator = onNodeWithContentDescription("Upgrading quality", useUnmergedTree = true).assertIsDisplayed().assertHasNoClickAction()
+            val qualityBounds = indicator.fetchSemanticsNode().boundsInRoot
+            val artistBounds = onNodeWithText("Artist", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue(qualityBounds.right <= artistBounds.left)
+            assertTrue(qualityBounds.center.y in artistBounds.top..artistBounds.bottom)
+            onNodeWithContentDescription("Audio output").assertHasClickAction()
             runOnIdle { NerdStats.current.value = NerdStats.Snapshot("audio/flac", 1411, 96000, 2, 24) }
             onNodeWithContentDescription("Hi-Res Lossless").assertIsDisplayed()
             runOnIdle {
