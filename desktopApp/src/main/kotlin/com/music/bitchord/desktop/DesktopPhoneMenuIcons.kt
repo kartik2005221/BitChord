@@ -16,49 +16,6 @@ import androidx.compose.ui.unit.dp
 internal object DesktopPhoneMenuIcons {
     private val ink = SolidColor(Color.Black)
 
-    val BrokenHeart: ImageVector by lazy { brokenHeart(false) }
-    val BrokenHeartFilled: ImageVector by lazy { brokenHeart(true) }
-
-    private fun brokenHeart(filled: Boolean): ImageVector =
-        ImageVector.Builder(
-            name = if (filled) "mobile_broken_heart_fill" else "mobile_broken_heart",
-            defaultWidth = 24.dp, defaultHeight = 24.dp,
-            viewportWidth = 24f, viewportHeight = 24f,
-        ).apply {
-            path(
-                fill = if (filled) ink else null,
-                stroke = if (filled) null else ink,
-                strokeLineWidth = 2.1f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-            ) {
-                moveTo(11f, 20.6f)
-                lineTo(5.1f, 15.1f)
-                curveTo(1.6f, 11.8f, 2.0f, 7.2f, 5.3f, 4.8f)
-                curveTo(7.4f, 3.3f, 10.1f, 4.2f, 11.4f, 6.3f)
-                lineTo(9.7f, 9.4f)
-                lineTo(12f, 12.1f)
-                lineTo(10f, 15.3f)
-                close()
-            }
-            path(
-                fill = if (filled) ink else null,
-                stroke = if (filled) null else ink,
-                strokeLineWidth = 2.1f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-            ) {
-                moveTo(13.2f, 20.3f)
-                lineTo(18.9f, 15.1f)
-                curveTo(22.4f, 11.8f, 22.0f, 7.2f, 18.7f, 4.8f)
-                curveTo(16.7f, 3.3f, 14.0f, 4.2f, 12.7f, 6.3f)
-                lineTo(14.2f, 9.5f)
-                lineTo(12.1f, 12.5f)
-                lineTo(14.4f, 15.8f)
-                close()
-            }
-        }.build()
-
     val Share: ImageVector by lazy {
         ImageVector.Builder(name = "mobile_share", defaultWidth = 24.dp, defaultHeight = 24.dp,
             viewportWidth = 24f, viewportHeight = 24f).apply {

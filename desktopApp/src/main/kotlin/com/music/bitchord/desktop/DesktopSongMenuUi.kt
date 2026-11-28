@@ -314,8 +314,11 @@ internal fun DesktopSongMenu(
                         if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                         "Like", liked, Modifier.weight(1f), onToggleLike)
                     DesktopMenuQuickAction(
-                        if (disliked) DesktopPhoneMenuIcons.BrokenHeartFilled else DesktopPhoneMenuIcons.BrokenHeart,
-                        "Dislike", disliked, Modifier.weight(1f), onToggleDislike)
+                        if (disliked) Icons.Rounded.ThumbDown else Icons.Rounded.ThumbDownOffAlt,
+                        if (disliked) DesktopStrings["undo_dislike", "Undo thumbs down"]
+                        else DesktopStrings["dislike", "Thumbs down"],
+                        disliked, Modifier.weight(1f), onToggleDislike,
+                    )
                 }
                 DesktopMenuQuickAction(
                     DesktopPhoneMenuIcons.Share, "Share", false, Modifier.weight(1f), onShare)
@@ -670,7 +673,7 @@ private fun DesktopMenuDivider() {
     )
 }
 
-/** Tap targets mirror BitChord mobile's Like / Dislike / Share quick-action row. */
+/** Tap targets mirror the Like, thumbs down and Share quick-action row. */
 @Composable
 private fun DesktopMenuQuickAction(
     icon: ImageVector,

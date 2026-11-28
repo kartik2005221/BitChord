@@ -7272,9 +7272,11 @@ internal fun DesktopMiniPlayer(
                     }
                     Column(Modifier.weight(1f).padding(start = 8.dp, end = 8.dp)) {
                         Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                        Text(song.artist, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            PlaybackQualityIcon(song, isLoading, Modifier.padding(end = 4.dp), tint = DesktopSecondary, size = 12.dp)
+                            Text(song.artist, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
-                    PlaybackQualityIcon(song, isLoading, Modifier.padding(end = 2.dp), tint = DesktopSecondary)
                     if (onToggleLike != null) {
                         Box(
                             Modifier

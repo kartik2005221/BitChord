@@ -290,7 +290,7 @@
     <string name="discord_token_description">Вставьте токен своего аккаунта Discord. Он хранится в зашифрованном виде на этом устройстве и отправляется только в Discord.</string>
     <string name="discord_token_rejected">Discord отклонил этот токен.</string>
     <string name="discord_token_warning">Discord не предоставляет API, позволяющий приложениям задавать ваш статус, поэтому эта функция выполняет вход в ваш аккаунт и использует протокол Discord. Ваш токен хранится в зашифрованном виде на этом устройстве и отправляется только в Discord. Он даёт доступ ко всему вашему аккаунту, а автоматизация аккаунта нарушает условия использования Discord. Используйте эту функцию, только если принимаете этот риск.</string>
-    <string name="dislike">Не нравится</string>
+    <string name="dislike">Палец вниз</string>
     <string name="done">Готово</string>
     <string name="download">Загрузить</string>
     <string name="download_quality_dialog_subtitle">Для файлов, хранящихся на этом устройстве</string>
@@ -496,7 +496,7 @@
     <string name="tap_to_sign_in_discord">Нажмите, чтобы войти через Discord</string>
     <string name="token">Токен</string>
     <string name="turn_off_timer">Выключить таймер</string>
-    <string name="undo_dislike">Отменить «не нравится»</string>
+    <string name="undo_dislike">Отменить оценку «палец вниз»</string>
     <string name="up_next">Далее</string>
     <string name="verb_competing">Участвует в</string>
     <string name="verb_listening">Слушает</string>

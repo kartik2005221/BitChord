@@ -306,7 +306,7 @@
     <string name="discord_token_description">Discord hesap belirtecinizi yapıştırın. Bu cihazda şifreli kalır ve yalnızca Discord\'a gönderilir.</string>
     <string name="discord_token_rejected">Discord bu belirteci reddetti.</string>
     <string name="discord_token_warning">Discord, uygulamaların varlığınızı ayarlamasına izin veren bir API sunmuyor, bu yüzden bu özellik hesabınız olarak giriş yapar ve Discord\'un protokolünü kullanır. Belirteciniz bu cihazda şifreli kalır ve yalnızca Discord\'a gönderilir. Tüm hesabınıza erişim sağlar ve hesap otomasyonu Discord\'un hizmet şartlarını ihlal eder. Yalnızca bu riski kabul ediyorsanız kullanın.</string>
-    <string name="dislike">Beğenme</string>
+    <string name="dislike">Başparmak aşağı</string>
     <string name="done">Tamam</string>
     <string name="download">İndir</string>
     <string name="download_quality_dialog_subtitle">Bu cihazda tutulan dosyalar için</string>
@@ -508,7 +508,7 @@
     <string name="tap_to_sign_in_discord">Discord ile giriş yapmak için dokun</string>
     <string name="token">Belirteç</string>
     <string name="turn_off_timer">Zamanlayıcıyı kapat</string>
-    <string name="undo_dislike">Beğenmemeyi geri al</string>
+    <string name="undo_dislike">Başparmak aşağı oyunu geri al</string>
     <string name="up_next">Sıradaki</string>
     <string name="verb_competing">Yarışıyor:</string>
     <string name="verb_listening">Dinliyor:</string>

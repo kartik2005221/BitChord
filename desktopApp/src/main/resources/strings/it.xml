@@ -323,7 +323,7 @@
     <string name="discord_token_description">Incolla il token del tuo account Discord. Resta cifrato su questo dispositivo e viene inviato solo a Discord.</string>
     <string name="discord_token_rejected">Discord ha rifiutato quel token.</string>
     <string name="discord_token_warning">Discord non offre un\'API che permetta alle app di impostare la tua presenza, quindi questa funzione accede come il tuo account e usa il protocollo di Discord. Il tuo token resta cifrato su questo dispositivo e viene inviato solo a Discord. Concede accesso all\'intero account e l\'automazione dell\'account viola i termini di Discord. Usala solo se accetti questo rischio.</string>
-    <string name="dislike">Non mi piace</string>
+    <string name="dislike">Pollice verso</string>
     <string name="done">Fatto</string>
     <string name="download">Download</string>
     <string name="download_quality_dialog_subtitle">Per i file conservati su questo dispositivo</string>
@@ -525,7 +525,7 @@
     <string name="tap_to_sign_in_discord">Tocca per accedere con Discord</string>
     <string name="token">Token</string>
     <string name="turn_off_timer">Disattiva timer</string>
-    <string name="undo_dislike">Annulla non mi piace</string>
+    <string name="undo_dislike">Annulla pollice verso</string>
     <string name="up_next">In arrivo</string>
     <string name="verb_competing">In gara in</string>
     <string name="verb_listening">In ascolto di</string>
