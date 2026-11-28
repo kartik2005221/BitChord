@@ -36,10 +36,10 @@ jobs:
       - name: Validate short numeric test label
         run: ./gradlew :desktopApp:help "-Pbitchord.version=1"
 
-      - name: Set up X11 for native PiP validation
+      - name: Set up X11 for native window tests
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y xvfb python3-pil
 
       # Regression coverage for the packaging failure: the app may use a descriptive
       # test label, but native installer metadata must remain a valid numeric version.
@@ -50,6 +50,22 @@ jobs:
 
       - name: Build the distributable
         run: ./gradlew :desktopApp:createDistributable "-Pbitchord.version=test-visua"
+
+      - name: Linux packaged collection menus
+        run: |
+          xvfb-run -a -s '-screen 0 1280x800x24' /usr/bin/python3 desktopApp/packaging/tests/linux-menu-smoke.py \
+            desktopApp/build/compose/binaries/main/app/BitChord/bin/BitChord --output "$RUNNER_TEMP/bit-chord-menu-smoke"
+
+      - name: Upload collection menu evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-menu-linux-evidence
+          path: |
+            ${{ runner.temp }}/bit-chord-menu-smoke/*.png
+            ${{ runner.temp }}/bit-chord-menu-smoke/results.json
+            ${{ runner.temp }}/bit-chord-menu-smoke/app.log
+          if-no-files-found: ignore
 
       - name: Linux packaged AutoMix JNI and model regression
         run: bash desktopApp/packaging/tests/linux-automix-check.sh

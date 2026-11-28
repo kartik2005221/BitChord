@@ -202,6 +202,7 @@ data class DesktopCollection(
     val initialPageComplete: Boolean = true,
     /** The active YouTube session when the live owner evidence was read. */
     val ownerSessionGeneration: Long? = null,
+    val savedDownloadSnapshot: Boolean = false,
 ) {
     /** The raw id an edit is addressed to; the browse id carries a `VL` prefix. */
     val playlistId: String get() = browseId.removePrefix("VL")

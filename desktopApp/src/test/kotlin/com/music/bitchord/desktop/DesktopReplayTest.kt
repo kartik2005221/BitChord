@@ -155,7 +155,10 @@ class DesktopReplayTest {
             DesktopReplayPeriod.ALL_TIME,
             today,
         )
-        assertTrue(bare.heroCards().none { it.label == "Top album" } || bare.albums.isNotEmpty())
+        assertTrue(bare.heroCards().none { it.label == "Top album" })
+        assertTrue(bare.albumRows(5).isEmpty())
+        assertEquals(0, bare.distinctAlbums)
+        assertEquals(1, bare.totalPlays)
     }
 
     @Test
@@ -207,21 +210,45 @@ class DesktopReplayTest {
     }
 
     @Test
-    fun `tracks with no album share one row rather than vanishing`() {
+    fun `albumless tracks count toward listening but cannot lead the album chart`() {
+        val first = song("c", "Three", "Artist C", "Shared Album").copy(albumId = "id-c")
+        val second = song("d", "Four", "Artist D", "Shared Album").copy(albumId = "id-d")
+        val history = listOf(bucket(
+            "2026-09",
+            Triple(song("a", "One", "Artist A"), 80_000L, 80),
+            Triple(song("b", "Two", "Artist B", album = "  "), 61_000L, 61),
+            Triple(first, 4_000L, 1),
+            Triple(second, 3_000L, 1),
+        ))
+        for (period in listOf(DesktopReplayPeriod.THIS_YEAR, DesktopReplayPeriod.ALL_TIME)) {
+            val summary = DesktopListeningStats.summarise(history, period, today)
+            assertEquals(143, summary.totalPlays)
+            assertEquals(148_000L, summary.totalMs)
+            assertEquals(4, summary.distinctSongs)
+            assertEquals(4, summary.distinctArtists)
+            assertEquals(2, summary.distinctAlbums)
+            assertEquals(listOf("id-c", "id-d"), summary.albums.map { it.browseId })
+            assertEquals("Shared Album", summary.heroCards().single { it.label == "Top album" }.value)
+        }
+    }
+
+    @Test
+    fun `an album id uses a known name from the same release`() {
         val summary = DesktopListeningStats.summarise(
-            listOf(
-                bucket(
-                    "2026-09",
-                    Triple(song("a", "One", "A"), 1_000L, 1),
-                    Triple(song("b", "Two", "B"), 2_000L, 1),
-                    Triple(song("c", "Three", "C", album = "Real Album"), 4_000L, 1),
-                ),
-            ),
+            listOf(bucket(
+                "2026-09",
+                Triple(song("a", "Anonymous track", "Artist").copy(albumId = "id-x"), 8_000L, 2),
+                Triple(song("b", "Named track", "Artist", "Release").copy(albumId = "id-x"), 2_000L, 1),
+                Triple(song("c", "Other track", "Artist").copy(albumId = "id-y"), 15_000L, 3),
+            )),
             DesktopReplayPeriod.ALL_TIME,
             today,
         )
-        assertEquals(2, summary.albums.size)
-        assertTrue(summary.albums.any { it.title == "Unknown Album" && it.ms == 3_000L })
+        val album = summary.albums.single()
+        assertEquals("Release", album.title)
+        assertEquals(10_000L, album.ms)
+        assertEquals(3, album.plays)
+        assertEquals(1, summary.distinctAlbums)
     }
 
     @Test

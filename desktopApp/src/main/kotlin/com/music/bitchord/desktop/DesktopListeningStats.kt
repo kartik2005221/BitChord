@@ -229,6 +229,7 @@ object DesktopListeningStats {
                 .forEach { facts.noticed(it.title) }
         }
 
+        val rankedAlbums = rankAlbums(entries)
         return DesktopReplaySummary(
             period = period,
             label = labelFor(period, today),
@@ -236,14 +237,14 @@ object DesktopListeningStats {
             totalPlays = entries.sumOf(DesktopReplayEntry::plays),
             songs = entries.sortedByDescending(DesktopReplayEntry::listenedMs),
             artists = rankedArtists,
-            albums = rankAlbums(entries),
+            albums = rankedAlbums,
             genres = rankedGenres,
             hourOfDay = hours.toList(),
             busiestDay = busiest?.key,
             busiestDayMs = busiest?.value ?: 0L,
             distinctSongs = entries.size,
             distinctArtists = entries.map { primaryArtist(it.song.artist.ifBlank { "Unknown Artist" }) }.distinct().size,
-            distinctAlbums = entries.filter { !it.song.albumName.isNullOrBlank() }.map { albumKey(it.song) }.distinct().size,
+            distinctAlbums = rankedAlbums.size,
             since = buckets.map(Bucket::month).filter { it != LEGACY_MONTH }.minOrNull(),
         )
     }
@@ -253,19 +254,25 @@ object DesktopListeningStats {
         credit.split(",", "&", " feat.", " ft.", " x ", " × ")
             .firstOrNull()?.trim()?.takeIf(String::isNotBlank) ?: credit.trim()
 
-    internal fun albumKey(song: Song): String = if (song.albumName.isNullOrBlank() && song.albumId.isNullOrBlank()) "[unknown-album]" else song.albumId?.takeIf(String::isNotBlank)
-        ?: "${song.albumName.orEmpty().trim().lowercase(Locale.ROOT)}\u0000${song.artist.trim().lowercase(Locale.ROOT)}"
+    internal fun albumKey(song: Song): String? =
+        song.albumId?.takeIf(String::isNotBlank) ?: song.albumName?.trim()?.takeIf(String::isNotEmpty)?.let { name ->
+            "${name.lowercase(Locale.ROOT)}\u0000${song.artist.trim().lowercase(Locale.ROOT)}"
+        }
 
     private fun rankAlbums(entries: List<DesktopReplayEntry>): List<DesktopRankedEntry> =
-        entries.groupBy { albumKey(it.song) }.map { (key, plays) ->
-            val lead = plays.maxByOrNull(DesktopReplayEntry::listenedMs)!!.song
-            DesktopRankedEntry(
-                key = key,
-                title = lead.albumName?.takeIf(String::isNotBlank) ?: "Unknown Album",
-                subtitle = lead.artist, artworkUrl = lead.thumbnailUrl, browseId = lead.albumId,
-                ms = plays.sumOf(DesktopReplayEntry::listenedMs), plays = plays.sumOf(DesktopReplayEntry::plays),
-            )
-        }.sortedByDescending(DesktopRankedEntry::ms)
+        entries.mapNotNull { entry -> albumKey(entry.song)?.let { it to entry } }
+            .groupBy({ it.first }, { it.second })
+            .mapNotNull { (key, plays) ->
+                val lead = plays.asSequence()
+                    .filter { !it.song.albumName.isNullOrBlank() }
+                    .maxByOrNull(DesktopReplayEntry::listenedMs)?.song ?: return@mapNotNull null
+                DesktopRankedEntry(
+                    key = key,
+                    title = requireNotNull(lead.albumName).trim(),
+                    subtitle = lead.artist, artworkUrl = lead.thumbnailUrl, browseId = lead.albumId,
+                    ms = plays.sumOf(DesktopReplayEntry::listenedMs), plays = plays.sumOf(DesktopReplayEntry::plays),
+                )
+            }.sortedByDescending(DesktopRankedEntry::ms)
 
     private fun rank(
         entries: List<DesktopReplayEntry>,

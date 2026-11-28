@@ -73,10 +73,30 @@ class DesktopCollectionOrderUiTest {
         compose.runOnIdle { assertEquals(listOf<Pair<Int, String?>>(2 to "second"), removed) }
     }
 
+    @Test fun `playlist menu reports only current download membership`() {
+        val catalog = (1..311).map { Song("track-$it", "Track $it", "Artist", null) }
+        val record = DesktopPlaylistDownload(
+            "spotify:playlist:fixture", "daylist", "", null, true, catalog, 1L, 2L,
+        )
+        val live = DesktopCollection(record.id, record.title, "", null, BrowseType.PLAYLIST, catalog.take(50))
+        showCollection(
+            live,
+            playlistDownload = record,
+            downloadedIds = catalog.map(Song::videoId).toSet() - setOf("track-49", "track-50"),
+            activeIds = setOf("track-49", "track-50", "track-311"),
+        )
+        compose.onNodeWithContentDescription("More", substring = false).performClick()
+        compose.onNodeWithText("48 of 50 downloaded · 2 in progress").assertExists()
+        compose.onNodeWithText("311", substring = true).assertDoesNotExist()
+    }
+
     private fun showCollection(
         collection: DesktopCollection,
         onPlay: (List<Int>, Int) -> Unit = { _, _ -> },
         onRemove: ((Int, Song) -> Unit)? = null,
+        playlistDownload: DesktopPlaylistDownload? = null,
+        downloadedIds: Set<String> = emptySet(),
+        activeIds: Set<String> = emptySet(),
     ) {
         compose.setContent {
             val sort = remember { mutableStateOf(DesktopCollectionSort.DEFAULT) }
@@ -110,9 +130,9 @@ class DesktopCollectionOrderUiTest {
                     onToggleLike = {},
                     onDownload = {},
                     onAddToPlaylist = {},
-                    downloadedIds = emptySet(),
-                    downloadInProgress = emptySet(),
-                    playlistDownload = null,
+                    downloadedIds = downloadedIds,
+                    downloadInProgress = activeIds,
+                    playlistDownload = playlistDownload,
                     contentPadding = PaddingValues(),
                 )
             }

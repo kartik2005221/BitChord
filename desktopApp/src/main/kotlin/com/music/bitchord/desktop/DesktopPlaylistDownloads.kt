@@ -3,6 +3,8 @@ package com.music.bitchord.desktop
 import com.music.bitchord.data.model.BrowseItem
 import com.music.bitchord.data.model.BrowseType
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.model.SPOTIFY_MISSING_PREFIX
+import com.music.bitchord.data.model.SPOTIFY_PENDING_PREFIX
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -252,6 +254,7 @@ internal fun DesktopPlaylistDownload.toCollection(): DesktopCollection = Desktop
     thumbnailUrl = thumbnailUrl,
     type = if (playlist) BrowseType.PLAYLIST else BrowseType.ALBUM,
     songs = songs,
+    savedDownloadSnapshot = true,
 )
 
 /** The record as a loading placeholder for [DesktopApp.openCollection]. */
@@ -280,10 +283,10 @@ internal fun offlineProgress(
     downloadedIds: Set<String>,
     activeIds: Set<String>,
 ): DesktopPlaylistDownloadProgress {
-    val done = snapshot.count { song ->
+    fun isDownloaded(song: Song): Boolean =
         song.localUri != null || song.localPath != null || song.videoId in downloadedIds
-    }
-    val active = snapshot.count { it.videoId in activeIds && it.localUri == null && it.localPath == null }
+    val done = snapshot.count(::isDownloaded)
+    val active = snapshot.count { it.videoId in activeIds && !isDownloaded(it) }
     return DesktopPlaylistDownloadProgress(
         total = snapshot.size,
         done = done,
@@ -298,6 +301,40 @@ internal fun offlineProgress(
  */
 internal val DesktopPlaylistDownloadProgress.fraction: Float
     get() = if (total <= 0) 0f else (done + active).coerceIn(0, total).toFloat() / total
+
+internal data class DesktopCollectionDownloadStatus(
+    val progress: DesktopPlaylistDownloadProgress,
+    val listingComplete: Boolean,
+    val savedSnapshot: Boolean,
+    val unavailable: Int,
+    val matching: Int,
+) {
+    val label: String get() = when {
+        progress.downloading -> "Downloading"
+        listingComplete && progress.complete -> "Downloaded"
+        else -> "Download remaining"
+    }
+
+    val description: String get() = buildList {
+        if (savedSnapshot) add("Saved offline snapshot")
+        if (listingComplete) add("${progress.done} of ${progress.total} downloaded")
+        else add("${progress.done} downloaded · listing incomplete")
+        if (progress.active > 0) add("${progress.active} in progress")
+        if (unavailable > 0) add("$unavailable unavailable")
+        if (matching > 0) add("$matching matching")
+    }.joinToString(" · ")
+}
+
+internal fun DesktopCollection.downloadStatus(
+    downloadedIds: Set<String>,
+    activeIds: Set<String>,
+): DesktopCollectionDownloadStatus = DesktopCollectionDownloadStatus(
+    progress = offlineProgress(songs, downloadedIds, activeIds),
+    listingComplete = initialPageComplete && continuation == null,
+    savedSnapshot = savedDownloadSnapshot,
+    unavailable = songs.count { it.videoId.startsWith(SPOTIFY_MISSING_PREFIX) },
+    matching = songs.count { it.videoId.startsWith(SPOTIFY_PENDING_PREFIX) },
+)
 
 internal fun DesktopPlaylistDownload.toPreferenceLine(): String = listOf(
     encode(id),

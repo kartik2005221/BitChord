@@ -95,6 +95,27 @@ class DesktopPlaylistPinsTest {
         assertFalse(restored.isVisibleIn(personal, null))
     }
     @Test
+    fun connectedSpotifyCanPinBeforeProfileVerificationAndPersistAcrossRestart() {
+        val identity = DesktopSpotifyPinIdentity(persistence)
+        val scope = assertNotNull(identity.connectionScope("fixture-connection"))
+        val pin = DesktopPlaylistPin("spotify:playlist:daily", "daylist", null, scope)
+        DesktopPlaylistPins(persistence).toggle(pin)
+
+        val reopened = DesktopPlaylistPins(persistence)
+        val current = DesktopSpotifyPinIdentity(persistence)
+        assertTrue(reopened.pins.value.single().isVisibleIn(personal, current.connectionScope("fixture-connection")))
+        assertFalse(pin.isVisibleIn(personal, current.connectionScope("different-connection")))
+        assertFalse(pin.isVisibleIn(personal, current.connectionScope("")))
+
+        val binding = assertNotNull(current.rememberVerified("fixture-connection", "account-a"))
+        reopened.migrateSpotifyScope(binding)
+        assertNotNull(current.rememberVerified("rotated-connection", "account-a"))
+        assertTrue(reopened.pins.value.single().isVisibleIn(personal, current.connectionScope("rotated-connection")))
+        assertNull(current.rememberVerified("rotated-connection", "different-account"))
+        assertNull(current.connectionScope("rotated-connection"))
+    }
+
+    @Test
     fun migratesOnlyPinsProvedByTheCurrentCookieAndRestoresThemAfterRotation() {
         val identity = DesktopSpotifyPinIdentity(persistence)
         val pins = DesktopPlaylistPins(persistence)

@@ -26,11 +26,11 @@ class DesktopUpstream1109Test {
         assertEquals(DesktopListeningStats.albumKey(first), DesktopListeningStats.albumKey(second))
         assertNotEquals(DesktopListeningStats.albumKey(first), DesktopListeningStats.albumKey(second.copy(albumId = "MPRE456")))
     }
-    @Test fun localAlbumsKeepTheirArtistAndUnknownAlbumsStillShareOneRow() {
+    @Test fun localAlbumsKeepTheirArtistAndAlbumlessTracksHaveNoKey() {
         assertNotEquals(DesktopListeningStats.albumKey(song("a", "Greatest Hits", "A")),
             DesktopListeningStats.albumKey(song("b", "Greatest Hits", "B")))
-        assertEquals(DesktopListeningStats.albumKey(song("a", null, "A")),
-            DesktopListeningStats.albumKey(song("b", null, "B")))
+        assertNull(DesktopListeningStats.albumKey(song("a", null, "A")))
+        assertNull(DesktopListeningStats.albumKey(song("b", " ", "B")))
     }
     @Test fun videoFollowsTheAudioClockAndSpeedAndStopsForBuffering() {
         val state = DesktopPlaybackState(positionMs = 1000, positionSampledAtNanos = 1_000_000_000, isPlaying = true)
