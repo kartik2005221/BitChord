@@ -4275,13 +4275,13 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     var sidebarActionsFocused by remember { mutableStateOf(false) }
     val navigationBlocked = shortcutBlockedByModal || overlays.shortcuts || overlays.quickSearch ||
-        overlays.nowPlaying || menuPortal.entry.value != null
+        overlays.nowPlaying
     val settingsBackParent = settingsParentForBack(overlays.settingsPage, settingsParents)
     val canGoBack = !navigationBlocked && (settingsBackParent != null ||
         desktopBackIndex(navHistory, here().key) { it.key } >= 0)
 
     fun goBackFromSidebar(): Boolean {
-        if (!canGoBack) return false
+        if (!canGoBack || menuPortal.entry.value != null) return false
         sidebarDrawerOpen = false
         goBack()
         return true
@@ -4752,7 +4752,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                         onBack = { goBackFromSidebar() },
                         onRefresh = {
                             val refresh = pageRefresh
-                            if (refresh != null && !refresh.loading) {
+                            if (refresh != null && !refresh.loading && menuPortal.entry.value == null) {
                                 dismissDrawer()
                                 refresh.run()
                             }
