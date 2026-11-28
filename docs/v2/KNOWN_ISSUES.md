@@ -26,6 +26,13 @@ The Gate A1 AppImage at `048054ae` briefly showed the playlist, album, Spotify p
 
 The same four native X11 interactions passed on the rebuilt AppImage. Menus stayed painted for at least two seconds with the cover visible and closed with Escape and an outside click. This run used disposable offline fixtures. Fedora GNOME/Wayland and signed-in cases with an active lyrics panel still need a smoke test.
 
+## Gate A1 retest limits
+
+- **Reordering.** The local 501-track fixture retained both occurrences of a repeated recording and its saved order after restarting the AppImage. Remote reorder still needs a disposable signed-in YouTube Music playlist, including an external edit during the save flow.
+- **Spotify pins.** With a saved connection but no verified profile, pins are scoped to that connection. Reconnect with the same verified Spotify account to recover migrated pins. A replaced connection without a verified account association can leave its earlier pins hidden.
+- **Quick-add Undo.** A remote Undo needs the entry ID minted by YouTube Music. When the service omits that ID, the toast reports that Undo is unavailable for that addition. Lookups and retry guards use the complete playlist.
+- **Platform.** The packaged retest uses X11 fixtures. Fedora GNOME/Wayland, live Spotify identity and daylist rotation, and signed-in YouTube writes still need direct verification.
+
 ## Port-specific risks
 
 | Area | Current evidence | Verification needed |
