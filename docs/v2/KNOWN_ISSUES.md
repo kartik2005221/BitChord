@@ -20,9 +20,11 @@ The ranking already distinguished the releases. The list used the displayed titl
 
 PR #13 scoped pins to a session cookie fingerprint, so rotating credentials could hide a playlist. The reconnect change verifies the Spotify account ID before associating pins with that account. A known cookie may be migrated when the same account is verified. If the old login was never associated with an account, its records are retained and can remain hidden. Test same-account rotation, restart while offline, and switching to a different account with separate Liked Songs. The fixture tests passed on Linux. Live verification with two Spotify accounts is outstanding. [Reconnect PR](https://github.com/kartik2005221/BitChord/pull/19)
 
-## Playlist menu on a virtual display
+## Collection menus on Linux
 
-The playlist overflow menu did not stay visibly open on the isolated Linux display with either the baseline or PR #18 package. Row removal and confirmation worked in the package. Compose tests exercised the editing controls. Check the menu on Fedora GNOME/Wayland with a disposable playlist before relying on a real account edit.
+The Gate A1 AppImage at `048054ae` briefly showed the playlist, album, Spotify playlist and song-row menus with the cover blank, then closed each menu. In the instrumented build the playlist header's menu owner disposed about 63 ms after registration without an outside click or a dismiss callback. The sidebar navigation change in [`e37e42bb`](https://github.com/kartik2005221/BitChord/commit/e37e42bb) made the app root observe menu state. The fix moves that observation into the two sidebar controls.
+
+The same four native X11 interactions passed on the rebuilt AppImage. Menus stayed painted for at least two seconds with the cover visible and closed with Escape and an outside click. This run used disposable offline fixtures. Fedora GNOME/Wayland and signed-in cases with an active lyrics panel still need a smoke test.
 
 ## Port-specific risks
 
