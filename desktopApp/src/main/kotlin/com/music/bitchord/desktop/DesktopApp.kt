@@ -862,7 +862,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     val playlistPinScope = DesktopPlaylistPinScope(activeAccountId, activeProfileId)
     val spotifyPinIdentity = remember { DesktopSpotifyPinIdentity(persistence) }
     var spotifyPinScope by remember(spotifySession) {
-        mutableStateOf(spotifyPinIdentity.cached(spotifyCanvasCookie))
+        mutableStateOf(spotifyPinIdentity.connectionScope(spotifyCanvasCookie))
     }
     LaunchedEffect(spotifySession, spotifyReloads) {
         val requestedSession = spotifySession
@@ -875,7 +875,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 DesktopPlaylistDownloads.migrateSpotifyOwner(binding)
                 playlistPins.migrateSpotifyScope(binding)
             }
-            spotifyPinScope = spotifyPinIdentity.cached(requestedSession.cookie)
+            spotifyPinScope = spotifyPinIdentity.connectionScope(requestedSession.cookie)
         }
     }
     val playlistDownloadRecords = remember(allPlaylistDownloadRecords, spotifyPinScope) {
@@ -960,7 +960,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     LaunchedEffect(playlistPinScope, spotifyPinScope, spotifySession) {
         val current = openedCollection ?: return@LaunchedEffect
         if (current.browseId.startsWith(SPOTIFY_PAGE_PREFIX) && openedSpotifySession === spotifySession &&
-            openedCollectionPinScope == null && spotifyPinScope != null
+            spotifyPinScope != null && (openedCollectionPinScope == null ||
+                openedCollectionPinScope == DesktopPlaylistPinScope.spotify(spotifySession.cookie))
         ) {
             openedCollectionPinScope = spotifyPinScope
             return@LaunchedEffect
@@ -1591,6 +1592,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         if (isSpotifyLikedPlaylist(listing.browseId) &&
             (owner == null || owner != spotifyPinScope || openedSpotifySession !== DesktopSpotifyToken.session())
         ) return
+        if (isSpotifyLikedPlaylist(listing.browseId) &&
+            spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()) != owner
+        ) return
         val record = DesktopPlaylistDownloads.remember(
             listing.copy(songs = listing.songs.filter { it.unresolvedSpotifyTrack() == null }),
             downloads,
@@ -1622,7 +1626,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         // freezing it into a download record would only let it go stale.
         if (playlists.any { it.id == collection.browseId }) return
         val owner = openedCollectionPinScope
-        if (isSpotifyLikedPlaylist(collection.browseId) && owner == null) {
+        if (isSpotifyLikedPlaylist(collection.browseId) && spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()) == null) {
             DesktopPlayerHost.showMessage("Verify the Spotify account before downloading Liked Songs")
             return
         }
@@ -1646,7 +1650,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     /** The Update action on a stale record: fetch the live listing fresh, then merge. */
     fun updatePlaylistDownload(record: DesktopPlaylistDownload) {
-        if (!record.isVisibleToSpotify(spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()))) return
+        if (!record.isVisibleToSpotify(spotifyPinIdentity.connectionScope(DesktopSpotifyToken.cookie()))) return
         if (record.id.startsWith("spotify:playlist:")) {
             // Spotify listings are resolved with the page open; opening it refreshes instead.
             openCollection(record.id, record.toBrowseItem())
@@ -1697,7 +1701,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     /** Throws the record away, then deletes the files no other record claims. */
     fun removePlaylistDownload(record: DesktopPlaylistDownload) {
-        if (!record.isVisibleToSpotify(spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()))) return
+        if (!record.isVisibleToSpotify(spotifyPinIdentity.connectionScope(DesktopSpotifyToken.cookie()))) return
         val released = DesktopPlaylistDownloads.forget(record.id, record.pinOwner)
         stalePlaylistDownloads = stalePlaylistDownloads - record.id
         scope.launch {
@@ -5824,7 +5828,30 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             ) -> DesktopCollectionPage(
                             collection = openedCollection!!,
                             pinned = visiblePlaylistPins.any { it.identity == openedPlaylistPin?.identity },
-                            onTogglePin = openedPlaylistPin?.let { pin -> { playlistPins.toggle(pin) } },
+                            onTogglePin = openedPlaylistPin?.let { pin ->
+                                {
+                                    val session = openedSpotifySession
+                                    if (pin.browseId.startsWith(SPOTIFY_PAGE_PREFIX) && session != null) {
+                                        DesktopSpotifyToken.withCurrent(session) {
+                                            if (pin.scope == spotifyPinIdentity.connectionScope(session.cookie)) {
+                                                playlistPins.toggle(pin)
+                                            }
+                                        }
+                                    } else {
+                                        playlistPins.toggle(pin)
+                                    }
+                                    Unit
+                                }
+                            },
+                            pinDescription = openedCollection?.browseId?.takeIf { it.startsWith(SPOTIFY_PAGE_PREFIX) }?.let {
+                                when {
+                                    spotifyCanvasCookie.isBlank() -> "Connect Spotify to pin this playlist"
+                                    spotifyPinScope == null -> "Reconnect Spotify to verify this account"
+                                    spotifyPinScope == DesktopPlaylistPinScope.spotify(spotifySession.cookie) ->
+                                        "Available with this Spotify connection"
+                                    else -> null
+                                }
+                            },
                             loadingMore = collectionLoadingMore,
                             onLoadMore = ::loadMoreCollectionSongs,
                             sort = collectionSorts[openedCollection!!.browseId] ?: DesktopCollectionSort.DEFAULT,
@@ -6194,7 +6221,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 onDrillDownChange = ::changeLibraryDrillDown,
                                 onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["downloads", "Downloads"], PlaybackSourceType.BROWSE)) },
                                 onOpenPlaylist = { record ->
-                                    if (record.isVisibleToSpotify(spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()))) {
+                                    if (record.isVisibleToSpotify(spotifyPinIdentity.connectionScope(DesktopSpotifyToken.cookie()))) {
                                         openCollection(record.id, record.toBrowseItem())
                                     }
                                 },
@@ -10211,6 +10238,7 @@ internal fun DesktopCollectionPage(
     collection: DesktopCollection,
     pinned: Boolean,
     onTogglePin: (() -> Unit)?,
+    pinDescription: String? = null,
     loadingMore: Boolean,
     onLoadMore: () -> Unit,
     sort: DesktopCollectionSort,
@@ -10436,6 +10464,7 @@ internal fun DesktopCollectionPage(
                                             savedToLibrary = libraryState?.saved == true,
                                             onPin = onTogglePin,
                                             pinned = pinned,
+                                            pinDescription = pinDescription,
                                             onRename = onRename,
                                             onDelete = onDelete,
                                             onReorder = onReorder,

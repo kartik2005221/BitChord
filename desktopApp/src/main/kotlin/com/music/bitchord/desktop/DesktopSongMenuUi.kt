@@ -409,6 +409,7 @@ internal data class DesktopCollectionMenuActions(
     val savedToLibrary: Boolean = false,
     val onPin: (() -> Unit)? = null,
     val pinned: Boolean = false,
+    val pinDescription: String? = null,
     val onRename: (() -> Unit)? = null,
     val onDelete: (() -> Unit)? = null,
     val onReorder: (() -> Unit)? = null,
@@ -447,12 +448,16 @@ internal fun DesktopCollectionContextMenu(
                 label = if (actions.savedToLibrary) "Remove from library" else "Save to library",
             ) { onDismiss(); save() }
         }
-        actions.onPin?.let { pin ->
+        if (actions.onPin != null || actions.pinDescription != null) {
             DesktopMenuRow(
                 icon = Icons.Rounded.PushPin,
                 label = if (actions.pinned) "Unpin from sidebar" else "Pin to sidebar",
                 selected = actions.pinned,
-            ) { onDismiss(); pin() }
+                description = actions.pinDescription,
+                enabled = actions.onPin != null,
+            ) {
+                actions.onPin?.let { pin -> onDismiss(); pin() }
+            }
         }
         DesktopMenuDivider()
         actions.onDownloadAll?.let { download ->
