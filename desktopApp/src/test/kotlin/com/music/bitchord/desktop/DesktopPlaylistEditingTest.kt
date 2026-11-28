@@ -1,6 +1,13 @@
 package com.music.bitchord.desktop
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.moveBy
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,14 +32,66 @@ class DesktopPlaylistEditingTest {
         val listing = DesktopPlaylistOrder(listOf(first, second))
         var saved: List<String>? = null
         compose.setContent {
-            DesktopReorderPlaylistDialog("Long playlist", listing, false, null, { saved = it }, {})
+            DesktopPlaylistReorderPage("Long playlist", listing, false, null, { saved = it }, {})
         }
         compose.onNodeWithContentDescription("Move Second occurrence up").performClick()
-        compose.onNodeWithText("Save order").performClick()
+        compose.onNodeWithText("Done").performClick()
         assertEquals(listOf("set2", "set1"), saved)
         assertEquals(listOf("set1", "set2"), listing.validate(listOf(first, second), assertNotNull(saved)))
         assertFailsWith<IllegalStateException> { listing.validate(listOf(second, first), assertNotNull(saved)) }
         assertFailsWith<IllegalStateException> { listing.validate(listOf(first, second), listOf("set2", "other")) }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun longPlaylistReorderSupportsDragPositionJumpAndCancel() {
+        val entries = listOf(first, second) + (3..501).map { index ->
+            first.copy(title = "Track $index", setVideoId = "set$index")
+        }
+        val order = DesktopPlaylistOrder(entries)
+        val editing = mutableStateOf(true)
+        var saved: List<String>? = null
+        compose.setContent {
+            if (editing.value) {
+                DesktopPlaylistReorderPage("Long playlist", order, false, null, { saved = it }, { editing.value = false })
+            }
+        }
+        compose.onNodeWithContentDescription("Drag First occurrence", useUnmergedTree = true).performMouseInput {
+            moveTo(center)
+            press()
+            repeat(6) { moveBy(Offset(0f, 16f)) }
+            release()
+        }
+        compose.onNodeWithText("Done").assertIsEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        assertNull(saved)
+
+        compose.runOnIdle { editing.value = true }
+        compose.onNodeWithText("1. First occurrence · Artist").performClick()
+        compose.onNodeWithText("Position").performTextReplacement("501")
+        compose.onNodeWithText("Move", substring = false).performClick()
+        compose.onNodeWithText("Done").performClick()
+        assertEquals(entries.drop(1).map { requireNotNull(it.setVideoId) } + "set1", saved)
+    }
+
+    @Test
+    fun localReorderingPersistsOccurrencesAndRejectsAStaleListing() {
+        val prefs = Preferences.userRoot().node("bitchord-test-reorder-${System.nanoTime()}")
+        try {
+            val persistence = DesktopPersistence(prefs)
+            val pins = DesktopPlaylistPins(persistence)
+            val imported = DesktopPlaylist(title = "Imported", songs = listOf(first, second).map { it.copy(setVideoId = null) })
+            persistence.savePlaylists(listOf(imported))
+            val listing = persistence.playlists().single().toCollection()
+            val edit = DesktopPlaylistEdit(listing, 0, PlaylistEditAction.REORDER, null)
+            assertNull(persistLocalPlaylistEdit(persistence, pins, persistence.playlists(), edit, order = listOf("1", "1")))
+            assertNotNull(persistLocalPlaylistEdit(persistence, pins, persistence.playlists(), edit, order = listOf("1", "0")))
+            val restored = DesktopPersistence(prefs).playlists()
+            assertEquals(listing.songs.reversed(), restored.single().songs)
+            assertNull(persistLocalPlaylistEdit(persistence, pins, restored, edit, order = listOf("1", "0")))
+        } finally {
+            prefs.removeNode()
+        }
     }
 
     @Test

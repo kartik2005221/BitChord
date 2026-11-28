@@ -40,6 +40,14 @@ internal fun DesktopCollection.appendPage(token: String, rows: List<Song>, next:
 internal class DesktopPlaylistOrder(val entries: List<Song>) {
     private val original = entries.map { requireNotNull(it.setVideoId) }
 
+    companion object {
+        // Imported tracks have no server entry ID. The original position identifies
+        // an occurrence for this one editing session, including exact duplicates.
+        fun local(songs: List<Song>) = DesktopPlaylistOrder(
+            songs.mapIndexed { index, song -> song.copy(setVideoId = index.toString()) },
+        )
+    }
+
     fun validate(fresh: List<Song>, target: List<String>): List<String> {
         check(fresh.map { it.setVideoId } == original &&
             original.size == original.toSet().size &&
@@ -64,13 +72,19 @@ internal fun persistLocalPlaylistEdit(
     playlists: List<DesktopPlaylist>,
     edit: DesktopPlaylistEdit,
     title: String? = null,
+    order: List<String>? = null,
 ): List<DesktopPlaylist>? {
     val local = playlists.firstOrNull { it.id == edit.listing.browseId } ?: return null
     val updated = when (edit.action) {
         PlaylistEditAction.RENAME -> local.copy(title = title?.trim()?.takeIf(String::isNotBlank) ?: return null)
         PlaylistEditAction.DELETE -> null
         PlaylistEditAction.REMOVE -> local.withoutOccurrence(edit.listing, edit.index ?: return null) ?: return null
-        PlaylistEditAction.REORDER -> return null
+        PlaylistEditAction.REORDER -> {
+            if (edit.listing.songs != local.songs || order?.size != local.songs.size) return null
+            val positions = order.map { it.toIntOrNull() ?: return null }
+            if (positions.toSet().size != local.songs.size || positions.any { it !in local.songs.indices }) return null
+            local.copy(songs = positions.map(local.songs::get))
+        }
     }
     val next = playlists.mapNotNull { if (it.id == local.id) updated else it }
     persistence.savePlaylists(next)
