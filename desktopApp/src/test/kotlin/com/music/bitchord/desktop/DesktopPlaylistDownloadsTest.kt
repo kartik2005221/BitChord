@@ -1,6 +1,9 @@
 package com.music.bitchord.desktop
 
+import com.music.bitchord.data.model.BrowseType
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.model.SPOTIFY_PENDING_PREFIX
+import com.music.bitchord.data.model.SPOTIFY_MISSING_PREFIX
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -45,6 +48,24 @@ class DesktopPlaylistDownloadsTest {
         createdAt = 100L,
         updatedAt = 200L,
     )
+
+    @Test
+    fun rotatedPlaylistReportsCurrentMembershipAndSavedSnapshotSeparately() {
+        val catalog = (1..311).map { song("song-$it") }
+        val record = record("spotify:playlist:fixture", catalog)
+        val listed = catalog.take(48) + song(SPOTIFY_PENDING_PREFIX + "49") + song(SPOTIFY_MISSING_PREFIX + "50")
+        val live = DesktopCollection(record.id, "daylist", "Spotify", null, BrowseType.PLAYLIST, listed)
+        val downloaded = catalog.map(Song::videoId).toSet() - "song-48"
+        val active = setOf("song-47", "song-48", "song-311")
+        val current = live.downloadStatus(downloaded, active)
+        assertEquals("Downloading", current.label)
+        assertEquals("47 of 50 downloaded · 1 in progress · 1 unavailable · 1 matching", current.description)
+        assertEquals("47 downloaded · listing incomplete · 1 in progress · 1 unavailable · 1 matching",
+            live.copy(initialPageComplete = false).downloadStatus(downloaded, active).description)
+        assertEquals("Saved offline snapshot · 310 of 311 downloaded · 1 in progress",
+            record.toCollection().downloadStatus(downloaded, active).description)
+        assertEquals("Downloaded", live.copy(songs = catalog.take(48)).downloadStatus(downloaded + "song-48", active).label)
+    }
 
     @Test
     fun `the fraction a tile's bar reads is the share of the whole the download has reached`() {
