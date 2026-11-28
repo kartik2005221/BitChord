@@ -20,6 +20,7 @@ HEADER_MORE = (847, 239)
 HEADER_MENU_PROBE = (870, 263, 1010, 344)
 APP_BACK = (62, 91)
 DOWNLOADS = (120, 312)
+LOCAL_PIN = (130, 452)
 
 
 class NativeInput:
@@ -183,30 +184,32 @@ def main():
                 return False
             wait_for(open_downloads, 15, "Downloads did not open")
             wait_for(fixture_artwork_loaded_in_downloads, 15, "The three fixture collections were not shown in Downloads")
-            for name, y, menus in (
-                ("youtube", 348, (("header", HEADER_MORE, HEADER_MENU_PROBE), ("song-row", None, None))),
-                ("album", 205, (("header", HEADER_MORE, HEADER_MENU_PROBE),)),
-                ("spotify", 277, (("header", HEADER_MORE, HEADER_MENU_PROBE),)),
-            ):
-                native.click((420, y))
+            for name, position in (("youtube", 348), ("album", 205), ("spotify", 277)):
+                native.click((420, position))
                 wait_for(cover_loaded, 15, f"The {name} detail page never loaded")
-                for suffix, button, probe in menus:
-                    label = f"{name}-{suffix}"
-                    try:
-                        if button is None:
-                            painted = wait_for(first_row_menu_anchor, 10, "First song artwork did not render")
-                            button = first_row_menu_anchor(painted)
-                            y = button[1]
-                            probe = (953, y + 13, 1050, y + 97)
-                        results[label] = exercise_menu(native, label, button, probe, output)
-                    except AssertionError as failure:
-                        results[label] = {"passed": False, "error": str(failure)}
-                        screen().save(output / f"{label}-failed.png")
-                    native.escape()
-                    wait_for(cover_loaded, 5, f"The {name} artwork did not recover after closing the menu")
-                    time.sleep(0.25)
+                label = f"{name}-header"
+                try:
+                    results[label] = exercise_menu(native, label, HEADER_MORE, HEADER_MENU_PROBE, output)
+                except AssertionError as failure:
+                    results[label] = {"passed": False, "error": str(failure)}
+                    screen().save(output / f"{label}-failed.png")
+                native.escape()
+                wait_for(cover_loaded, 5, f"The {name} artwork did not recover after closing the menu")
                 native.click(APP_BACK)
                 wait_for(fixture_artwork_loaded_in_downloads, 15, "Back did not return to the three Downloads fixtures")
+
+            native.click(LOCAL_PIN)
+            wait_for(cover_loaded, 15, "The local playlist never loaded")
+            painted = wait_for(first_row_menu_anchor, 10, "First song artwork did not render")
+            button = first_row_menu_anchor(painted)
+            y = button[1]
+            try:
+                results["song-row"] = exercise_menu(
+                    native, "song-row", button, (953, y + 13, 1050, y + 97), output,
+                )
+            except AssertionError as failure:
+                results["song-row"] = {"passed": False, "error": str(failure)}
+                screen().save(output / "song-row-failed.png")
         except BaseException:
             screen().save(output / "harness-failed.png")
             raise

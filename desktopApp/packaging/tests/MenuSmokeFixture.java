@@ -33,6 +33,10 @@ class MenuSmokeFixture {
             record("VLPLMenuSmokeFixture", "Fixture YouTube Playlist", "YouTube Music", artwork, true, 1),
             record("MPREb_MenuSmokeFixture", "Fixture Album", "YouTube Music", artwork, false, 2),
             record("spotify:playlist:fixtureFakeID012345678", "Fixture Spotify Playlist", "Spotify", artwork, true, 3)));
+        // Exercise the row independently of responses from a live provider.
+        var localTrack = joinFields("|", "aaaaaaaaaaa", "First Fixture Track", "Fixture Artist", artwork, "3:00", "", "", "", "", "");
+        preferences.put("playlists.0", joinFields("#", "menu-smoke-local", "Fixture Local Playlist") + "#" + localTrack);
+        preferences.put("pinned_playlists.0", "menu-smoke-local");
         var launcher = Path.of(args[1]).toAbsolutePath().normalize();
         var attributes = Files.readAttributes(launcher, BasicFileAttributes.class);
         var identity = String.join("|", launcher.toString(), Long.toString(attributes.size()),
