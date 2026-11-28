@@ -470,6 +470,7 @@ internal fun DesktopCollectionContextMenu(
                 icon = icon,
                 label = if (update) "Update download" else status?.label ?: "Download all",
                 description = status?.description,
+                descriptionLines = 3,
                 enabled = download != null,
             ) {
                 download?.let { onDismiss(); it() }
@@ -702,6 +703,7 @@ private fun DesktopMenuRow(
     tint: Color? = null,
     value: String = "",
     description: String? = null,
+    descriptionLines: Int = 1,
     selected: Boolean = false,
     enabled: Boolean = true,
     busy: Boolean = false,
@@ -748,7 +750,7 @@ private fun DesktopMenuRow(
             )
             description?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = DesktopSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = DesktopSecondary, maxLines = descriptionLines, overflow = TextOverflow.Ellipsis)
             }
         }
         if (value.isNotBlank()) {
