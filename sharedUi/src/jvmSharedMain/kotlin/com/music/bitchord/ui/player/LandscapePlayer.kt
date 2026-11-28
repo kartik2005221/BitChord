@@ -436,6 +436,7 @@ internal fun LandscapeCredits(
     onOpenArtist: (browseId: String?, name: String) -> Unit,
     modifier: Modifier = Modifier,
     showActions: Boolean = true,
+    additionalActions: (@Composable () -> Unit)? = null,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Crossfade(
@@ -476,7 +477,10 @@ internal fun LandscapeCredits(
                 )
             }
         }
-        if (showActions) LandscapeTrackActions(song, signedIn, likeStatus, showRevertCue, onToggleLike, onOpenMenu)
+        if (showActions) {
+            additionalActions?.invoke()
+            LandscapeTrackActions(song, signedIn, likeStatus, showRevertCue, onToggleLike, onOpenMenu)
+        }
     }
 }
 

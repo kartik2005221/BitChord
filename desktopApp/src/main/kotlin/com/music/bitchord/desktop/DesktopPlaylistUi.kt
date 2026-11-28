@@ -528,6 +528,56 @@ internal fun DesktopReorderPlaylistDialog(
  * Material's surface.
  */
 @Composable
+internal fun DesktopQuickAddPicker(
+    options: List<DesktopQuickAddOption>,
+    selected: DesktopPlaylistDestination?,
+    error: String?,
+    onPick: (DesktopQuickAddOption) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(options, query) { options.filter { it.title.contains(query.trim(), ignoreCase = true) } }
+    DesktopDialogFrame(onDismiss = onDismiss) {
+        DialogHeading("Choose quick-add playlist", "The player will use this playlist until you change it.")
+        error?.let { DialogError(it) }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Find a playlist") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        )
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+            itemsIndexed(filtered, key = { _, option -> option.destination }) { _, option ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onPick(option) }.padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(option.title)
+                        Text(
+                            if (option.destination.account) "YouTube Music" else "On this device",
+                            color = DesktopSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (option.destination == selected) Text("Current", color = DesktopAccent)
+                }
+            }
+        }
+        if (filtered.isEmpty()) {
+            Text(
+                if (options.isEmpty()) "Create a local playlist or connect YouTube Music to choose a target."
+                else "No matching playlists.",
+                color = DesktopSecondary,
+                modifier = Modifier.padding(20.dp),
+            )
+        }
+        TextButton(onClick = onDismiss, modifier = Modifier.padding(horizontal = 14.dp)) { Text("Cancel") }
+    }
+}
+
+@Composable
 private fun DesktopDialogFrame(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
