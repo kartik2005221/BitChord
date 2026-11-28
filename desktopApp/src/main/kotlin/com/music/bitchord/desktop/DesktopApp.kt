@@ -3604,6 +3604,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var playlistEditBusy by remember { mutableStateOf(false) }
     var playlistEditError by remember { mutableStateOf<String?>(null) }
     var playlistOrder by remember { mutableStateOf<DesktopPlaylistOrder?>(null) }
+    var playlistOrderLoad by remember { mutableStateOf<Job?>(null) }
 
     fun canEditRemotePlaylist(collection: DesktopCollection?): Boolean =
         collection != null && collection.type == BrowseType.PLAYLIST &&
@@ -3622,6 +3623,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun closePlaylistEdit() {
         if (playlistEditBusy) return
+        playlistOrderLoad?.cancel()
+        playlistOrderLoad = null
         playlistEdit = null
         playlistEditError = null
         playlistOrder = null
@@ -3633,22 +3636,28 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun beginPlaylistEdit(listing: DesktopCollection, action: PlaylistEditAction, index: Int? = null) {
         if (playlistEditBusy || openedCollection !== listing || !canEditPlaylist(listing)) return
-        if (action == PlaylistEditAction.REORDER && !canEditRemotePlaylist(listing)) return
         val edit = DesktopPlaylistEdit(listing, collectionViewGeneration, action, index)
         playlistEdit = edit
         playlistEditError = null
         playlistOrder = null
         if (action != PlaylistEditAction.REORDER) return
-        playlistEditBusy = true
-        scope.launch {
+        if (playlists.any { it.id == listing.browseId }) {
+            playlistOrder = DesktopPlaylistOrder.local(listing.songs)
+            return
+        }
+        playlistOrderLoad = scope.launch {
             YtMusicRepository.playlistEntries(listing.browseId, requireOwner = true) {
-                check(isCurrentPlaylistEdit(edit) && canEditRemotePlaylist(listing)) { "The active playlist changed" }
+                check(playlistEdit === edit && isCurrentPlaylistEdit(edit) && canEditRemotePlaylist(listing)) {
+                    "The active playlist changed"
+                }
             }.fold(
-                onSuccess = { if (isCurrentPlaylistEdit(edit)) playlistOrder = DesktopPlaylistOrder(it) },
-                onFailure = { playlistEditError = it.message ?: "Could not load the full playlist" },
+                onSuccess = { if (playlistEdit === edit) playlistOrder = DesktopPlaylistOrder(it) },
+                onFailure = {
+                    if (it is CancellationException) throw it
+                    if (playlistEdit === edit) playlistEditError = it.message ?: "Could not load the full playlist"
+                },
             )
-            playlistEditBusy = false
-            if (!isCurrentPlaylistEdit(edit)) closePlaylistEdit()
+            if (playlistEdit === edit) playlistOrderLoad = null
         }
     }
 
@@ -3661,7 +3670,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         val name = title?.trim()
         if (action == PlaylistEditAction.RENAME && name.isNullOrBlank()) return
         if (local != null) {
-            playlists = persistLocalPlaylistEdit(persistence, playlistPins, playlists, edit, name)
+            playlists = persistLocalPlaylistEdit(persistence, playlistPins, playlists, edit, name, targetOrder)
                 ?: run {
                     playlistEditError = "The playlist changed. Reopen it and try again."
                     return
@@ -5295,14 +5304,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 onRemove = { savePlaylistEdit() },
                                 onDismiss = ::closePlaylistEdit,
                             )
-                            PlaylistEditAction.REORDER -> DesktopReorderPlaylistDialog(
-                                title = edit.listing.title,
-                                order = playlistOrder,
-                                busy = playlistEditBusy,
-                                error = playlistEditError,
-                                onSave = { savePlaylistEdit(targetOrder = it) },
-                                onDismiss = ::closePlaylistEdit,
-                            )
+                            PlaylistEditAction.REORDER -> Unit
                         }
                     }
                     if (overlays.downloadManager) {
@@ -5807,6 +5809,15 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onToggleSubscription = if (youtubeSignedIn) ::toggleSubscription else null,
                             contentPadding = contentPadding,
                         )
+                        playlistEdit?.action == PlaylistEditAction.REORDER -> DesktopPlaylistReorderPage(
+                            title = playlistEdit!!.listing.title,
+                            order = playlistOrder,
+                            busy = playlistEditBusy,
+                            error = playlistEditError,
+                            onSave = { savePlaylistEdit(targetOrder = it) },
+                            onDismiss = ::closePlaylistEdit,
+                            modifier = Modifier.padding(contentPadding),
+                        )
                         openedCollection?.loading == true -> DesktopPageScaffold(contentPadding) {
                             Box(Modifier.fillMaxSize()) {
                                 val error = collectionError
@@ -5833,7 +5844,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onRename = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
                                 { beginPlaylistEdit(listing, PlaylistEditAction.RENAME) }
                             },
-                            onReorder = openedCollection?.takeIf(::canEditRemotePlaylist)?.let { listing ->
+                            onReorder = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
                                 { beginPlaylistEdit(listing, PlaylistEditAction.REORDER) }
                             },
                             onShare = openedCollection
@@ -10443,6 +10454,9 @@ internal fun DesktopCollectionPage(
                                         onDismiss = { moreOpen = false },
                                     )
                                 }
+                            }
+                            onReorder?.let { reorder ->
+                                TextButton(onClick = reorder) { Text("Reorder") }
                             }
                         }
                     }
