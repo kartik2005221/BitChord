@@ -314,8 +314,11 @@ internal fun DesktopSongMenu(
                         if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                         "Like", liked, Modifier.weight(1f), onToggleLike)
                     DesktopMenuQuickAction(
-                        if (disliked) DesktopPhoneMenuIcons.BrokenHeartFilled else DesktopPhoneMenuIcons.BrokenHeart,
-                        "Dislike", disliked, Modifier.weight(1f), onToggleDislike)
+                        if (disliked) Icons.Rounded.ThumbDown else Icons.Rounded.ThumbDownOffAlt,
+                        if (disliked) DesktopStrings["undo_dislike", "Undo thumbs down"]
+                        else DesktopStrings["dislike", "Thumbs down"],
+                        disliked, Modifier.weight(1f), onToggleDislike,
+                    )
                 }
                 DesktopMenuQuickAction(
                     DesktopPhoneMenuIcons.Share, "Share", false, Modifier.weight(1f), onShare)
@@ -409,11 +412,12 @@ internal data class DesktopCollectionMenuActions(
     val savedToLibrary: Boolean = false,
     val onPin: (() -> Unit)? = null,
     val pinned: Boolean = false,
+    val pinDescription: String? = null,
     val onRename: (() -> Unit)? = null,
     val onDelete: (() -> Unit)? = null,
     val onReorder: (() -> Unit)? = null,
     /** Whole-collection download state, when the page has been asked for as a whole. */
-    val playlistProgress: DesktopPlaylistDownloadProgress? = null,
+    val playlistProgress: DesktopCollectionDownloadStatus? = null,
     /** The snapshot no longer matches the live listing — the download row becomes an update. */
     val playlistStale: Boolean = false,
     /** Throws the whole-collection download away; offered when one exists. */
@@ -447,30 +451,37 @@ internal fun DesktopCollectionContextMenu(
                 label = if (actions.savedToLibrary) "Remove from library" else "Save to library",
             ) { onDismiss(); save() }
         }
-        actions.onPin?.let { pin ->
+        if (actions.onPin != null || actions.pinDescription != null) {
             DesktopMenuRow(
                 icon = Icons.Rounded.PushPin,
                 label = if (actions.pinned) "Unpin from sidebar" else "Pin to sidebar",
                 selected = actions.pinned,
-            ) { onDismiss(); pin() }
+                description = actions.pinDescription,
+                enabled = actions.onPin != null,
+            ) {
+                actions.onPin?.let { pin -> onDismiss(); pin() }
+            }
         }
         DesktopMenuDivider()
-        actions.onDownloadAll?.let { download ->
-            val progress = actions.playlistProgress
-            when {
-                // Never asked for as a whole: a plain ask for everything listed.
-                progress == null -> DesktopMenuRow(BitChordIcons.Download, "Download all") { onDismiss(); download() }
-                // Asked for and still landing — the row says how far it has come.
-                progress.downloading -> DesktopMenuRow(
-                    icon = BitChordIcons.Clock,
-                    label = "Downloading · ${progress.done + progress.active} of ${progress.total}",
-                ) { onDismiss(); download() }
-                // In hand, but the live listing has moved on — the tap becomes an update.
-                actions.playlistStale -> DesktopMenuRow(Icons.Rounded.Refresh, "Update download") {
-                    onDismiss(); download()
-                }
-                // Every song the record holds is on disk; the tap stays a harmless refresh.
-                else -> DesktopMenuRow(BitChordIcons.Check, "Downloaded") { onDismiss(); download() }
+        val download = actions.onDownloadAll
+        val status = actions.playlistProgress
+        if (download != null || status != null) {
+            val downloading = status?.progress?.downloading == true
+            val update = actions.playlistStale && !downloading
+            val icon = when {
+                downloading -> BitChordIcons.Clock
+                update -> Icons.Rounded.Refresh
+                status?.label == "Downloaded" -> BitChordIcons.Check
+                else -> BitChordIcons.Download
+            }
+            DesktopMenuRow(
+                icon = icon,
+                label = if (update) "Update download" else status?.label ?: "Download all",
+                description = status?.description,
+                descriptionLines = 3,
+                enabled = download != null,
+            ) {
+                download?.let { onDismiss(); it() }
             }
         }
         actions.onRemovePlaylistDownload?.let { remove ->
@@ -662,7 +673,7 @@ private fun DesktopMenuDivider() {
     )
 }
 
-/** Tap targets mirror BitChord mobile's Like / Dislike / Share quick-action row. */
+/** Tap targets mirror the Like, thumbs down and Share quick-action row. */
 @Composable
 private fun DesktopMenuQuickAction(
     icon: ImageVector,
@@ -700,6 +711,7 @@ private fun DesktopMenuRow(
     tint: Color? = null,
     value: String = "",
     description: String? = null,
+    descriptionLines: Int = 1,
     selected: Boolean = false,
     enabled: Boolean = true,
     busy: Boolean = false,
@@ -746,7 +758,7 @@ private fun DesktopMenuRow(
             )
             description?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = DesktopSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = DesktopSecondary, maxLines = descriptionLines, overflow = TextOverflow.Ellipsis)
             }
         }
         if (value.isNotBlank()) {

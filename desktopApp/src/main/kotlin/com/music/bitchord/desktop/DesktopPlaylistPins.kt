@@ -157,6 +157,17 @@ internal class DesktopSpotifyPinIdentity(private val persistence: DesktopPersist
         return accountScope(persistence.string(key(legacy)).takeUnless { it == CONFLICT }.orEmpty())
     }
 
+    /** A saved connection can own its own pins while its stable account ID is unavailable. */
+    fun connectionScope(cookie: String): DesktopPlaylistPinScope? {
+        val legacy = DesktopPlaylistPinScope.spotify(cookie) ?: return null
+        val owner = persistence.string(key(legacy))
+        return when {
+            owner == CONFLICT -> null
+            owner.isBlank() -> legacy
+            else -> accountScope(owner)
+        }
+    }
+
     fun rememberVerified(cookie: String, accountId: String): DesktopSpotifyPinBinding? {
         val legacy = DesktopPlaylistPinScope.spotify(cookie) ?: return null
         val account = accountScope(accountId) ?: return null

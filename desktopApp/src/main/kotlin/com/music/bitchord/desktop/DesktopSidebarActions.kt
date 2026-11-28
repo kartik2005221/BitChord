@@ -44,21 +44,24 @@ internal fun DesktopSidebarActions(
     onRefresh: () -> Unit,
     onFocusChanged: (Boolean) -> Unit = {},
 ) {
+    // Observe the portal here so opening a menu does not recompose the entire app
+    // and dispose the lazy-list header or row that owns the menu.
+    val menuOpen = LocalDesktopMenuPortal.current?.entry?.value != null
     val buttons: @Composable () -> Unit = {
         DesktopSidebarAction(
             Icons.AutoMirrored.Rounded.ArrowBack,
             backLabel,
             tooltip = "$backLabel (Alt+Left)",
-            enabled = canGoBack,
+            enabled = canGoBack && !menuOpen,
             onClick = onBack,
         )
         val label = DesktopStrings["refresh", "Refresh"]
         DesktopSidebarAction(
             Icons.Rounded.Refresh,
             label,
-            tooltip = if (refresh == null) "Refresh unavailable on this page" else label,
-            enabled = refresh?.loading == false,
-            loading = refresh?.loading == true,
+            tooltip = if (refresh == null || menuOpen) "Refresh unavailable on this page" else label,
+            enabled = !menuOpen && refresh?.loading == false,
+            loading = !menuOpen && refresh?.loading == true,
             onClick = onRefresh,
         )
     }

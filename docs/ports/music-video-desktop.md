@@ -40,7 +40,7 @@ Session regression tests count resolution/open/close operations across repeated 
 
 - Native Windows borderless fullscreen uses the original decorated HWND, removes its caption/frame while fullscreen, covers the current monitor and restores previous bounds/placement on exit. Normal Maximize stays separate; Linux keeps Compose fullscreen.
 - Watch layout remains desktop-style down to 560×420 dp. Sidebar adapts on compact windows and transport/volume widths flex rather than overlapping.
-- Song context menu uses the mobile Like/Dislike/Share quick actions, star and broken-heart vector icons, grouped controls, album/artist descriptions, and Song Info. It uses the existing `desktopMenuGlass`, respecting the global Reduce Blur override.
+- Song context menu uses Like, Thumbs down, and Share quick actions, grouped controls, album/artist descriptions, and Song Info. It uses the existing `desktopMenuGlass`, respecting the global Reduce Blur override.
 - Added 800×560 compose layout/player regression cases, in addition to existing 960×600 and 1440×900 tests.
 
 Device and CI verification of Windows HWND fullscreen and live media switching are still required; these notes describe the intended implementation, not a passing test run.

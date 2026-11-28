@@ -294,7 +294,7 @@
     <string name="discord_token_description">Pega el token de tu cuenta de Discord. Se guarda cifrado en este dispositivo y solo se envía a Discord.</string>
     <string name="discord_token_rejected">Discord rechazó ese token.</string>
     <string name="discord_token_warning">Discord no ofrece una API para que una app cambie tu presencia, así que esta función inicia sesión con tu cuenta y usa el protocolo de Discord. El token se guarda cifrado en este dispositivo y solo se envía a Discord. Da acceso a toda tu cuenta y automatizarla infringe los términos de Discord. Úsalo solo si aceptas ese riesgo.</string>
-    <string name="dislike">No me gusta</string>
+    <string name="dislike">Pulgar abajo</string>
     <string name="done">Listo</string>
     <string name="download">Descargar</string>
     <string name="download_quality_dialog_subtitle">Para archivos guardados en este dispositivo</string>
@@ -491,7 +491,7 @@
     <string name="tap_to_sign_in_discord">Toca para iniciar sesión con Discord</string>
     <string name="token">Token</string>
     <string name="turn_off_timer">Desactivar temporizador</string>
-    <string name="undo_dislike">Deshacer No me gusta</string>
+    <string name="undo_dislike">Deshacer pulgar abajo</string>
     <string name="up_next">A continuación</string>
     <string name="verb_competing">Compitiendo en</string>
     <string name="verb_listening">Escuchando</string>

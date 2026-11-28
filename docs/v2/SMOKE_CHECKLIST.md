@@ -91,6 +91,10 @@ These feature-branch runs used the actual Linux launcher, a 1280 × 800 Xvfb dis
 | Local playlist editing, `84b91646`. Signed out with a pinned local import containing two occurrences of one song. | Removing the second occurrence preserved the first. The change survived reopening the packaged app. [Confirmation](evidence/playlist-remove-confirm.png) · [After removal](evidence/playlist-after-removal.png) |
 | Long playlist edits, packaged classes at `84b91646`. A synthetic 501-entry playlist across six pages repeated a song at the page boundary. | The harness retained both occurrence IDs, moved the last occurrence to the first position, and rejected a save after an external reorder. The harness used fixture responses. Live YouTube ownership, writes and retries still need a disposable account playlist. |
 
+## Replay album metadata retest
+
+Seeded 141 plays across two tracks without album metadata and three plays across two real albums with the same title and separate IDs. The older AppImage showed Unknown Album at the top. In the rebuilt AppImage on Xvfb, All time and This year showed both real albums separately and the Top album card showed their title. This month contained only the albumless tracks. Replay omitted the Top album card and chart, showed zero albums, and still counted all 141 plays.
+
 ## Maintainer test order on Fedora
 
 1. Open Library → Replay → Top albums under This year and All time. If two releases have the same title, check that both artists and their listening totals are visible.

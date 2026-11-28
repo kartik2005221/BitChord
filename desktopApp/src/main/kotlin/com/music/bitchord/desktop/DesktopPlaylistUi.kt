@@ -68,6 +68,17 @@ import com.music.bitchord.data.model.PlaylistPrivacy
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.UserPlaylist
 import com.music.bitchord.ui.icons.BitChordIcons
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 /** Where a track goes: one of the account's playlists, a local one, or a new one. */
 @Composable
@@ -436,32 +447,116 @@ internal fun DesktopRemovePlaylistOccurrenceDialog(
 }
 
 @Composable
-internal fun DesktopReorderPlaylistDialog(
+internal fun DesktopPlaylistReorderPage(
     title: String,
     order: DesktopPlaylistOrder?,
     busy: Boolean,
     error: String?,
     onSave: (List<String>) -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val original = order?.entries.orEmpty()
     var songs by remember(order) { mutableStateOf(original) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     var selectedEntry by remember(order) { mutableStateOf<String?>(null) }
     var destination by remember(order) { mutableStateOf("") }
+    var dragPosition by remember(order) { mutableStateOf<Float?>(null) }
     val selectedIndex = songs.indexOfFirst { it.setVideoId == selectedEntry }
     val targetIndex = (destination.toIntOrNull() ?: 0) - 1
+    val handleWidth = with(LocalDensity.current) { 48.dp.toPx() }
 
     fun move(from: Int, to: Int) {
         if (from !in songs.indices || to !in songs.indices || from == to) return
         songs = songs.toMutableList().apply { add(to, removeAt(from)) }
     }
 
-    DesktopDialogFrame(onDismiss = onDismiss) {
-        DialogHeading("Reorder playlist", title)
+    fun moveToPointer(pointer: Float) {
+        val row = listState.layoutInfo.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - pointer) }
+        val from = songs.indexOfFirst { it.setVideoId == selectedEntry }
+        if (row != null && from >= 0 && from != row.index) {
+            val first = listState.firstVisibleItemIndex
+            val offset = listState.firstVisibleItemScrollOffset
+            move(from, row.index)
+            // Keep the viewport at the same position when its first row moves.
+            listState.requestScrollToItem(first, offset)
+        }
+    }
+
+    LaunchedEffect(dragPosition != null, order) {
+        if (dragPosition == null) return@LaunchedEffect
+        while (true) {
+            withFrameNanos { }
+            val pointer = dragPosition ?: break
+            val layout = listState.layoutInfo
+            val edge = minOf(handleWidth, (layout.viewportEndOffset - layout.viewportStartOffset) / 3f)
+            if (edge <= 0) continue
+            val speed = when {
+                pointer < layout.viewportStartOffset + edge -> (pointer - layout.viewportStartOffset - edge) / edge
+                pointer > layout.viewportEndOffset - edge -> (pointer - layout.viewportEndOffset + edge) / edge
+                else -> 0f
+            }
+            if (speed != 0f) {
+                listState.scrollBy(speed.coerceIn(-1f, 1f) * edge / 4f)
+                moveToPointer(pointer)
+            }
+        }
+    }
+
+    Column(modifier.fillMaxSize().padding(20.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Reorder playlist", style = MaterialTheme.typography.headlineSmall)
+                Text(title, color = DesktopSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+            TextButton(
+                onClick = { onSave(songs.map { requireNotNull(it.setVideoId) }) },
+                enabled = !busy && dragPosition == null && songs != original,
+            ) { Text("Done") }
+        }
         error?.let { DialogError(it) }
-        if (order != null) {
-            LazyColumn(Modifier.heightIn(max = 320.dp), state = listState) {
+        if (order == null) {
+            if (error == null) Text("Loading the complete playlist…", color = DesktopSecondary)
+        } else {
+            Text("Drag a handle or use the move buttons.", color = DesktopSecondary, modifier = Modifier.padding(vertical = 8.dp))
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth()
+                    // The list owns the gesture because rows may leave the viewport while scrolling.
+                    .pointerInput(order, busy, handleWidth) {
+                        if (busy) return@pointerInput
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            if (down.position.x >= handleWidth) return@awaitEachGesture
+                            val row = listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                                down.position.y >= it.offset && down.position.y < it.offset + it.size
+                            } ?: return@awaitEachGesture
+                            val entry = row.key as String
+                            val beforeDrag = songs
+                            try {
+                                while (true) {
+                                    // A handle owns vertical motion before the LazyColumn sees it.
+                                    val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                                        .firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) return@awaitEachGesture
+                                    if (dragPosition == null) {
+                                        if (abs(change.position.y - down.position.y) < viewConfiguration.touchSlop) continue
+                                        selectedEntry = entry
+                                    }
+                                    change.consume()
+                                    dragPosition = change.position.y
+                                    moveToPointer(change.position.y)
+                                }
+                                songs = beforeDrag
+                            } finally {
+                                dragPosition = null
+                                destination = (songs.indexOfFirst { it.setVideoId == entry } + 1).toString()
+                            }
+                        }
+                    },
+                state = listState,
+            ) {
                 itemsIndexed(songs, key = { _, song -> requireNotNull(song.setVideoId) }) { index, song ->
                     Row(
                         Modifier.fillMaxWidth()
@@ -469,10 +564,12 @@ internal fun DesktopReorderPlaylistDialog(
                             .clickable(enabled = !busy) {
                                 selectedEntry = song.setVideoId
                                 destination = (index + 1).toString()
-                            }
-                            .padding(start = 22.dp, end = 12.dp),
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.DragHandle, "Drag ${song.title}", tint = DesktopSecondary)
+                        }
                         Text(
                             "${index + 1}. ${song.title} · ${song.artist}",
                             color = DesktopForeground,
@@ -489,44 +586,83 @@ internal fun DesktopReorderPlaylistDialog(
                     }
                 }
             }
-            if (selectedIndex >= 0) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Position", color = DesktopSecondary)
-                    Spacer(Modifier.width(12.dp))
-                    BasicTextField(
+            run {
+                val canMove = !busy && dragPosition == null && selectedIndex >= 0 &&
+                    targetIndex in songs.indices && targetIndex != selectedIndex
+                val jump = {
+                    if (canMove) {
+                        move(selectedIndex, targetIndex)
+                        scope.launch { listState.scrollToItem(targetIndex) }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
                         value = destination,
                         onValueChange = { destination = it.filter(Char::isDigit).take(5) },
-                        enabled = !busy,
+                        label = { Text("Position") },
+                        enabled = !busy && selectedIndex >= 0,
                         singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = DesktopForeground),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { move(selectedIndex, targetIndex) }),
-                        modifier = Modifier.width(56.dp),
+                        keyboardActions = KeyboardActions(onDone = { jump() }),
+                        modifier = Modifier.width(108.dp),
                     )
-                    TextButton(
-                        onClick = { move(selectedIndex, targetIndex) },
-                        enabled = !busy && targetIndex in songs.indices && targetIndex != selectedIndex,
-                    ) { Text("Move") }
+                    TextButton(onClick = jump, enabled = canMove) { Text("Move") }
                 }
             }
         }
-        DialogButtons(
-            busy = busy,
-            confirmLabel = "Save order",
-            confirmEnabled = songs != original,
-            onConfirm = { onSave(songs.map { requireNotNull(it.setVideoId) }) },
-            onDismiss = onDismiss,
-        )
     }
 }
 
-/**
- * The panel every dialog on this page sits in: the app's own glass over a scrim, rather than
- * Material's surface.
- */
+@Composable
+internal fun DesktopQuickAddPicker(
+    options: List<DesktopQuickAddOption>,
+    selected: DesktopPlaylistDestination?,
+    error: String?,
+    onPick: (DesktopQuickAddOption) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(options, query) { options.filter { it.title.contains(query.trim(), ignoreCase = true) } }
+    DesktopDialogFrame(onDismiss = onDismiss) {
+        DialogHeading("Choose quick-add playlist", "The player will use this playlist until you change it.")
+        error?.let { DialogError(it) }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Find a playlist") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        )
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+            itemsIndexed(filtered, key = { _, option -> option.destination }) { _, option ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onPick(option) }.padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(option.title)
+                        Text(
+                            if (option.destination.account) "YouTube Music" else "On this device",
+                            color = DesktopSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (option.destination == selected) Text("Current", color = DesktopAccent)
+                }
+            }
+        }
+        if (filtered.isEmpty()) {
+            Text(
+                if (options.isEmpty()) "Create a local playlist or connect YouTube Music to choose a target."
+                else "No matching playlists.",
+                color = DesktopSecondary,
+                modifier = Modifier.padding(20.dp),
+            )
+        }
+        TextButton(onClick = onDismiss, modifier = Modifier.padding(horizontal = 14.dp)) { Text("Cancel") }
+    }
+}
+
 @Composable
 private fun DesktopDialogFrame(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

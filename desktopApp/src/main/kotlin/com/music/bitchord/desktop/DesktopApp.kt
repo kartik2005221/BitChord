@@ -862,7 +862,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     val playlistPinScope = DesktopPlaylistPinScope(activeAccountId, activeProfileId)
     val spotifyPinIdentity = remember { DesktopSpotifyPinIdentity(persistence) }
     var spotifyPinScope by remember(spotifySession) {
-        mutableStateOf(spotifyPinIdentity.cached(spotifyCanvasCookie))
+        mutableStateOf(spotifyPinIdentity.connectionScope(spotifyCanvasCookie))
     }
     LaunchedEffect(spotifySession, spotifyReloads) {
         val requestedSession = spotifySession
@@ -875,7 +875,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                 DesktopPlaylistDownloads.migrateSpotifyOwner(binding)
                 playlistPins.migrateSpotifyScope(binding)
             }
-            spotifyPinScope = spotifyPinIdentity.cached(requestedSession.cookie)
+            spotifyPinScope = spotifyPinIdentity.connectionScope(requestedSession.cookie)
         }
     }
     val playlistDownloadRecords = remember(allPlaylistDownloadRecords, spotifyPinScope) {
@@ -960,7 +960,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     LaunchedEffect(playlistPinScope, spotifyPinScope, spotifySession) {
         val current = openedCollection ?: return@LaunchedEffect
         if (current.browseId.startsWith(SPOTIFY_PAGE_PREFIX) && openedSpotifySession === spotifySession &&
-            openedCollectionPinScope == null && spotifyPinScope != null
+            spotifyPinScope != null && (openedCollectionPinScope == null ||
+                openedCollectionPinScope == DesktopPlaylistPinScope.spotify(spotifySession.cookie))
         ) {
             openedCollectionPinScope = spotifyPinScope
             return@LaunchedEffect
@@ -1404,6 +1405,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     else fallback?.type?.takeIf { it != BrowseType.OTHER } ?: browseTypeOf(browseId),
                 songs = emptyList(),
                 loading = true,
+                initialPageComplete = !browseId.startsWith(SPOTIFY_PAGE_PREFIX),
             ),
             sidebarPin = sidebarPin,
         )
@@ -1591,6 +1593,9 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         if (isSpotifyLikedPlaylist(listing.browseId) &&
             (owner == null || owner != spotifyPinScope || openedSpotifySession !== DesktopSpotifyToken.session())
         ) return
+        if (isSpotifyLikedPlaylist(listing.browseId) &&
+            spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()) != owner
+        ) return
         val record = DesktopPlaylistDownloads.remember(
             listing.copy(songs = listing.songs.filter { it.unresolvedSpotifyTrack() == null }),
             downloads,
@@ -1622,7 +1627,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         // freezing it into a download record would only let it go stale.
         if (playlists.any { it.id == collection.browseId }) return
         val owner = openedCollectionPinScope
-        if (isSpotifyLikedPlaylist(collection.browseId) && owner == null) {
+        if (isSpotifyLikedPlaylist(collection.browseId) && spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()) == null) {
             DesktopPlayerHost.showMessage("Verify the Spotify account before downloading Liked Songs")
             return
         }
@@ -1646,7 +1651,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     /** The Update action on a stale record: fetch the live listing fresh, then merge. */
     fun updatePlaylistDownload(record: DesktopPlaylistDownload) {
-        if (!record.isVisibleToSpotify(spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()))) return
+        if (!record.isVisibleToSpotify(spotifyPinIdentity.connectionScope(DesktopSpotifyToken.cookie()))) return
         if (record.id.startsWith("spotify:playlist:")) {
             // Spotify listings are resolved with the page open; opening it refreshes instead.
             openCollection(record.id, record.toBrowseItem())
@@ -1697,7 +1702,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     /** Throws the record away, then deletes the files no other record claims. */
     fun removePlaylistDownload(record: DesktopPlaylistDownload) {
-        if (!record.isVisibleToSpotify(spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()))) return
+        if (!record.isVisibleToSpotify(spotifyPinIdentity.connectionScope(DesktopSpotifyToken.cookie()))) return
         val released = DesktopPlaylistDownloads.forget(record.id, record.pinOwner)
         stalePlaylistDownloads = stalePlaylistDownloads - record.id
         scope.launch {
@@ -1947,6 +1952,210 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         youtubeSignedIn && DesktopYouTubeAuth.isSignedIn && session == currentPlaylistPickerSession() &&
             DesktopAccounts.activeAccountId() == session?.first?.accountId &&
             DesktopAccounts.activeProfileId() == session?.first?.profileId
+
+    var quickAddTarget by remember(playlistPinScope) { mutableStateOf(persistence.quickAddTarget(playlistPinScope)) }
+    var quickAddPickerOpen by remember(playlistPinScope) { mutableStateOf(false) }
+    var quickAddPickerError by remember(playlistPinScope) { mutableStateOf<String?>(null) }
+    var quickAddBusy by remember { mutableStateOf(false) }
+    var quickAddReceipt by remember { mutableStateOf<DesktopQuickAddReceipt?>(null) }
+    var quickAddMessage by remember { mutableStateOf<String?>(null) }
+    val quickAddSession = currentPlaylistPickerSession()
+    var quickAddFreshPlaylists by remember(quickAddSession) { mutableStateOf<List<UserPlaylist>?>(null) }
+    val quickAddLibraryReady = playlistPickerAccountIsCurrent(quickAddSession) &&
+        loadedAccountId == quickAddSession.first.accountId && loadedProfileId == quickAddSession.first.profileId &&
+        libraryState is UiState.Success
+    val quickAddOptions = playlists.map { DesktopQuickAddOption(DesktopPlaylistDestination(it.id, false), it.title) } +
+        if (quickAddLibraryReady) (quickAddFreshPlaylists ?: accountPlaylists).map {
+            DesktopQuickAddOption(DesktopPlaylistDestination(it.playlistId, true), it.title)
+        } else emptyList()
+    val quickAddOption = quickAddOptions.firstOrNull { it.destination == quickAddTarget }
+    var quickAddMembership by remember(quickAddTarget, quickAddSession) { mutableStateOf<Set<String>?>(null) }
+
+    fun openQuickAddPicker(error: String? = null) {
+        quickAddPickerError = error
+        quickAddPickerOpen = true
+    }
+
+    fun closeQuickAddPicker() {
+        quickAddPickerOpen = false
+        quickAddPickerError = null
+    }
+
+    fun pickQuickAddOption(option: DesktopQuickAddOption) {
+        if (option !in quickAddOptions) return
+        persistence.saveQuickAddTarget(playlistPinScope, option.destination)
+        quickAddTarget = option.destination
+        closeQuickAddPicker()
+    }
+
+    suspend fun readQuickAddPlaylist(id: String, checkSession: () -> Unit) =
+        YtMusicRepository.playlistEntries("VL$id", requireOwner = true, checkSession = checkSession).getOrThrow()
+
+    LaunchedEffect(quickAddOption, quickAddSession, libraryStale) {
+        val target = quickAddOption?.destination?.takeIf { it.account } ?: return@LaunchedEffect
+        val songs = runCatching {
+            readQuickAddPlaylist(target.id) {
+                check(playlistPickerAccountIsCurrent(quickAddSession)) { "The active profile changed." }
+            }
+        }.getOrElse { failure ->
+            if (failure is CancellationException) throw failure
+            return@LaunchedEffect
+        }
+        if (!quickAddBusy && quickAddTarget == target && playlistPickerAccountIsCurrent(quickAddSession)) {
+            quickAddMembership = songs.mapTo(HashSet(), Song::videoId)
+        }
+    }
+
+    fun replaceQuickAddLocalPlaylist(updated: DesktopPlaylist) {
+        val latest = playlists.map { if (it.id == updated.id) updated else it }
+        persistence.savePlaylists(latest)
+        playlists = latest
+        if (openedCollection?.browseId == updated.id) openedCollection = updated.toCollection()
+    }
+
+    suspend fun checkQuickAddTargetStillExists(destination: DesktopPlaylistDestination): Boolean? {
+        if (!playlistPickerAccountIsCurrent(quickAddSession)) return null
+        val playlists = YtMusicRepository.userPlaylists().getOrElse {
+            if (it is CancellationException) throw it
+            return null
+        }
+        if (!playlistPickerAccountIsCurrent(quickAddSession)) return null
+        quickAddFreshPlaylists = playlists
+        return playlists.any { it.playlistId == destination.id }
+    }
+
+    fun forgetQuickAddTargetAndPrompt() {
+        persistence.saveQuickAddTarget(playlistPinScope, null)
+        quickAddTarget = null
+        openQuickAddPicker("The quick-add playlist is unavailable. Choose another.")
+    }
+
+    fun quickAdd(song: Song) {
+        if (quickAddBusy) return
+        val option = quickAddOption
+        if (option == null) {
+            val target = quickAddTarget
+            when {
+                target == null -> openQuickAddPicker()
+                !target.account -> forgetQuickAddTargetAndPrompt()
+                !quickAddLibraryReady -> openQuickAddPicker(
+                    "The saved playlist is temporarily unavailable. Connect YouTube Music or choose another.",
+                )
+                else -> {
+                    quickAddBusy = true
+                    scope.launch {
+                        try {
+                            when (checkQuickAddTargetStillExists(target)) {
+                                false -> forgetQuickAddTargetAndPrompt()
+                                true -> openQuickAddPicker()
+                                null -> openQuickAddPicker("Could not check the saved playlist. Try again.")
+                            }
+                        } finally {
+                            quickAddBusy = false
+                        }
+                    }
+                }
+            }
+            return
+        }
+        val destination = option.destination
+        if (!destination.account) {
+            val local = playlists.firstOrNull { it.id == destination.id } ?: return
+            val (updated, entryId) = local.quickAdd(song) ?: return
+            replaceQuickAddLocalPlaylist(updated)
+            quickAddReceipt = DesktopQuickAddReceipt(option, song.videoId, entryId, quickAddSession)
+            return
+        }
+        if (!DesktopSearchClient.isVideoId(song.videoId)) {
+            quickAddMessage = "Choose a local playlist for this track."
+            openQuickAddPicker("YouTube Music playlists require a YouTube Music track.")
+            return
+        }
+
+        quickAddBusy = true
+        scope.launch {
+            fun checkSession() {
+                check(playlistPickerAccountIsCurrent(quickAddSession)) { "The active profile changed." }
+            }
+            try {
+                val existing = readQuickAddPlaylist(destination.id, ::checkSession).mapTo(HashSet(), Song::videoId)
+                if (song.videoId in existing) {
+                    quickAddMembership = existing
+                    return@launch
+                }
+                checkSession()
+                val receipt = Innertube.addToPlaylist(destination.id, listOf(song.videoId), ::checkSession)
+                checkSession()
+                quickAddMembership = existing + song.videoId
+                libraryStale = true
+                quickAddReceipt = DesktopQuickAddReceipt(option, song.videoId, receipt[song.videoId], quickAddSession)
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                quickAddMembership = null
+                if (checkQuickAddTargetStillExists(destination) == false) {
+                    forgetQuickAddTargetAndPrompt()
+                } else {
+                    quickAddMessage = failure.message ?: "Could not add track. Try again to verify the playlist first."
+                }
+            } finally {
+                quickAddBusy = false
+            }
+        }
+    }
+
+    fun undoQuickAdd(receipt: DesktopQuickAddReceipt) {
+        if (quickAddBusy || receipt !== quickAddReceipt) return
+        quickAddReceipt = null
+        val entry = receipt.entryId ?: return
+        val destination = receipt.target.destination
+        if (!destination.account) {
+            val updated = playlists.firstOrNull { it.id == destination.id }?.undoQuickAdd(entry, receipt.songId)
+            if (updated != null) replaceQuickAddLocalPlaylist(updated)
+            return
+        }
+        if (!playlistPickerAccountIsCurrent(receipt.session)) {
+            quickAddMessage = "Switch to the original profile to edit that playlist."
+            return
+        }
+        quickAddBusy = true
+        scope.launch {
+            fun checkSession() {
+                check(playlistPickerAccountIsCurrent(receipt.session)) { "The active profile changed." }
+            }
+            try {
+                val songs = readQuickAddPlaylist(destination.id, ::checkSession)
+                if (songs.any { it.setVideoId == entry && it.videoId == receipt.songId }) {
+                    Innertube.removeFromPlaylist(destination.id, listOf(entry to receipt.songId), ::checkSession)
+                }
+                if (quickAddTarget == destination) {
+                    quickAddMembership = songs.filterNot { it.setVideoId == entry }.mapTo(HashSet(), Song::videoId)
+                }
+                libraryStale = true
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                quickAddMessage = failure.message ?: "Could not undo the playlist addition."
+            } finally {
+                quickAddBusy = false
+            }
+        }
+    }
+
+    fun quickAddControls(song: Song, expanded: Boolean = false): @Composable () -> Unit = {
+        val destination = quickAddOption?.destination
+        val alreadyAdded = if (destination?.account == true) {
+            song.videoId in quickAddMembership.orEmpty()
+        } else {
+            playlists.firstOrNull { it.id == destination?.id }?.songs?.any { it.videoId == song.videoId } == true
+        }
+        DesktopQuickAddButtons(
+            targetName = quickAddOption?.title,
+            alreadyAdded = alreadyAdded,
+            busy = quickAddBusy,
+            onAdd = { quickAdd(song) },
+            onPick = { openQuickAddPicker() },
+            tint = if (expanded) Color.White else DesktopSecondary,
+        )
+    }
 
     fun openTrackPlaylistPicker(song: Song) {
         if (playlistBusy || playlistTarget != null) return
@@ -3604,6 +3813,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
     var playlistEditBusy by remember { mutableStateOf(false) }
     var playlistEditError by remember { mutableStateOf<String?>(null) }
     var playlistOrder by remember { mutableStateOf<DesktopPlaylistOrder?>(null) }
+    var playlistOrderLoad by remember { mutableStateOf<Job?>(null) }
 
     fun canEditRemotePlaylist(collection: DesktopCollection?): Boolean =
         collection != null && collection.type == BrowseType.PLAYLIST &&
@@ -3622,6 +3832,8 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun closePlaylistEdit() {
         if (playlistEditBusy) return
+        playlistOrderLoad?.cancel()
+        playlistOrderLoad = null
         playlistEdit = null
         playlistEditError = null
         playlistOrder = null
@@ -3633,22 +3845,28 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     fun beginPlaylistEdit(listing: DesktopCollection, action: PlaylistEditAction, index: Int? = null) {
         if (playlistEditBusy || openedCollection !== listing || !canEditPlaylist(listing)) return
-        if (action == PlaylistEditAction.REORDER && !canEditRemotePlaylist(listing)) return
         val edit = DesktopPlaylistEdit(listing, collectionViewGeneration, action, index)
         playlistEdit = edit
         playlistEditError = null
         playlistOrder = null
         if (action != PlaylistEditAction.REORDER) return
-        playlistEditBusy = true
-        scope.launch {
+        if (playlists.any { it.id == listing.browseId }) {
+            playlistOrder = DesktopPlaylistOrder.local(listing.songs)
+            return
+        }
+        playlistOrderLoad = scope.launch {
             YtMusicRepository.playlistEntries(listing.browseId, requireOwner = true) {
-                check(isCurrentPlaylistEdit(edit) && canEditRemotePlaylist(listing)) { "The active playlist changed" }
+                check(playlistEdit === edit && isCurrentPlaylistEdit(edit) && canEditRemotePlaylist(listing)) {
+                    "The active playlist changed"
+                }
             }.fold(
-                onSuccess = { if (isCurrentPlaylistEdit(edit)) playlistOrder = DesktopPlaylistOrder(it) },
-                onFailure = { playlistEditError = it.message ?: "Could not load the full playlist" },
+                onSuccess = { if (playlistEdit === edit) playlistOrder = DesktopPlaylistOrder(it) },
+                onFailure = {
+                    if (it is CancellationException) throw it
+                    if (playlistEdit === edit) playlistEditError = it.message ?: "Could not load the full playlist"
+                },
             )
-            playlistEditBusy = false
-            if (!isCurrentPlaylistEdit(edit)) closePlaylistEdit()
+            if (playlistEdit === edit) playlistOrderLoad = null
         }
     }
 
@@ -3661,7 +3879,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
         val name = title?.trim()
         if (action == PlaylistEditAction.RENAME && name.isNullOrBlank()) return
         if (local != null) {
-            playlists = persistLocalPlaylistEdit(persistence, playlistPins, playlists, edit, name)
+            playlists = persistLocalPlaylistEdit(persistence, playlistPins, playlists, edit, name, targetOrder)
                 ?: run {
                     playlistEditError = "The playlist changed. Reopen it and try again."
                     return
@@ -4269,19 +4487,19 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     val shortcutBlockedByModal = showFirstLaunchWelcome ||
         overlays.accounts || overlays.signIn || overlays.playlistDialog || overlays.spotifyImport ||
-        playlistTarget != null || playlistEdit != null || overlays.downloadManager ||
+        playlistTarget != null || playlistEdit != null || quickAddPickerOpen || overlays.downloadManager ||
         overlays.lastfmLogin || overlays.listenBrainzToken || overlays.discordToken ||
         overlays.listenTogether || overlays.audioOutput || overlays.pipeline || playerMenuOpen
 
     var sidebarActionsFocused by remember { mutableStateOf(false) }
     val navigationBlocked = shortcutBlockedByModal || overlays.shortcuts || overlays.quickSearch ||
-        overlays.nowPlaying || menuPortal.entry.value != null
+        overlays.nowPlaying
     val settingsBackParent = settingsParentForBack(overlays.settingsPage, settingsParents)
     val canGoBack = !navigationBlocked && (settingsBackParent != null ||
         desktopBackIndex(navHistory, here().key) { it.key } >= 0)
 
     fun goBackFromSidebar(): Boolean {
-        if (!canGoBack) return false
+        if (!canGoBack || menuPortal.entry.value != null) return false
         sidebarDrawerOpen = false
         goBack()
         return true
@@ -4316,7 +4534,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             if (remote) {
                 DesktopPageRefresh((collection.loading && collectionError == null) || collectionLoadingMore) {
                     collectionError = null
-                    openedCollection = collection.copy(loading = true)
+                    openedCollection = collection.copy(
+                        loading = true,
+                        initialPageComplete = !spotify,
+                        savedDownloadSnapshot = false,
+                    )
                     collectionReloads++
                 }
             } else null
@@ -4662,6 +4884,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 // Escape leaves it without navigating away, then keyboard shortcuts
                                 // immediately belong to the app again.
                                 Key.Escape -> when {
+                                    quickAddPickerOpen -> {
+                                        closeQuickAddPicker()
+                                        true
+                                    }
                                     overlays.shortcuts -> {
                                         overlays.shortcuts = false
                                         true
@@ -4752,7 +4978,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                         onBack = { goBackFromSidebar() },
                         onRefresh = {
                             val refresh = pageRefresh
-                            if (refresh != null && !refresh.loading) {
+                            if (refresh != null && !refresh.loading && menuPortal.entry.value == null) {
                                 dismissDrawer()
                                 refresh.run()
                             }
@@ -4897,6 +5123,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             overlays.toggleSidePanel(DesktopSidePanel.DETAILS)
                         },
                         liked = current?.videoId in likedIds,
+                        quickAdd = current?.let { quickAddControls(it) },
                         onToggleLike = current?.takeIf { youtubeSignedIn || it.localUri != null }
                             ?.let { song -> { toggleLike(song) } },
                         songMenu = if (current != null) {
@@ -5103,6 +5330,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onDismissLyricsOffset = {},
                             windowWidth = windowWidth,
                             windowHeight = windowHeight,
+                            desktopTrackActions = quickAddControls(current, expanded = true),
                         )
                         if (playerMenuOpen) {
                             // Where the player's "…" sits: the right column's credits row, at
@@ -5140,6 +5368,50 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                     .padding(horizontal = 18.dp, vertical = 10.dp),
                             )
                         }
+                    }
+                    val undo = quickAddReceipt
+                    val quickMessage = quickAddMessage
+                    LaunchedEffect(quickMessage) {
+                        if (quickMessage != null) {
+                            delay(4_000L)
+                            quickAddMessage = null
+                        }
+                    }
+                    LaunchedEffect(undo) {
+                        if (undo != null) {
+                            delay(7_000L)
+                            if (quickAddReceipt === undo) quickAddReceipt = null
+                        }
+                    }
+                    if (undo != null || quickMessage != null) {
+                        Box(
+                            Modifier.fillMaxSize().padding(bottom = if (overlays.nowPlaying) 36.dp else 82.dp),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            Row(
+                                Modifier.clip(RoundedCornerShape(16.dp)).background(DesktopCardFill)
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(quickMessage ?: "Added to ${undo?.target?.title}", color = DesktopForeground)
+                                if (quickMessage == null && undo != null) {
+                                    if (undo.entryId != null) {
+                                        TextButton(onClick = { undoQuickAdd(undo) }) { Text("Undo") }
+                                    } else {
+                                        Text(" · Undo unavailable for this entry", color = DesktopSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (quickAddPickerOpen) {
+                        DesktopQuickAddPicker(
+                            options = quickAddOptions,
+                            selected = quickAddTarget,
+                            error = quickAddPickerError,
+                            onPick = ::pickQuickAddOption,
+                            onDismiss = ::closeQuickAddPicker,
+                        )
                     }
                     if (overlays.accounts) {
                         DesktopAccountSelector(
@@ -5295,14 +5567,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 onRemove = { savePlaylistEdit() },
                                 onDismiss = ::closePlaylistEdit,
                             )
-                            PlaylistEditAction.REORDER -> DesktopReorderPlaylistDialog(
-                                title = edit.listing.title,
-                                order = playlistOrder,
-                                busy = playlistEditBusy,
-                                error = playlistEditError,
-                                onSave = { savePlaylistEdit(targetOrder = it) },
-                                onDismiss = ::closePlaylistEdit,
-                            )
+                            PlaylistEditAction.REORDER -> Unit
                         }
                     }
                     if (overlays.downloadManager) {
@@ -5807,6 +6072,15 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onToggleSubscription = if (youtubeSignedIn) ::toggleSubscription else null,
                             contentPadding = contentPadding,
                         )
+                        playlistEdit?.action == PlaylistEditAction.REORDER -> DesktopPlaylistReorderPage(
+                            title = playlistEdit!!.listing.title,
+                            order = playlistOrder,
+                            busy = playlistEditBusy,
+                            error = playlistEditError,
+                            onSave = { savePlaylistEdit(targetOrder = it) },
+                            onDismiss = ::closePlaylistEdit,
+                            modifier = Modifier.padding(contentPadding),
+                        )
                         openedCollection?.loading == true -> DesktopPageScaffold(contentPadding) {
                             Box(Modifier.fillMaxSize()) {
                                 val error = collectionError
@@ -5824,7 +6098,30 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             ) -> DesktopCollectionPage(
                             collection = openedCollection!!,
                             pinned = visiblePlaylistPins.any { it.identity == openedPlaylistPin?.identity },
-                            onTogglePin = openedPlaylistPin?.let { pin -> { playlistPins.toggle(pin) } },
+                            onTogglePin = openedPlaylistPin?.let { pin ->
+                                {
+                                    val session = openedSpotifySession
+                                    if (pin.browseId.startsWith(SPOTIFY_PAGE_PREFIX) && session != null) {
+                                        DesktopSpotifyToken.withCurrent(session) {
+                                            if (pin.scope == spotifyPinIdentity.connectionScope(session.cookie)) {
+                                                playlistPins.toggle(pin)
+                                            }
+                                        }
+                                    } else {
+                                        playlistPins.toggle(pin)
+                                    }
+                                    Unit
+                                }
+                            },
+                            pinDescription = openedCollection?.browseId?.takeIf { it.startsWith(SPOTIFY_PAGE_PREFIX) }?.let {
+                                when {
+                                    spotifyCanvasCookie.isBlank() -> "Connect Spotify to pin this playlist"
+                                    spotifyPinScope == null -> "Reconnect Spotify to verify this account"
+                                    spotifyPinScope == DesktopPlaylistPinScope.spotify(spotifySession.cookie) ->
+                                        "Available with this Spotify connection"
+                                    else -> null
+                                }
+                            },
                             loadingMore = collectionLoadingMore,
                             onLoadMore = ::loadMoreCollectionSongs,
                             sort = collectionSorts[openedCollection!!.browseId] ?: DesktopCollectionSort.DEFAULT,
@@ -5833,7 +6130,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onRename = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
                                 { beginPlaylistEdit(listing, PlaylistEditAction.RENAME) }
                             },
-                            onReorder = openedCollection?.takeIf(::canEditRemotePlaylist)?.let { listing ->
+                            onReorder = openedCollection?.takeIf(::canEditPlaylist)?.let { listing ->
                                 { beginPlaylistEdit(listing, PlaylistEditAction.REORDER) }
                             },
                             onShare = openedCollection
@@ -6194,7 +6491,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 onDrillDownChange = ::changeLibraryDrillDown,
                                 onSongClick = { playSong(it, source = DesktopQueueSource(DesktopStrings["downloads", "Downloads"], PlaybackSourceType.BROWSE)) },
                                 onOpenPlaylist = { record ->
-                                    if (record.isVisibleToSpotify(spotifyPinIdentity.cached(DesktopSpotifyToken.cookie()))) {
+                                    if (record.isVisibleToSpotify(spotifyPinIdentity.connectionScope(DesktopSpotifyToken.cookie()))) {
                                         openCollection(record.id, record.toBrowseItem())
                                     }
                                 },
@@ -7024,6 +7321,7 @@ private fun DesktopBottomChrome(
     liked: Boolean,
     onToggleLike: (() -> Unit)?,
     songMenu: (@Composable () -> Unit)?,
+    quickAdd: (@Composable () -> Unit)?,
 ) {
     Column(
         Modifier
@@ -7058,6 +7356,7 @@ private fun DesktopBottomChrome(
                 liked = liked,
                 onToggleLike = onToggleLike,
                 songMenu = songMenu,
+                quickAdd = quickAdd,
             )
         }
         if (compact) DesktopFloatingNavigation(destination, settingsOpen, onDestinationSelected)
@@ -7148,6 +7447,7 @@ internal fun DesktopMiniPlayer(
     liked: Boolean = false,
     onToggleLike: (() -> Unit)? = null,
     songMenu: (@Composable () -> Unit)? = null,
+    quickAdd: (@Composable () -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val dockSurface = if (DesktopAppearanceSettings.blurEnabled(DesktopBlurArea.FLOATING_PLAYER)) {
@@ -7229,9 +7529,11 @@ internal fun DesktopMiniPlayer(
                     }
                     Column(Modifier.weight(1f).padding(start = 8.dp, end = 8.dp)) {
                         Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                        Text(song.artist, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            PlaybackQualityIcon(song, isLoading, Modifier.padding(end = 4.dp), tint = DesktopSecondary, size = 12.dp)
+                            Text(song.artist, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
-                    PlaybackQualityIcon(song, isLoading, Modifier.padding(end = 2.dp), tint = DesktopSecondary)
                     if (onToggleLike != null) {
                         Box(
                             Modifier
@@ -7250,6 +7552,7 @@ internal fun DesktopMiniPlayer(
                             )
                         }
                     }
+                    quickAdd?.invoke()
                     songMenu?.invoke()
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -10211,6 +10514,7 @@ internal fun DesktopCollectionPage(
     collection: DesktopCollection,
     pinned: Boolean,
     onTogglePin: (() -> Unit)?,
+    pinDescription: String? = null,
     loadingMore: Boolean,
     onLoadMore: () -> Unit,
     sort: DesktopCollectionSort,
@@ -10411,8 +10715,8 @@ internal fun DesktopCollectionPage(
                                                 { onDownloadAll(ready) }
                                             },
                                             onAddToPlaylists = onAddAlbumToPlaylists,
-                                            playlistProgress = playlistDownload?.let { record ->
-                                                offlineProgress(record.songs, downloadedIds, downloadInProgress)
+                                            playlistProgress = playlistDownload?.let {
+                                                collection.downloadStatus(downloadedIds, downloadInProgress)
                                             },
                                             playlistStale = playlistStale,
                                             onRemovePlaylistDownload = onRemovePlaylistDownload,
@@ -10436,6 +10740,7 @@ internal fun DesktopCollectionPage(
                                             savedToLibrary = libraryState?.saved == true,
                                             onPin = onTogglePin,
                                             pinned = pinned,
+                                            pinDescription = pinDescription,
                                             onRename = onRename,
                                             onDelete = onDelete,
                                             onReorder = onReorder,
@@ -10443,6 +10748,9 @@ internal fun DesktopCollectionPage(
                                         onDismiss = { moreOpen = false },
                                     )
                                 }
+                            }
+                            onReorder?.let { reorder ->
+                                TextButton(onClick = reorder) { Text("Reorder") }
                             }
                         }
                     }
