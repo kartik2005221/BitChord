@@ -752,6 +752,7 @@ fun NowPlayingScreen(
      */
     windowHeight: Dp,
     modifier: Modifier = Modifier,
+    desktopTrackActions: (@Composable () -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val haptics = rememberHaptics()
@@ -1873,7 +1874,12 @@ fun NowPlayingScreen(
                         LandscapeCredits(song, signedIn, likeStatus, showRevertCue, onToggleLike,
                             onOpenMenu, onOpenAlbum, onOpenArtist, showActions = false)
                     },
-                    trackActions = { LandscapeTrackActions(song, signedIn, likeStatus, showRevertCue, onToggleLike, onOpenMenu) },
+                    trackActions = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            desktopTrackActions?.invoke()
+                            LandscapeTrackActions(song, signedIn, likeStatus, showRevertCue, onToggleLike, onOpenMenu)
+                        }
+                    },
                     scrubber = {
                         PlayerScrubber(shown = shown, durationMs = durationMs,
                             loading = audioVersionSwitching, mixing = mixing && !scrub.scrubbing,
@@ -2122,6 +2128,7 @@ fun NowPlayingScreen(
                                     onOpenMenu = onOpenMenu,
                                     onOpenAlbum = onOpenAlbum,
                                     onOpenArtist = onOpenArtist,
+                                    additionalActions = desktopTrackActions,
                                 )
                             },
                             lyricStrip = if (syncedLyricsEnabled) {
@@ -3608,6 +3615,7 @@ fun NowPlayingScreen(
                             // away: with it up, the screen is the player again and the
                             // glyph is its menu. A pick in progress keeps its Close
                             // whichever way the controls are.
+                            desktopTrackActions?.invoke()
                             val lyricsShareGlyphVisible = lyricsOpen && collapseDone && lyricsShareEnabled &&
                                 !lyrics.isNullOrEmpty() && (!lyricsControlsOpen || lyricPicker.picking)
                             CircleGlyph(
