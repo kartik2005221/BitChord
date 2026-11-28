@@ -413,7 +413,7 @@ internal data class DesktopCollectionMenuActions(
     val onDelete: (() -> Unit)? = null,
     val onReorder: (() -> Unit)? = null,
     /** Whole-collection download state, when the page has been asked for as a whole. */
-    val playlistProgress: DesktopPlaylistDownloadProgress? = null,
+    val playlistProgress: DesktopCollectionDownloadStatus? = null,
     /** The snapshot no longer matches the live listing — the download row becomes an update. */
     val playlistStale: Boolean = false,
     /** Throws the whole-collection download away; offered when one exists. */
@@ -455,22 +455,25 @@ internal fun DesktopCollectionContextMenu(
             ) { onDismiss(); pin() }
         }
         DesktopMenuDivider()
-        actions.onDownloadAll?.let { download ->
-            val progress = actions.playlistProgress
-            when {
-                // Never asked for as a whole: a plain ask for everything listed.
-                progress == null -> DesktopMenuRow(BitChordIcons.Download, "Download all") { onDismiss(); download() }
-                // Asked for and still landing — the row says how far it has come.
-                progress.downloading -> DesktopMenuRow(
-                    icon = BitChordIcons.Clock,
-                    label = "Downloading · ${progress.done + progress.active} of ${progress.total}",
-                ) { onDismiss(); download() }
-                // In hand, but the live listing has moved on — the tap becomes an update.
-                actions.playlistStale -> DesktopMenuRow(Icons.Rounded.Refresh, "Update download") {
-                    onDismiss(); download()
-                }
-                // Every song the record holds is on disk; the tap stays a harmless refresh.
-                else -> DesktopMenuRow(BitChordIcons.Check, "Downloaded") { onDismiss(); download() }
+        val download = actions.onDownloadAll
+        val status = actions.playlistProgress
+        if (download != null || status != null) {
+            val downloading = status?.progress?.downloading == true
+            val update = actions.playlistStale && !downloading
+            val icon = when {
+                downloading -> BitChordIcons.Clock
+                update -> Icons.Rounded.Refresh
+                status?.label == "Downloaded" -> BitChordIcons.Check
+                else -> BitChordIcons.Download
+            }
+            DesktopMenuRow(
+                icon = icon,
+                label = if (update) "Update download" else status?.label ?: "Download all",
+                description = status?.description,
+                descriptionLines = 3,
+                enabled = download != null,
+            ) {
+                download?.let { onDismiss(); it() }
             }
         }
         actions.onRemovePlaylistDownload?.let { remove ->
@@ -700,6 +703,7 @@ private fun DesktopMenuRow(
     tint: Color? = null,
     value: String = "",
     description: String? = null,
+    descriptionLines: Int = 1,
     selected: Boolean = false,
     enabled: Boolean = true,
     busy: Boolean = false,
@@ -746,7 +750,7 @@ private fun DesktopMenuRow(
             )
             description?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = DesktopSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = DesktopSecondary, maxLines = descriptionLines, overflow = TextOverflow.Ellipsis)
             }
         }
         if (value.isNotBlank()) {

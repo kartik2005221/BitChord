@@ -1404,6 +1404,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                     else fallback?.type?.takeIf { it != BrowseType.OTHER } ?: browseTypeOf(browseId),
                 songs = emptyList(),
                 loading = true,
+                initialPageComplete = !browseId.startsWith(SPOTIFY_PAGE_PREFIX),
             ),
             sidebarPin = sidebarPin,
         )
@@ -4316,7 +4317,11 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             if (remote) {
                 DesktopPageRefresh((collection.loading && collectionError == null) || collectionLoadingMore) {
                     collectionError = null
-                    openedCollection = collection.copy(loading = true)
+                    openedCollection = collection.copy(
+                        loading = true,
+                        initialPageComplete = !spotify,
+                        savedDownloadSnapshot = false,
+                    )
                     collectionReloads++
                 }
             } else null
@@ -10411,8 +10416,8 @@ internal fun DesktopCollectionPage(
                                                 { onDownloadAll(ready) }
                                             },
                                             onAddToPlaylists = onAddAlbumToPlaylists,
-                                            playlistProgress = playlistDownload?.let { record ->
-                                                offlineProgress(record.songs, downloadedIds, downloadInProgress)
+                                            playlistProgress = playlistDownload?.let {
+                                                collection.downloadStatus(downloadedIds, downloadInProgress)
                                             },
                                             playlistStale = playlistStale,
                                             onRemovePlaylistDownload = onRemovePlaylistDownload,

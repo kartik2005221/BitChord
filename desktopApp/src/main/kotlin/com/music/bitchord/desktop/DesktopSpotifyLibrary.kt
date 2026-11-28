@@ -150,6 +150,7 @@ internal suspend fun loadSpotifyPlaylist(
         pageConsumer.join()
     }
     check(tracks.isNotEmpty()) { "This Spotify playlist has no tracks." }
+    update { it.copy(initialPageComplete = true) }
     val gate = Semaphore(MATCH_PARALLELISM)
     tracks.forEachIndexed { index, track ->
         launch {
