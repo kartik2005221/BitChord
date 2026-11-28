@@ -1948,6 +1948,210 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
             DesktopAccounts.activeAccountId() == session?.first?.accountId &&
             DesktopAccounts.activeProfileId() == session?.first?.profileId
 
+    var quickAddTarget by remember(playlistPinScope) { mutableStateOf(persistence.quickAddTarget(playlistPinScope)) }
+    var quickAddPickerOpen by remember(playlistPinScope) { mutableStateOf(false) }
+    var quickAddPickerError by remember(playlistPinScope) { mutableStateOf<String?>(null) }
+    var quickAddBusy by remember { mutableStateOf(false) }
+    var quickAddReceipt by remember { mutableStateOf<DesktopQuickAddReceipt?>(null) }
+    var quickAddMessage by remember { mutableStateOf<String?>(null) }
+    val quickAddSession = currentPlaylistPickerSession()
+    var quickAddFreshPlaylists by remember(quickAddSession) { mutableStateOf<List<UserPlaylist>?>(null) }
+    val quickAddLibraryReady = playlistPickerAccountIsCurrent(quickAddSession) &&
+        loadedAccountId == quickAddSession.first.accountId && loadedProfileId == quickAddSession.first.profileId &&
+        libraryState is UiState.Success
+    val quickAddOptions = playlists.map { DesktopQuickAddOption(DesktopPlaylistDestination(it.id, false), it.title) } +
+        if (quickAddLibraryReady) (quickAddFreshPlaylists ?: accountPlaylists).map {
+            DesktopQuickAddOption(DesktopPlaylistDestination(it.playlistId, true), it.title)
+        } else emptyList()
+    val quickAddOption = quickAddOptions.firstOrNull { it.destination == quickAddTarget }
+    var quickAddMembership by remember(quickAddTarget, quickAddSession) { mutableStateOf<Set<String>?>(null) }
+
+    fun openQuickAddPicker(error: String? = null) {
+        quickAddPickerError = error
+        quickAddPickerOpen = true
+    }
+
+    fun closeQuickAddPicker() {
+        quickAddPickerOpen = false
+        quickAddPickerError = null
+    }
+
+    fun pickQuickAddOption(option: DesktopQuickAddOption) {
+        if (option !in quickAddOptions) return
+        persistence.saveQuickAddTarget(playlistPinScope, option.destination)
+        quickAddTarget = option.destination
+        closeQuickAddPicker()
+    }
+
+    suspend fun readQuickAddPlaylist(id: String, checkSession: () -> Unit) =
+        YtMusicRepository.playlistEntries("VL$id", requireOwner = true, checkSession = checkSession).getOrThrow()
+
+    LaunchedEffect(quickAddOption, quickAddSession, libraryStale) {
+        val target = quickAddOption?.destination?.takeIf { it.account } ?: return@LaunchedEffect
+        val songs = runCatching {
+            readQuickAddPlaylist(target.id) {
+                check(playlistPickerAccountIsCurrent(quickAddSession)) { "The active profile changed." }
+            }
+        }.getOrElse { failure ->
+            if (failure is CancellationException) throw failure
+            return@LaunchedEffect
+        }
+        if (!quickAddBusy && quickAddTarget == target && playlistPickerAccountIsCurrent(quickAddSession)) {
+            quickAddMembership = songs.mapTo(HashSet(), Song::videoId)
+        }
+    }
+
+    fun replaceQuickAddLocalPlaylist(updated: DesktopPlaylist) {
+        val latest = playlists.map { if (it.id == updated.id) updated else it }
+        persistence.savePlaylists(latest)
+        playlists = latest
+        if (openedCollection?.browseId == updated.id) openedCollection = updated.toCollection()
+    }
+
+    suspend fun checkQuickAddTargetStillExists(destination: DesktopPlaylistDestination): Boolean? {
+        if (!playlistPickerAccountIsCurrent(quickAddSession)) return null
+        val playlists = YtMusicRepository.userPlaylists().getOrElse {
+            if (it is CancellationException) throw it
+            return null
+        }
+        if (!playlistPickerAccountIsCurrent(quickAddSession)) return null
+        quickAddFreshPlaylists = playlists
+        return playlists.any { it.playlistId == destination.id }
+    }
+
+    fun forgetQuickAddTargetAndPrompt() {
+        persistence.saveQuickAddTarget(playlistPinScope, null)
+        quickAddTarget = null
+        openQuickAddPicker("The quick-add playlist is unavailable. Choose another.")
+    }
+
+    fun quickAdd(song: Song) {
+        if (quickAddBusy) return
+        val option = quickAddOption
+        if (option == null) {
+            val target = quickAddTarget
+            when {
+                target == null -> openQuickAddPicker()
+                !target.account -> forgetQuickAddTargetAndPrompt()
+                !quickAddLibraryReady -> openQuickAddPicker(
+                    "The saved playlist is temporarily unavailable. Connect YouTube Music or choose another.",
+                )
+                else -> {
+                    quickAddBusy = true
+                    scope.launch {
+                        try {
+                            when (checkQuickAddTargetStillExists(target)) {
+                                false -> forgetQuickAddTargetAndPrompt()
+                                true -> openQuickAddPicker()
+                                null -> openQuickAddPicker("Could not check the saved playlist. Try again.")
+                            }
+                        } finally {
+                            quickAddBusy = false
+                        }
+                    }
+                }
+            }
+            return
+        }
+        val destination = option.destination
+        if (!destination.account) {
+            val local = playlists.firstOrNull { it.id == destination.id } ?: return
+            val (updated, entryId) = local.quickAdd(song) ?: return
+            replaceQuickAddLocalPlaylist(updated)
+            quickAddReceipt = DesktopQuickAddReceipt(option, song.videoId, entryId, quickAddSession)
+            return
+        }
+        if (!DesktopSearchClient.isVideoId(song.videoId)) {
+            quickAddMessage = "Choose a local playlist for this track."
+            openQuickAddPicker("YouTube Music playlists require a YouTube Music track.")
+            return
+        }
+
+        quickAddBusy = true
+        scope.launch {
+            fun checkSession() {
+                check(playlistPickerAccountIsCurrent(quickAddSession)) { "The active profile changed." }
+            }
+            try {
+                val existing = readQuickAddPlaylist(destination.id, ::checkSession).mapTo(HashSet(), Song::videoId)
+                if (song.videoId in existing) {
+                    quickAddMembership = existing
+                    return@launch
+                }
+                checkSession()
+                val receipt = Innertube.addToPlaylist(destination.id, listOf(song.videoId), ::checkSession)
+                checkSession()
+                quickAddMembership = existing + song.videoId
+                libraryStale = true
+                quickAddReceipt = DesktopQuickAddReceipt(option, song.videoId, receipt[song.videoId], quickAddSession)
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                quickAddMembership = null
+                if (checkQuickAddTargetStillExists(destination) == false) {
+                    forgetQuickAddTargetAndPrompt()
+                } else {
+                    quickAddMessage = failure.message ?: "Could not add track. Try again to verify the playlist first."
+                }
+            } finally {
+                quickAddBusy = false
+            }
+        }
+    }
+
+    fun undoQuickAdd(receipt: DesktopQuickAddReceipt) {
+        if (quickAddBusy || receipt !== quickAddReceipt) return
+        quickAddReceipt = null
+        val entry = receipt.entryId ?: return
+        val destination = receipt.target.destination
+        if (!destination.account) {
+            val updated = playlists.firstOrNull { it.id == destination.id }?.undoQuickAdd(entry, receipt.songId)
+            if (updated != null) replaceQuickAddLocalPlaylist(updated)
+            return
+        }
+        if (!playlistPickerAccountIsCurrent(receipt.session)) {
+            quickAddMessage = "Switch to the original profile to edit that playlist."
+            return
+        }
+        quickAddBusy = true
+        scope.launch {
+            fun checkSession() {
+                check(playlistPickerAccountIsCurrent(receipt.session)) { "The active profile changed." }
+            }
+            try {
+                val songs = readQuickAddPlaylist(destination.id, ::checkSession)
+                if (songs.any { it.setVideoId == entry && it.videoId == receipt.songId }) {
+                    Innertube.removeFromPlaylist(destination.id, listOf(entry to receipt.songId), ::checkSession)
+                }
+                if (quickAddTarget == destination) {
+                    quickAddMembership = songs.filterNot { it.setVideoId == entry }.mapTo(HashSet(), Song::videoId)
+                }
+                libraryStale = true
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                quickAddMessage = failure.message ?: "Could not undo the playlist addition."
+            } finally {
+                quickAddBusy = false
+            }
+        }
+    }
+
+    fun quickAddControls(song: Song, expanded: Boolean = false): @Composable () -> Unit = {
+        val destination = quickAddOption?.destination
+        val alreadyAdded = if (destination?.account == true) {
+            song.videoId in quickAddMembership.orEmpty()
+        } else {
+            playlists.firstOrNull { it.id == destination?.id }?.songs?.any { it.videoId == song.videoId } == true
+        }
+        DesktopQuickAddButtons(
+            targetName = quickAddOption?.title,
+            alreadyAdded = alreadyAdded,
+            busy = quickAddBusy,
+            onAdd = { quickAdd(song) },
+            onPick = { openQuickAddPicker() },
+            tint = if (expanded) Color.White else DesktopSecondary,
+        )
+    }
+
     fun openTrackPlaylistPicker(song: Song) {
         if (playlistBusy || playlistTarget != null) return
         playlistError = null
@@ -4269,7 +4473,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
 
     val shortcutBlockedByModal = showFirstLaunchWelcome ||
         overlays.accounts || overlays.signIn || overlays.playlistDialog || overlays.spotifyImport ||
-        playlistTarget != null || playlistEdit != null || overlays.downloadManager ||
+        playlistTarget != null || playlistEdit != null || quickAddPickerOpen || overlays.downloadManager ||
         overlays.lastfmLogin || overlays.listenBrainzToken || overlays.discordToken ||
         overlays.listenTogether || overlays.audioOutput || overlays.pipeline || playerMenuOpen
 
@@ -4662,6 +4866,10 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                 // Escape leaves it without navigating away, then keyboard shortcuts
                                 // immediately belong to the app again.
                                 Key.Escape -> when {
+                                    quickAddPickerOpen -> {
+                                        closeQuickAddPicker()
+                                        true
+                                    }
                                     overlays.shortcuts -> {
                                         overlays.shortcuts = false
                                         true
@@ -4897,6 +5105,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             overlays.toggleSidePanel(DesktopSidePanel.DETAILS)
                         },
                         liked = current?.videoId in likedIds,
+                        quickAdd = current?.let { quickAddControls(it) },
                         onToggleLike = current?.takeIf { youtubeSignedIn || it.localUri != null }
                             ?.let { song -> { toggleLike(song) } },
                         songMenu = if (current != null) {
@@ -5103,6 +5312,7 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                             onDismissLyricsOffset = {},
                             windowWidth = windowWidth,
                             windowHeight = windowHeight,
+                            desktopTrackActions = quickAddControls(current, expanded = true),
                         )
                         if (playerMenuOpen) {
                             // Where the player's "…" sits: the right column's credits row, at
@@ -5140,6 +5350,50 @@ internal fun BitChordDesktopApp(welcomeLaunch: DesktopWelcomeOnboarding.Launch, 
                                     .padding(horizontal = 18.dp, vertical = 10.dp),
                             )
                         }
+                    }
+                    val undo = quickAddReceipt
+                    val quickMessage = quickAddMessage
+                    LaunchedEffect(quickMessage) {
+                        if (quickMessage != null) {
+                            delay(4_000L)
+                            quickAddMessage = null
+                        }
+                    }
+                    LaunchedEffect(undo) {
+                        if (undo != null) {
+                            delay(7_000L)
+                            if (quickAddReceipt === undo) quickAddReceipt = null
+                        }
+                    }
+                    if (undo != null || quickMessage != null) {
+                        Box(
+                            Modifier.fillMaxSize().padding(bottom = if (overlays.nowPlaying) 36.dp else 82.dp),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            Row(
+                                Modifier.clip(RoundedCornerShape(16.dp)).background(DesktopCardFill)
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(quickMessage ?: "Added to ${undo?.target?.title}", color = DesktopForeground)
+                                if (quickMessage == null && undo != null) {
+                                    if (undo.entryId != null) {
+                                        TextButton(onClick = { undoQuickAdd(undo) }) { Text("Undo") }
+                                    } else {
+                                        Text(" · Undo unavailable for this entry", color = DesktopSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (quickAddPickerOpen) {
+                        DesktopQuickAddPicker(
+                            options = quickAddOptions,
+                            selected = quickAddTarget,
+                            error = quickAddPickerError,
+                            onPick = ::pickQuickAddOption,
+                            onDismiss = ::closeQuickAddPicker,
+                        )
                     }
                     if (overlays.accounts) {
                         DesktopAccountSelector(
@@ -7024,6 +7278,7 @@ private fun DesktopBottomChrome(
     liked: Boolean,
     onToggleLike: (() -> Unit)?,
     songMenu: (@Composable () -> Unit)?,
+    quickAdd: (@Composable () -> Unit)?,
 ) {
     Column(
         Modifier
@@ -7058,6 +7313,7 @@ private fun DesktopBottomChrome(
                 liked = liked,
                 onToggleLike = onToggleLike,
                 songMenu = songMenu,
+                quickAdd = quickAdd,
             )
         }
         if (compact) DesktopFloatingNavigation(destination, settingsOpen, onDestinationSelected)
@@ -7148,6 +7404,7 @@ internal fun DesktopMiniPlayer(
     liked: Boolean = false,
     onToggleLike: (() -> Unit)? = null,
     songMenu: (@Composable () -> Unit)? = null,
+    quickAdd: (@Composable () -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val dockSurface = if (DesktopAppearanceSettings.blurEnabled(DesktopBlurArea.FLOATING_PLAYER)) {
@@ -7250,6 +7507,7 @@ internal fun DesktopMiniPlayer(
                             )
                         }
                     }
+                    quickAdd?.invoke()
                     songMenu?.invoke()
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {

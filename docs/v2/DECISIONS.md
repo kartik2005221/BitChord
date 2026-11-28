@@ -29,3 +29,9 @@
 **Part B proposal for M5, pending approval.** Remove CI jobs for unshipped platforms from the desktop fork. This focuses CI execution on shipped desktop targets while leaving platform sources available for future upstream pulls.
 
 Proposal, source links, sequencing and validation details are in the [port matrix](UPSTREAM_PORT.md). Record later approvals or deviations here with the relevant commit or PR.
+
+## Gate A1 retest
+
+The maintainer approved the menu, Replay, reorder, Spotify pins and download-count corrections. The retest also includes Thumbs down, the inline mini-player quality indicator and Part A item 15 for player quick-add.
+
+**Gate 1 docked player prototypes.** Show one dock aligned to the sidebar's right edge and a second spanning beneath the sidebar. Reserve the measured dock height in either layout, including with the queue open. Compare track, seek, transport, Like, quick-add, queue and volume in the bar. Compare shuffle, repeat, output, PiP and additional track actions in the overflow at narrow widths.
