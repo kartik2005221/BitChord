@@ -278,7 +278,7 @@
     <string name="discord_token_description">Tempel token akun Discord Anda. Token ini tetap terenkripsi di perangkat ini dan hanya dikirim ke Discord.</string>
     <string name="discord_token_rejected">Discord menolak token tersebut.</string>
     <string name="discord_token_warning">Discord tidak menyediakan API yang memungkinkan aplikasi mengatur presence Anda, sehingga fitur ini masuk sebagai akun Anda dan menggunakan protokol Discord. Token Anda tetap terenkripsi di perangkat ini dan hanya dikirim ke Discord. Token ini memberikan akses ke seluruh akun Anda, dan otomatisasi akun melanggar ketentuan layanan Discord. Gunakan hanya jika Anda menerima risiko ini.</string>
-    <string name="dislike">Tidak suka</string>
+    <string name="dislike">Jempol ke bawah</string>
     <string name="done">Selesai</string>
     <string name="download">Unduh</string>
     <string name="download_quality_dialog_subtitle">Untuk file yang disimpan di perangkat ini</string>
@@ -466,7 +466,7 @@
     <string name="tap_to_sign_in_discord">Ketuk untuk masuk dengan Discord</string>
     <string name="token">Token</string>
     <string name="turn_off_timer">Matikan timer</string>
-    <string name="undo_dislike">Batalkan tidak suka</string>
+    <string name="undo_dislike">Urungkan jempol ke bawah</string>
     <string name="up_next">Berikutnya</string>
     <string name="verb_competing">Berkompetisi di</string>
     <string name="verb_listening">Mendengarkan</string>

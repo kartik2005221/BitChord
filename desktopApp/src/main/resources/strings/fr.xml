@@ -282,7 +282,7 @@
     <string name="discord_token_description">Collez le jeton de votre compte Discord. Il reste chiffré sur cet appareil et n\'est envoyé qu\'à Discord.</string>
     <string name="discord_token_rejected">Discord a rejeté ce jeton.</string>
     <string name="discord_token_warning">Discord ne propose pas d\'API permettant à une application de définir votre présence. Cette fonctionnalité se connecte donc avec votre compte et utilise le protocole de Discord. Votre jeton reste chiffré sur cet appareil et n\'est envoyé qu\'à Discord. Il donne accès à l\'ensemble de votre compte, et automatiser un compte enfreint les conditions d\'utilisation de Discord. N\'utilisez cette fonctionnalité que si vous acceptez ce risque.</string>
-    <string name="dislike">Je n\'aime pas</string>
+    <string name="dislike">Pouce vers le bas</string>
     <string name="done">Terminé</string>
     <string name="download">Télécharger</string>
     <string name="download_quality_dialog_subtitle">Pour les fichiers conservés sur cet appareil</string>
@@ -479,7 +479,7 @@
     <string name="tap_to_sign_in_discord">Appuyez pour vous connecter avec Discord</string>
     <string name="token">Jeton</string>
     <string name="turn_off_timer">Désactiver le minuteur</string>
-    <string name="undo_dislike">Annuler « Je n\'aime pas »</string>
+    <string name="undo_dislike">Annuler le pouce vers le bas</string>
     <string name="up_next">À suivre</string>
     <string name="verb_competing">Participe à</string>
     <string name="verb_listening">Écoute</string>
